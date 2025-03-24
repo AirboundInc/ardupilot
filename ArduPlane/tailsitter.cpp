@@ -554,6 +554,8 @@ bool Tailsitter::transition_vtol_complete(void) const
     const float trans_angle = get_transition_angle_vtol();
     if (labs(plane.ahrs.pitch_sensor) > trans_angle*100) {
         gcs().send_text(MAV_SEVERITY_INFO, "Transition VTOL done");
+        gcs().send_text(MAV_SEVERITY_WARNING, ">>> vtol_transition_start_ms: %f", float(transition->vtol_transition_start_ms));
+        gcs().send_text(MAV_SEVERITY_WARNING, ">>> vtol_transition_initial_pitch: %f",float(transition->vtol_transition_initial_pitch));
         return true;
     }
     int32_t roll_cd = labs(plane.ahrs.roll_sensor);
@@ -593,9 +595,9 @@ void Tailsitter::check_input(void)
  */
 bool Tailsitter::in_vtol_transition(uint32_t now) const
 {
-    gcs().send_text(MAV_SEVERITY_WARNING, ">>> in_vtol_transition");
+    // gcs().send_text(MAV_SEVERITY_WARNING, ">>> in_vtol_transition");
     if (!enabled() || !quadplane.in_vtol_mode()) {
-        gcs().send_text(MAV_SEVERITY_WARNING, ">>> Quadplane not in VTOL mode! ret: False");
+        // gcs().send_text(MAV_SEVERITY_WARNING, ">>> Quadplane not in VTOL mode! ret: False");
         return false;
     }
     if (transition->transition_state == Tailsitter_Transition::TRANSITION_ANGLE_WAIT_VTOL) {
@@ -608,7 +610,7 @@ bool Tailsitter::in_vtol_transition(uint32_t now) const
         gcs().send_text(MAV_SEVERITY_WARNING, ">>> transition->last_vtol_mode_ms %f ret: True", float(transition->last_vtol_mode_ms));
         return true;
     }
-    gcs().send_text(MAV_SEVERITY_WARNING, ">>> Fallback ret: False");
+    // gcs().send_text(MAV_SEVERITY_WARNING, ">>> Fallback ret: False");
     return false;
 }
 
@@ -934,10 +936,10 @@ void Tailsitter_Transition::set_FW_roll_pitch(int32_t& nav_pitch_cd, int32_t& na
         // multiply by 0.1 to convert (degrees/second * milliseconds) to centi degrees
         nav_pitch_cd = constrain_float(vtol_transition_initial_pitch + (tailsitter.transition_rate_vtol * dt) * 0.1f, -8500, 8500);
         nav_roll_cd = 0;
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> Checking VTOL Transition");
+        // GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> Checking VTOL Transition");
     } else if (transition_state == TRANSITION_DONE) {
         // still in FW, reset transition starting point
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> Inside TRANSITION_DONE in set_FW_roll_pitch");
+        // GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> Inside TRANSITION_DONE in set_FW_roll_pitch");
         vtol_transition_start_ms = now;
         vtol_transition_initial_pitch = constrain_float(plane.nav_pitch_cd,-8500,8500);
 
@@ -951,7 +953,7 @@ void Tailsitter_Transition::set_FW_roll_pitch(int32_t& nav_pitch_cd, int32_t& na
                 nav_pitch_cd = pitch_limit_cd;
                 nav_roll_cd = 0;
             }
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> Inside TRANSITION_DONE inside if fw_limit_start_ms");
+            // GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> Inside TRANSITION_DONE inside if fw_limit_start_ms");
         }
     }
 }
