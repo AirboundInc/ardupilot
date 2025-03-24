@@ -1,7 +1,8 @@
 #include "mode.h"
 #include "Plane.h"
-bool first_log = true;
+
 #if HAL_QUADPLANE_ENABLED
+bool first_log = true;
 
 bool ModeQLoiter::_enter()
 {
@@ -20,6 +21,7 @@ bool ModeQLoiter::_enter()
 
     // clear precland timestamp
     last_target_loc_set_ms = 0;
+    first_log = true;
 
     return true;
 }
