@@ -21,6 +21,8 @@
 #include "Plane.h"
 
 #if HAL_QUADPLANE_ENABLED
+uint32_t log_counter = 0;
+const uint32_t DEBUG_LOG_MAX_COUNT = 200; // twice every second since loop rate 400hz
 
 const AP_Param::GroupInfo Tailsitter::var_info[] = {
 
@@ -949,6 +951,12 @@ void Tailsitter_Transition::set_FW_roll_pitch(int32_t& nav_pitch_cd, int32_t& na
         vtol_transition_start_ms = now;
         vtol_transition_initial_pitch = constrain_float(plane.nav_pitch_cd,-8500,8500);
 
+        log_counter++;
+        if(log_counter >= DEBUG_LOG_MAX_COUNT) {
+            GCS_SEND_TEXT(MAV_SEVERITY_ERROR, ">>> Transition done: vtol_transition_start_ms: %f", float(vtol_transition_start_ms));
+            log_counter = 0;
+        }
+
         // rate limit initial pitch down
         if (fw_limit_start_ms != 0) {
             const float pitch_limit_cd = fw_limit_initial_pitch - (now - fw_limit_start_ms) * tailsitter.transition_rate_fw * 0.1;
@@ -961,10 +969,6 @@ void Tailsitter_Transition::set_FW_roll_pitch(int32_t& nav_pitch_cd, int32_t& na
             }
             // GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> Inside TRANSITION_DONE inside if fw_limit_start_ms");
         }
-    } else {
-        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, ">>> Inside unhandled case for transition in set_FW_roll_pitch!!!");
-        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, ">>> transition_state: %f", float(transition_state));
-        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, ">>> vtol_transition_start_ms: %f", float(vtol_transition_start_ms));
     }
 }
 
