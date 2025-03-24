@@ -552,10 +552,13 @@ bool Tailsitter::transition_vtol_complete(void) const
         }
     }
     const float trans_angle = get_transition_angle_vtol();
+
+    uint32_t now = AP_HAL::millis();
     if (labs(plane.ahrs.pitch_sensor) > trans_angle*100) {
         gcs().send_text(MAV_SEVERITY_INFO, "Transition VTOL done");
-        gcs().send_text(MAV_SEVERITY_WARNING, ">>> vtol_transition_start_ms: %f", float(transition->vtol_transition_start_ms));
-        gcs().send_text(MAV_SEVERITY_WARNING, ">>> vtol_transition_initial_pitch: %f",float(transition->vtol_transition_initial_pitch));
+        gcs().send_text(MAV_SEVERITY_WARNING, ">>> now: %f vtol_transition_start_ms: %f", float(now), float(transition->vtol_transition_start_ms));
+        gcs().send_text(MAV_SEVERITY_WARNING, ">>> now - vtol_transition_start_ms: %f", float(now - transition->vtol_transition_start_ms));
+        gcs().send_text(MAV_SEVERITY_WARNING, ">>> vtol_transition_initial_pitch: %f",transition->vtol_transition_initial_pitch * 0.01f);
         return true;
     }
     int32_t roll_cd = labs(plane.ahrs.roll_sensor);
@@ -566,10 +569,13 @@ bool Tailsitter::transition_vtol_complete(void) const
         gcs().send_text(MAV_SEVERITY_WARNING, "Transition VTOL done, roll error");
         return true;
     }
-    if (AP_HAL::millis() - transition->vtol_transition_start_ms >  ((trans_angle-(transition->vtol_transition_initial_pitch*0.01f))/transition_rate_vtol)*1500) {
+    now = AP_HAL::millis();
+
+    if (now - transition->vtol_transition_start_ms >  ((trans_angle-(transition->vtol_transition_initial_pitch*0.01f))/transition_rate_vtol)*1500) {
         gcs().send_text(MAV_SEVERITY_WARNING, "Transition VTOL done, timeout");
-        gcs().send_text(MAV_SEVERITY_WARNING, ">>> vtol_transition_start_ms: %f", float(transition->vtol_transition_start_ms));
-        gcs().send_text(MAV_SEVERITY_WARNING, ">>> vtol_transition_initial_pitch: %f",float(transition->vtol_transition_initial_pitch));
+        gcs().send_text(MAV_SEVERITY_WARNING, ">>> now: %f , vtol_transition_start_ms: %f", float(now), float(transition->vtol_transition_start_ms));
+        gcs().send_text(MAV_SEVERITY_WARNING, ">>> now - vtol_transition_start_ms: %f", float(now - transition->vtol_transition_start_ms));
+        gcs().send_text(MAV_SEVERITY_WARNING, ">>> vtol_transition_initial_pitch: %f",transition->vtol_transition_initial_pitch * 0.01f);
         return true;
     }
     return false;
@@ -601,7 +607,7 @@ bool Tailsitter::in_vtol_transition(uint32_t now) const
         return false;
     }
     if (transition->transition_state == Tailsitter_Transition::TRANSITION_ANGLE_WAIT_VTOL) {
-        gcs().send_text(MAV_SEVERITY_WARNING, ">>> TRANSITION_ANGLE_WAIT_VTOL ret: True");
+        // gcs().send_text(MAV_SEVERITY_WARNING, ">>> TRANSITION_ANGLE_WAIT_VTOL ret: True");
         return true;
     }
     if ((now != 0) && ((now - transition->last_vtol_mode_ms) > 1000)) {
@@ -955,6 +961,10 @@ void Tailsitter_Transition::set_FW_roll_pitch(int32_t& nav_pitch_cd, int32_t& na
             }
             // GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> Inside TRANSITION_DONE inside if fw_limit_start_ms");
         }
+    } else {
+        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, ">>> Inside unhandled case for transition in set_FW_roll_pitch!!!");
+        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, ">>> transition_state: %f", float(transition_state));
+        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, ">>> vtol_transition_start_ms: %f", float(vtol_transition_start_ms));
     }
 }
 

@@ -1,6 +1,6 @@
 #include "mode.h"
 #include "Plane.h"
-
+bool first_log = true;
 #if HAL_QUADPLANE_ENABLED
 
 bool ModeQLoiter::_enter()
@@ -61,12 +61,18 @@ void ModeQLoiter::run()
         quadplane.pos_control->input_vel_accel_xy(target_speed_xy_cms, target_accel);
         quadplane.poscontrol.last_velocity_match_ms = 0;
     }
-#endif // AC_PRECLAND_ENABLED
+#endif // AC_PRECLAND_ENABLED 
+
 
     if (quadplane.tailsitter.in_vtol_transition(now)) {
         // Tailsitters in FW pull up phase of VTOL transition run FW controllers
         Mode::run();
         return;
+    }
+
+    if (first_log) {
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> Starting QLoiter normal run after FW controller");
+        first_log = false;
     }
 
     if (quadplane.throttle_wait) {
