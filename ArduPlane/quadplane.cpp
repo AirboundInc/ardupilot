@@ -1798,20 +1798,6 @@ void SLT_Transition::VTOL_update()
 /*
   update motor output for quadplane
  */
-uint32_t last_vtol_log_ms = 0;
-
-// Function to convert MAV_VTOL_STATE enum to string
-const char* QuadPlane::mav_vtol_state_to_string(MAV_VTOL_STATE state) {
-    switch (state) {
-        case MAV_VTOL_STATE_UNDEFINED: return "UNDEFINED";
-        case MAV_VTOL_STATE_TRANSITION_TO_FW: return "TRANSITION_TO_FW";
-        case MAV_VTOL_STATE_TRANSITION_TO_MC: return "TRANSITION_TO_MC";
-        case MAV_VTOL_STATE_MC: return "MC";
-        case MAV_VTOL_STATE_FW: return "FW";
-        default: return "UNKNOWN";
-    }
-}
-
 void QuadPlane::update(void)
 {
     if (!setup()) {
@@ -1885,13 +1871,6 @@ void QuadPlane::update(void)
 
         transition->VTOL_update();
 
-    }
-
-    MAV_VTOL_STATE transition_state = transition->get_mav_vtol_state();
-    // Log MAV VTOL state at 1 Hz
-    if (now - last_vtol_log_ms >= 1000) {
-        last_vtol_log_ms = now;
-        gcs().send_text(MAV_SEVERITY_INFO, "MAV VTOL State: %d: %s", transition_state, mav_vtol_state_to_string(transition_state));
     }
 
     // disable throttle_wait when throttle rises above 10%
