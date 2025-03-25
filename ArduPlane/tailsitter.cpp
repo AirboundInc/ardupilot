@@ -876,7 +876,7 @@ void Tailsitter_Transition::update()
 
         // Add a time check if we're stuck in TRANSITION_ANGLE_WAIT_VTOL due to a failed back transition
         if (now - vtol_transition_start_ms > MAX_TIME_BACKTRANSITION_BAILOUT_TIME_MS) {
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> Bailing out of TRANSITION_ANGLE_WAIT_VTOL! Using timeout: %d", MAX_TIME_BACKTRANSITION_BAILOUT_TIME_MS);
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> Bailing out of TRANSITION_ANGLE_WAIT_VTOL! Using timeout: %f", float(MAX_TIME_BACKTRANSITION_BAILOUT_TIME_MS/1000));
             GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "Backtrans bailout done!");
             transition_state = TRANSITION_DONE;
         }
