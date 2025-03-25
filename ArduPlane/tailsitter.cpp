@@ -819,7 +819,7 @@ bool Tailsitter::relax_pitch()
   update for transition from quadplane to fixed wing mode
  */
 // uint32_t last_fw_log_ms = 0;
-uint32_t MAX_TIME_BACKTRANSITION_BAILOUT_TIME_MS = 10*1000;
+uint32_t MAX_TIME_BACKTRANSITION_BAILOUT_TIME_MS = 7*1000;
 
 void Tailsitter_Transition::update()
 {
@@ -876,7 +876,8 @@ void Tailsitter_Transition::update()
 
         // Add a time check if we're stuck in TRANSITION_ANGLE_WAIT_VTOL due to a failed back transition
         if (now - vtol_transition_start_ms > MAX_TIME_BACKTRANSITION_BAILOUT_TIME_MS) {
-            GCS_SEND_TEXT(MAV_SEVERITY_WARNING, ">>> Bailing out of TRANSITION_ANGLE_WAIT_VTOL! Using timeout: %d", MAX_TIME_BACKTRANSITION_BAILOUT_TIME_MS);
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> Bailing out of TRANSITION_ANGLE_WAIT_VTOL! Using timeout: %d", MAX_TIME_BACKTRANSITION_BAILOUT_TIME_MS);
+            GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "Backtrans bailout done!");
             transition_state = TRANSITION_DONE;
         }
         break;
