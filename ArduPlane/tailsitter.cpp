@@ -831,9 +831,17 @@ bool Tailsitter::relax_pitch()
 /*
   update for transition from quadplane to fixed wing mode
  */
+uint32_t last_fw_log_ms = 0;
+
 void Tailsitter_Transition::update()
 {
     const uint32_t now = millis();
+
+    // Log MAV FW state at 1 Hz
+    if (now - last_fw_log_ms >= 1000) {
+        last_fw_log_ms = now;
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "FW State: %d: %s", transition_state, transition_state_to_string(transition_state));
+    }
 
     float aspeed;
     bool have_airspeed = quadplane.ahrs.airspeed_estimate(aspeed);
@@ -884,9 +892,30 @@ void Tailsitter_Transition::update()
     }
 }
 
+const char* Tailsitter_Transition::transition_state_to_string(uint8_t state)
+{
+    switch (state) {
+    case TRANSITION_ANGLE_WAIT_FW:
+        return "TRANSITION_ANGLE_WAIT_FW";
+    case TRANSITION_ANGLE_WAIT_VTOL:
+        return "TRANSITION_ANGLE_WAIT";
+    case TRANSITION_DONE:
+        return "TRANSITION_DONE";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+uint32_t last_vtol_log_ms = 0;
+
 void Tailsitter_Transition::VTOL_update()
 {
     const uint32_t now = AP_HAL::millis();
+    // Log MAV VTOL state at 1 Hz
+    if (now - last_vtol_log_ms >= 1000) {
+        last_vtol_log_ms = now;
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "VTOL State: %d: %s", transition_state, transition_state_to_string(transition_state));
+    }
 
     if ((now - last_vtol_mode_ms) > 1000) {
         /*

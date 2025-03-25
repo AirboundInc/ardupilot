@@ -166,6 +166,8 @@ public:
 
     void VTOL_update() override;
 
+    const char* transition_state_to_string(uint8_t state);
+
     void force_transition_complete() override;
 
     bool complete() const override { return transition_state == TRANSITION_DONE; }
