@@ -2,8 +2,6 @@
 #include "Plane.h"
 
 #if HAL_QUADPLANE_ENABLED
-bool first_log = true;
-
 bool ModeQLoiter::_enter()
 {
     // initialise loiter
@@ -21,7 +19,6 @@ bool ModeQLoiter::_enter()
 
     // clear precland timestamp
     last_target_loc_set_ms = 0;
-    first_log = true;
 
     return true;
 }
@@ -65,16 +62,10 @@ void ModeQLoiter::run()
     }
 #endif // AC_PRECLAND_ENABLED 
 
-
     if (quadplane.tailsitter.in_vtol_transition(now)) {
         // Tailsitters in FW pull up phase of VTOL transition run FW controllers
         Mode::run();
         return;
-    }
-
-    if (first_log) {
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> Starting QLoiter normal run after FW controller");
-        first_log = false;
     }
 
     if (quadplane.throttle_wait) {
