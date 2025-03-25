@@ -83,6 +83,7 @@ public:
     void update_throttle_mix(void);
     
     // update transition handling
+    const char* mav_vtol_state_to_string(MAV_VTOL_STATE state);
     void update(void);
 
     // set motor arming
