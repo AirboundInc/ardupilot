@@ -898,7 +898,7 @@ const char* Tailsitter_Transition::transition_state_to_string(uint8_t state)
     case TRANSITION_ANGLE_WAIT_FW:
         return "TRANSITION_ANGLE_WAIT_FW";
     case TRANSITION_ANGLE_WAIT_VTOL:
-        return "TRANSITION_ANGLE_WAIT";
+        return "TRANSITION_ANGLE_WAIT_VTOL";
     case TRANSITION_DONE:
         return "TRANSITION_DONE";
     default:
