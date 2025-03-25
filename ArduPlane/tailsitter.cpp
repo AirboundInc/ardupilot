@@ -818,7 +818,7 @@ bool Tailsitter::relax_pitch()
 /*
   update for transition from quadplane to fixed wing mode
  */
-uint32_t last_fw_log_ms = 0;
+// uint32_t last_fw_log_ms = 0;
 uint32_t MAX_TIME_BACKTRANSITION_BAILOUT_TIME_MS = 10*1000;
 
 void Tailsitter_Transition::update()
@@ -826,10 +826,10 @@ void Tailsitter_Transition::update()
     const uint32_t now = millis();
 
     // Log MAV FW state at 1 Hz
-    if (now - last_fw_log_ms >= 1000) {
-        last_fw_log_ms = now;
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "FW State: %d: %s", transition_state, transition_state_to_string(transition_state));
-    }
+    // if (now - last_fw_log_ms >= 1000) {
+    //     last_fw_log_ms = now;
+    //     GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> FW State: %d: %s", transition_state, transition_state_to_string(transition_state));
+    // }
 
     float aspeed;
     bool have_airspeed = quadplane.ahrs.airspeed_estimate(aspeed);
