@@ -1070,6 +1070,24 @@ bool Plane::verify_landing_vtol_approach(const AP_Mission::Mission_Command &cmd)
                 if (labs(loiter.sum_cd) > 1 && (loiter.reached_target_alt || loiter.unable_to_acheive_target_alt)) {
                     Vector3f wind = ahrs.wind_estimate();
                     vtol_approach_s.approach_direction_deg = degrees(atan2f(-wind.y, -wind.x));
+
+                    // Modify the exit angle to achieve the desired wind direction.
+                    float direction_offset_deg{0};
+                    switch (plane.quadplane.rtl_dir) {
+                    case QuadPlane::RTL_EXIT_DIR::NOSE_IN_WIND:
+                    default:
+                        break;
+                    case QuadPlane::RTL_EXIT_DIR::RIGHT_IN_WIND:
+                        direction_offset_deg = -90.0f;
+                        break;
+                    case QuadPlane::RTL_EXIT_DIR::LEFT_IN_WIND:
+                        direction_offset_deg = 90.0f;
+                        break;
+                    case QuadPlane::RTL_EXIT_DIR::TAIL_IN_WIND:
+                        direction_offset_deg = 180.0f;
+                        break;
+                    }
+                    vtol_approach_s.approach_direction_deg += loiter.direction*direction_offset_deg;
                     gcs().send_text(MAV_SEVERITY_INFO, "Selected an approach path of %.1f", (double)vtol_approach_s.approach_direction_deg);
                     vtol_approach_s.approach_stage = ENSURE_RADIUS;
                 }

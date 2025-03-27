@@ -372,6 +372,15 @@ private:
         QRTL_ALWAYS,
     };
 
+    // control the RTL loiter exit direction
+    AP_Int8 rtl_dir;
+    enum RTL_EXIT_DIR{
+        NOSE_IN_WIND,
+        RIGHT_IN_WIND,
+        LEFT_IN_WIND,
+        TAIL_IN_WIND,
+    };
+
     // control if a VTOL GUIDED will be used
     AP_Int8 guided_mode;
 

@@ -287,6 +287,13 @@ const AP_Param::GroupInfo QuadPlane::var_info[] = {
     // 60 is used above for VELZ_MAX_DN
     // 61 was used above for TAILSIT_ANG_VT
 
+    // @Param: RTL_DIR
+    // @DisplayName: Loiter exit direction 
+    // @Description: Applies to RTL when Q_RTL_MODE=2. Select the direction relative to wind, when the aircraft will break from fixed-wing loiter and back-transition over the landing spot.
+    // @Values: 0:Nose into wind,1:Right side into wind,2:Left side into wind,3:Tail into wind
+    // @User: Standard
+    AP_GROUPINFO("RTL_DIR", 62, QuadPlane, rtl_dir, 0),
+
     AP_GROUPEND
 };
 
