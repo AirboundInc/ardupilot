@@ -279,6 +279,7 @@ bool Tailsitter::active(void)
 /*
   run output for tailsitters
  */
+uint32_t last_log_ms = 0;
 void Tailsitter::output(void)
 {
     if (!enabled() || quadplane.motor_test.running || !quadplane.initialised) {
@@ -291,6 +292,7 @@ void Tailsitter::output(void)
 
     // throttle 0 to 1
     float throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle) * 0.01;
+    const uint32_t now = millis();
 
     // handle forward flight modes and transition to VTOL modes
     if (!active() || in_vtol_transition()) {
@@ -306,6 +308,12 @@ void Tailsitter::output(void)
                 throttle = motors->get_throttle_hover();
                 // work out equivelent motors throttle level for cruise
                 throttle = MAX(throttle,motors->thr_lin.actuator_to_thrust(plane.aparm.throttle_cruise.get() * 0.01));
+                // Log throttle at 1 Hz
+                if (now - last_log_ms >= 1000) {
+                    last_log_ms = now;
+                    GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> Calculated throttle [0-1]: %f", float(throttle));
+                    GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> Plane throttle cruise [0-100]: %f", float(plane.aparm.throttle_cruise.get()));
+                }
             }
 
             SRV_Channels::set_output_scaled(SRV_Channel::k_rudder, 0.0);
@@ -331,6 +339,10 @@ void Tailsitter::output(void)
 
                 // throttle output is not used by AP_Motors so might have different PWM range, set scaled
                 SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, throttle * 100.0);
+                GCS_SEND_TEXT(MAV_SEVERITY_ERROR, ">>> Set throttle to [0-1]: %f", float(throttle * 100.0));
+            }
+            else {
+                GCS_SEND_TEXT(MAV_SEVERITY_ERROR, ">>> Not being set here! Jaake dhoondh :P");
             }
         }
 
