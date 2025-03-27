@@ -644,17 +644,25 @@ int8_t Tailsitter::get_transition_angle_vtol() const
 /*
   account for speed scaling of control surfaces in VTOL modes
 */
+uint32_t last_log_scaler_ms = 0;
 void Tailsitter::speed_scaling(void)
 {
     const float hover_throttle = motors->get_throttle_hover();
     const float throttle = motors->get_throttle_out();
     float spd_scaler = 1.0f;
     float disk_loading_min_throttle = 0.0;
+    uint32_t now = millis();
 
     // Scaling with throttle
     float throttle_scaler = throttle_scale_max;
     if (is_positive(throttle)) {
         throttle_scaler = constrain_float(hover_throttle / throttle, gain_scaling_min, throttle_scale_max);
+        if (now - last_log_scaler_ms >= 1000) {
+            last_log_scaler_ms = now;
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> throttle_scaler : %f", float(throttle_scaler));
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> throttle : %f", float(throttle));
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> hover_throttle : %f", float(hover_throttle));
+        }
     }
 
     if ((gain_scaling_mask & TAILSITTER_GSCL_ATT_THR) != 0) {
