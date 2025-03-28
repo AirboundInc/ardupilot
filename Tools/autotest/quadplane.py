@@ -1771,6 +1771,57 @@ class AutoTestQuadPlane(vehicle_test_suite.TestSuite):
 
         self.fly_home_land_and_disarm()
 
+    def TransitionAbortTailsitter(self):
+        '''Test tailsitter transition logic even when aborting a transition.'''
+        self.customise_SITL_commandline(
+            [],
+            defaults_filepath=self.model_defaults_filepath('quadplane-copter_tailsitter'),
+            model="quadplane-copter_tailsitter",
+            wipe=True,
+        )
+        self.reboot_sitl()
+
+        self.change_mode('QLOITER')
+        self.wait_ready_to_arm()
+        self.arm_vehicle()
+        self.set_rc(3, 2000)
+        self.wait_altitude(50, 70, relative=True)
+        self.context_collect('STATUSTEXT')
+        self.change_mode('FBWA')
+        self.set_rc(3, 1500)
+        self.wait_statustext('Transition FW done')
+        self.context_clear_collection('STATUSTEXT')
+        self.delay_sim_time(5)
+
+        # Go back to QLOITER, wait for a complete transition.
+        self.change_mode("QLOITER")
+        self.wait_statustext('Transition VTOL done')
+        self.context_clear_collection('STATUSTEXT')
+
+        # Switch to FBWA.
+        self.change_mode("FBWA")
+        self.wait_statustext('Transition FW done')
+        self.context_clear_collection('STATUSTEXT')
+        self.delay_sim_time(5)
+
+        # Go back to QLOITER and into FBWA immediately, before it completes.
+        self.change_mode("QLOITER")
+        self.delay_sim_time(0.5)
+        self.change_mode("FBWA")
+        self.wait_statustext('Transition VTOL done')
+        self.context_clear_collection('STATUSTEXT')
+
+        # Go back to QLOITER, wait for a complete transition.
+        self.change_mode("QLOITER")
+        # We'll get an instant timeout now since the transition vtol start time is from the previous one and transition state is now stuck in TRANSITION_ANGLE_WAIT_VTOL
+
+        self.wait_statustext('Transition VTOL done')
+        failmsg = self.statustext_in_collections('Transition VTOL done, timeout')
+        if failmsg is not None:
+            raise NotAchievedException("Transition to VTOL did not complete correctly.")
+
+        self.disarm_vehicle(force=True)
+
     def tests(self):
         '''return list of all tests'''
 
@@ -1812,6 +1863,7 @@ class AutoTestQuadPlane(vehicle_test_suite.TestSuite):
             self.RCDisableAirspeedUse,
             self.mission_MAV_CMD_DO_VTOL_TRANSITION,
             self.mavlink_MAV_CMD_DO_VTOL_TRANSITION,
+            self.TransitionAbortTailsitter,
             self.MAV_CMD_NAV_TAKEOFF,
             self.Q_GUIDED_MODE,
             self.DCMClimbRate,
