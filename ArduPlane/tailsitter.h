@@ -110,6 +110,7 @@ public:
     AP_Float VTOL_pitch_scale;
     AP_Float VTOL_yaw_scale;
     AP_Float disk_loading_min_outflow;
+    AP_Float backtrans_bailout_time;
 
     AP_MotorsTailsitter* tailsitter_motors;
 
