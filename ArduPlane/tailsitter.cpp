@@ -165,13 +165,13 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     // @Range: 0 15
     AP_GROUPINFO("MIN_VO", 22, Tailsitter, disk_loading_min_outflow, 0),
 
-    // @Param: BACKTRANS_BAILOUT_TIME
-    // @DisplayName: Back transition bailout time
+    // @Param: BTABRT
+    // @DisplayName: Back transition abort time
     // @Description: Time in milliseconds to wait before considering back transition from fixed wing to VTOL flight aborted
     // @Range: 500 30000
     // @Units: ms
     // @User: Advanced
-    AP_GROUPINFO("BACKTRANS_BAILOUT_TIME", 23, Tailsitter, backtrans_bailout_time, 7000),
+    AP_GROUPINFO("BTABRT", 23, Tailsitter, backtrans_abort_time, 7000),
 
     AP_GROUPEND
 };
@@ -867,12 +867,11 @@ void Tailsitter_Transition::update()
 
     case TRANSITION_ANGLE_WAIT_VTOL:
         // Add a time check if we're stuck in TRANSITION_ANGLE_WAIT_VTOL due to a failed back transition
-        if (now - vtol_transition_start_ms > tailsitter.backtrans_bailout_time) {
-            // We are stuck in this state, so we need to bail out and go back to transition done
+        if (now - vtol_transition_start_ms > tailsitter.backtrans_abort_time) {
+            // We are stuck in this state, so we need to abort and go back to transition done
             // This is a safety measure to prevent the vehicle from getting stuck in this state indefinitely which can cause unsafe behaviour
-            // Send a message to the GCS indicating that we are bailing out of this state
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Bailing out of TRANSITION_ANGLE_WAIT_VTOL! Using timeout: %f", tailsitter.backtrans_bailout_time/1000);
-            GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "Backtrans bailout done!");
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Exiting stuck backtransition state, timeout (s): %f", tailsitter.backtrans_abort_time/1000);
+            GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "Backtrans abort done!");
             transition_state = TRANSITION_DONE;
         }
         break;
