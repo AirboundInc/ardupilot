@@ -1,5 +1,8 @@
 #include "Plane.h"
 
+uint32_t last_log_pitch_ms = 0, last_log_roll_ms = 0, last_log_rudder_ms = 0;
+uint32_t LOGGING_DELAY_MS = 1000; // 1 second delay before logging
+
 /*
   calculate speed scaling number for control surfaces. This is applied
   to PIDs to change the scaling of the PID with speed. At high speed
@@ -172,8 +175,14 @@ void Plane::stabilize_pitch()
         SRV_Channels::set_output_scaled(SRV_Channel::k_elevator, 45*force_elevator);
         return;
     }
-
     const float pitch_out = stabilize_pitch_get_pitch_out();
+
+    const uint32_t now = millis();
+    if (now - last_log_pitch_ms > LOGGING_DELAY_MS) {
+        last_log_pitch_ms = now;
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>> Pitch controller output: %f", pitch_out);
+    }
+
     SRV_Channels::set_output_scaled(SRV_Channel::k_elevator, pitch_out);
 }
 
