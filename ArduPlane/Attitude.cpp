@@ -383,6 +383,7 @@ void Plane::stabilize_yaw()
         last_log_yaw_ms = now;
         GCS_SEND_TEXT(MAV_SEVERITY_INFO, "> Yaw controller output: %f", rudder_output);
     }
+    AP::logger().Write("ATTY", "TimeUS, Yaw", "Qf", AP_HAL::micros64(), rudder_output);
 
     if (!ground_steering) {
         // Not doing ground steering, output rudder on steering channel
