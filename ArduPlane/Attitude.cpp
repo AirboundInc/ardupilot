@@ -1,8 +1,5 @@
 #include "Plane.h"
 
-uint32_t last_log_pitch_ms = 0, last_log_roll_ms = 0, last_log_yaw_ms = 0;
-uint32_t LOGGING_DELAY_MS = 2000; // delay for logging rpy controller outputs in milliseconds
-
 /*
   calculate speed scaling number for control surfaces. This is applied
   to PIDs to change the scaling of the PID with speed. At high speed
@@ -125,11 +122,12 @@ void Plane::stabilize_roll()
 
     const float roll_out = stabilize_roll_get_roll_out();
 
-    const uint32_t now = millis();
-    if (now - last_log_roll_ms > LOGGING_DELAY_MS) {
-        last_log_roll_ms = now;
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "> Roll controller output: %f", roll_out);
-    }
+    AP::logger().Write("ATTR", "TimeUS,RollOut",
+        "sd", // seconds, degrees
+        "F0", // micro (1e-6), no mult (1e0)
+        "Qf", // uint64_t, float
+        AP_HAL::micros64(),
+        roll_out/100.0f);
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_aileron, roll_out);
 }
@@ -184,11 +182,12 @@ void Plane::stabilize_pitch()
     }
     const float pitch_out = stabilize_pitch_get_pitch_out();
 
-    const uint32_t now = millis();
-    if (now - last_log_pitch_ms > LOGGING_DELAY_MS) {
-        last_log_pitch_ms = now;
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "> Pitch controller output: %f", pitch_out);
-    }
+    AP::logger().Write("ATTP", "TimeUS,PitchOut",
+        "sd", // seconds, degrees
+        "F0", // micro (1e-6), no mult (1e0)
+        "Qf", // uint64_t, float
+        AP_HAL::micros64(),
+        pitch_out/100.0f);
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_elevator, pitch_out);
 }
@@ -378,17 +377,12 @@ void Plane::stabilize_yaw()
      */
     const float rudder_output = calc_nav_yaw_coordinated();
 
-    const uint32_t now = millis();
-    if (now - last_log_yaw_ms > LOGGING_DELAY_MS) {
-        last_log_yaw_ms = now;
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "> Yaw controller output: %f", rudder_output);
-    }
-    AP::logger().Write("ATTO", "TimeUS,Yaw",
+    AP::logger().Write("ATTY", "TimeUS,YawOut",
                         "sd", // seconds, degrees
-                        "FB", // micro (1e-6), centi (1e-2)
+                        "F0", // micro (1e-6), no mult (1e0)
                         "Qf", // uint64_t, float
                         AP_HAL::micros64(),
-                        rudder_output);
+                        rudder_output/100.0f);
 
     if (!ground_steering) {
         // Not doing ground steering, output rudder on steering channel
