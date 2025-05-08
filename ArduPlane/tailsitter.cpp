@@ -504,6 +504,68 @@ void Tailsitter::output(void)
         motors->limit.yaw = true;
     }
 
+    // Boost throttle in case of severe pitch error
+    // For thrust vectored tailsitters, we want to boost throttle based on
+    // attitude error
+
+    float throttle_in = motors->get_throttle();
+
+    // Maximum angle error to consider
+    const float max_angle_error_deg = 85.0f;
+
+    // Start increasing throttle beyond this error
+    // TODO: make this a parameter, ideally 20 deg
+    const float min_angle_error_deg = 5.0f;
+    // Maximum throttle multiplication factor
+    const float max_boost_factor = 2.0f;
+
+    float des_pitch_deg = degrees(
+        quadplane.attitude_control->get_att_target_euler_cd().y * 0.01f);
+
+    float current_pitch_deg = quadplane.ahrs.pitch_sensor * 0.01f;
+    // Calculate the absolute pitch error in degrees
+    float pitch_error_deg = fabsf(degrees(des_pitch_deg - current_pitch_deg));
+
+    // Calculate boost factor based on attitude error
+    float error_ratio = 0;
+    if (pitch_error_deg > min_angle_error_deg) {
+      // Clamp the pitch error to the maximum angle error
+      if (pitch_error_deg > max_angle_error_deg) {
+        pitch_error_deg = max_angle_error_deg;
+      }
+
+      // Calculate the error ratio
+      // Normalize the error to a range of 0.0 to 1.0
+      // This is a linear mapping from min_angle_error_deg to
+      // max_angle_error_deg to a range of 0.0 to 1.0
+      error_ratio =
+          constrain_float((pitch_error_deg - min_angle_error_deg) /
+                              (max_angle_error_deg - min_angle_error_deg),
+                          0.0f, 1.0f);
+    }
+
+    // Linear interpolation between 1.0 and max_boost_factor
+    float boost_factor = 1.0f + error_ratio * (max_boost_factor - 1.0f);
+
+    // Apply boost with smoothing
+    static float last_boost = 1.0f;
+    boost_factor = 0.95f * last_boost + 0.05f * boost_factor;
+    last_boost = boost_factor;
+
+    float throttle_out = throttle_in * boost_factor;
+
+    // apply PWM min and MAX to throttle left and right, just as via AP_Motors
+    uint16_t throttle_pwm =
+        motors->get_pwm_output_min() +
+        (motors->get_pwm_output_max() - motors->get_pwm_output_min()) *
+            throttle_out;
+    SRV_Channels::set_output_pwm(SRV_Channel::k_throttleLeft, throttle_pwm);
+    SRV_Channels::set_output_pwm(SRV_Channel::k_throttleRight, throttle_pwm);
+
+    // throttle output is not used by AP_Motors so might have different PWM
+    // range, set scaled
+    SRV_Channels::set_output_scaled(SRV_Channel::k_throttle,
+                                    throttle_out * 100.0);
 }
 
 
