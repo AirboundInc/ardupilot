@@ -369,25 +369,74 @@ void AC_AttitudeControl_Multi::set_throttle_mix_max(float ratio)
     _throttle_rpy_mix_desired = (1.0f - ratio) * _thr_mix_min + ratio * _thr_mix_max;
 }
 
+// Below is the old code for get_throttle_boosted commented out
+
 // returns a throttle including compensation for roll/pitch angle
 // throttle value should be 0 ~ 1
+// float AC_AttitudeControl_Multi::get_throttle_boosted(float throttle_in)
+//{
+//    if (!_angle_boost_enabled) {
+//        _angle_boost = 0;
+//        return throttle_in;
+//    }
+// inverted_factor is 1 for tilt angles below 60 degrees
+// inverted_factor reduces from 1 to 0 for tilt angles between 60 and 90 degrees
+
+//    float cos_tilt = _ahrs.cos_pitch() * _ahrs.cos_roll();
+//    float inverted_factor = constrain_float(10.0f * cos_tilt, 0.0f, 1.0f);
+//    float cos_tilt_target = cosf(_thrust_angle);
+//    float boost_factor = 1.0f / constrain_float(cos_tilt_target, 0.1f, 1.0f);
+
+//    float throttle_out = throttle_in * inverted_factor * boost_factor;
+//    _angle_boost = constrain_float(throttle_out - throttle_in, -1.0f, 1.0f);
+//    return throttle_out;
+//}
+
+// Adding Chatgpt new code for boosting throttle as pitch angle increases
+
 float AC_AttitudeControl_Multi::get_throttle_boosted(float throttle_in)
 {
     if (!_angle_boost_enabled) {
         _angle_boost = 0;
         return throttle_in;
     }
-    // inverted_factor is 1 for tilt angles below 60 degrees
-    // inverted_factor reduces from 1 to 0 for tilt angles between 60 and 90 degrees
 
-    float cos_tilt = _ahrs.cos_pitch() * _ahrs.cos_roll();
-    float inverted_factor = constrain_float(10.0f * cos_tilt, 0.0f, 1.0f);
-    float cos_tilt_target = cosf(_thrust_angle);
-    float boost_factor = 1.0f / constrain_float(cos_tilt_target, 0.1f, 1.0f);
+    float pitch_rad_a = atan2(_ahrs.sin_pitch(), _ahrs.cos_pitch());
+    float _angle_boost_pgain = 1.5f;
+    float _angle_boost_pmax = 2.0f;
+    float abs_pitch_rad = fabsf(pitch_rad_a);
 
-    float throttle_out = throttle_in * inverted_factor * boost_factor;
-    _angle_boost = constrain_float(throttle_out - throttle_in, -1.0f, 1.0f);
-    return throttle_out;
+    if (abs_pitch_rad > 0.785398) {
+      // existing tilt-based boost
+      float cos_tilt = _ahrs.cos_pitch() * _ahrs.cos_roll();
+      float inverted_factor = constrain_float(10.0f * cos_tilt, 0.0f, 1.0f);
+      float cos_tilt_target = cosf(_thrust_angle);
+      float boost_factor = 1.0f / constrain_float(cos_tilt_target, 0.1f, 1.0f);
+
+      float throttle_tilt_boosted =
+          throttle_in * inverted_factor * boost_factor;
+      // commenting out below line as it is not needed
+      // float tilt_boost = throttle_tilt_boosted - throttle_in;
+
+      // new: pitch-angle proportional boost
+      // Commented out below line to use sin and cosine components for
+      // calculation of pitch angle float pitch_rad = _ahrs.get_pitch();  //
+      // positive nose-up
+      float pitch_rad = atan2(_ahrs.sin_pitch(), _ahrs.cos_pitch());
+      float pitch_boost = constrain_float(fabsf(pitch_rad) * _angle_boost_pgain,
+                                          0.0f, _angle_boost_pmax);
+
+      // apply pitch boost as an additive fraction of full throttle
+      float throttle_with_pitch_boost = throttle_tilt_boosted + pitch_boost;
+      float throttle_out = throttle_with_pitch_boost;
+
+      // record total boost for logging
+      //_angle_boost = (throttle_with_pitch_boost - throttle_in);
+
+      return throttle_out;
+    } else {
+      return throttle_in;
+    }
 }
 
 // returns a throttle including compensation for roll/pitch angle
