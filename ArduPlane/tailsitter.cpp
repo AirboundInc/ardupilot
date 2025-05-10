@@ -416,7 +416,45 @@ void Tailsitter::output(void)
             return;
         }
     } else {
+      // Boost throttle in case of severe pitch error
+      // For thrust vectored tailsitters, we want to boost throttle based on
+      // pitch
+
+      float throttle_in = motors->get_throttle();
+
+      float pitch_threshold_rad = 0.7854f;  // 45 deg
+      float boost_gain = 1.5f;
+      float boost_gain_max = 2.0f;
+
+      float current_abs_pitch_rad = fabsf(quadplane.ahrs.get_pitch());
+      float boost_factor = constrain_float(current_abs_pitch_rad * boost_gain,
+                                           0.0, boost_gain_max);
+
+      if (current_abs_pitch_rad > pitch_threshold_rad) {
+        // boost throttle if we are at high pitch
+        static float last_boost = 1.0f;
+        boost_factor = 0.95f * last_boost + 0.05f * boost_factor;
+        last_boost = boost_factor;
+
+        float throttle_out = throttle_in * boost_factor;
+
+        // apply PWM min and MAX to throttle left and right, just as via
+        // AP_Motors
+        uint16_t throttle_pwm =
+            motors->get_pwm_output_min() +
+            (motors->get_pwm_output_max() - motors->get_pwm_output_min()) *
+                throttle_out;
+        SRV_Channels::set_output_pwm(SRV_Channel::k_throttleLeft, throttle_pwm);
+        SRV_Channels::set_output_pwm(SRV_Channel::k_throttleRight,
+                                     throttle_pwm);
+
+        // throttle output is not used by AP_Motors so might have different PWM
+        // range, set scaled
+        SRV_Channels::set_output_scaled(SRV_Channel::k_throttle,
+                                        throttle_out * 100.0);
+      } else {
         quadplane.motors_output(false);
+      }
     }
 
     // In full Q assist it is better to use copter I and zero plane
@@ -502,42 +540,6 @@ void Tailsitter::output(void)
     }
     if (yaw_lim || tilt_lim) {
         motors->limit.yaw = true;
-    }
-
-    // Boost throttle in case of severe pitch error
-    // For thrust vectored tailsitters, we want to boost throttle based on
-    // pitch
-
-    float throttle_in = motors->get_throttle();
-
-    float pitch_threshold_rad = 0.7854f;  // 45 deg
-    float boost_gain = 1.5f;
-    float boost_gain_max = 2.0f;
-
-    float current_abs_pitch_rad = fabsf(quadplane.ahrs.get_pitch());
-    float boost_factor = constrain_float(current_abs_pitch_rad * boost_gain,
-                                         0.0, boost_gain_max);
-
-    if (current_abs_pitch_rad > pitch_threshold_rad) {
-      // boost throttle if we are at high pitch
-      static float last_boost = 1.0f;
-      boost_factor = 0.95f * last_boost + 0.05f * boost_factor;
-      last_boost = boost_factor;
-
-      float throttle_out = throttle_in * boost_factor;
-
-      // apply PWM min and MAX to throttle left and right, just as via AP_Motors
-      uint16_t throttle_pwm =
-          motors->get_pwm_output_min() +
-          (motors->get_pwm_output_max() - motors->get_pwm_output_min()) *
-              throttle_out;
-      SRV_Channels::set_output_pwm(SRV_Channel::k_throttleLeft, throttle_pwm);
-      SRV_Channels::set_output_pwm(SRV_Channel::k_throttleRight, throttle_pwm);
-
-      // throttle output is not used by AP_Motors so might have different PWM
-      // range, set scaled
-      SRV_Channels::set_output_scaled(SRV_Channel::k_throttle,
-                                      throttle_out * 100.0);
     }
 }
 
