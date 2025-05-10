@@ -11,28 +11,32 @@ const AP_Param::GroupInfo AC_AttitudeControl_Multi::var_info[] = {
 
     // @Param: RAT_RLL_P
     // @DisplayName: Roll axis rate controller P gain
-    // @Description: Roll axis rate controller P gain.  Corrects in proportion to the difference between the desired roll rate vs actual roll rate
+    // @Description: Roll axis rate controller P gain.  Corrects in proportion
+    // to the difference between the desired roll rate vs actual roll rate
     // @Range: 0.01 0.5
     // @Increment: 0.005
     // @User: Standard
 
     // @Param: RAT_RLL_I
     // @DisplayName: Roll axis rate controller I gain
-    // @Description: Roll axis rate controller I gain.  Corrects long-term difference in desired roll rate vs actual roll rate
+    // @Description: Roll axis rate controller I gain.  Corrects long-term
+    // difference in desired roll rate vs actual roll rate
     // @Range: 0.01 2.0
     // @Increment: 0.01
     // @User: Standard
 
     // @Param: RAT_RLL_IMAX
     // @DisplayName: Roll axis rate controller I gain maximum
-    // @Description: Roll axis rate controller I gain maximum.  Constrains the maximum that the I term will output
+    // @Description: Roll axis rate controller I gain maximum.  Constrains the
+    // maximum that the I term will output
     // @Range: 0 1
     // @Increment: 0.01
     // @User: Standard
 
     // @Param: RAT_RLL_D
     // @DisplayName: Roll axis rate controller D gain
-    // @Description: Roll axis rate controller D gain.  Compensates for short-term change in desired roll rate vs actual roll rate
+    // @Description: Roll axis rate controller D gain.  Compensates for
+    // short-term change in desired roll rate vs actual roll rate
     // @Range: 0.0 0.05
     // @Increment: 0.001
     // @User: Standard
@@ -70,20 +74,29 @@ const AP_Param::GroupInfo AC_AttitudeControl_Multi::var_info[] = {
 
     // @Param: RAT_RLL_SMAX
     // @DisplayName: Roll slew rate limit
-    // @Description: Sets an upper limit on the slew rate produced by the combined P and D gains. If the amplitude of the control action produced by the rate feedback exceeds this value, then the D+P gain is reduced to respect the limit. This limits the amplitude of high frequency oscillations caused by an excessive gain. The limit should be set to no more than 25% of the actuators maximum slew rate to allow for load effects. Note: The gain will not be reduced to less than 10% of the nominal value. A value of zero will disable this feature.
+    // @Description: Sets an upper limit on the slew rate produced by the
+    // combined P and D gains. If the amplitude of the control action produced
+    // by the rate feedback exceeds this value, then the D+P gain is reduced to
+    // respect the limit. This limits the amplitude of high frequency
+    // oscillations caused by an excessive gain. The limit should be set to no
+    // more than 25% of the actuators maximum slew rate to allow for load
+    // effects. Note: The gain will not be reduced to less than 10% of the
+    // nominal value. A value of zero will disable this feature.
     // @Range: 0 200
     // @Increment: 0.5
     // @User: Advanced
 
     // @Param: RAT_RLL_PDMX
     // @DisplayName: Roll axis rate controller PD sum maximum
-    // @Description: Roll axis rate controller PD sum maximum.  The maximum/minimum value that the sum of the P and D term can output
+    // @Description: Roll axis rate controller PD sum maximum.  The
+    // maximum/minimum value that the sum of the P and D term can output
     // @Range: 0 1
     // @Increment: 0.01
 
     // @Param: RAT_RLL_D_FF
     // @DisplayName: Roll Derivative FeedForward Gain
-    // @Description: FF D Gain which produces an output that is proportional to the rate of change of the target
+    // @Description: FF D Gain which produces an output that is proportional to
+    // the rate of change of the target
     // @Range: 0 0.02
     // @Increment: 0.0001
     // @User: Advanced
@@ -100,32 +113,38 @@ const AP_Param::GroupInfo AC_AttitudeControl_Multi::var_info[] = {
     // @Range: 1 8
     // @User: Advanced
 
-    AP_SUBGROUPINFO(_pid_rate_roll, "RAT_RLL_", 1, AC_AttitudeControl_Multi, AC_PID),
+    AP_SUBGROUPINFO(_pid_rate_roll, "RAT_RLL_", 1, AC_AttitudeControl_Multi,
+                    AC_PID),
 
     // @Param: RAT_PIT_P
     // @DisplayName: Pitch axis rate controller P gain
-    // @Description: Pitch axis rate controller P gain.  Corrects in proportion to the difference between the desired pitch rate vs actual pitch rate output
+    // @Description: Pitch axis rate controller P gain.  Corrects in proportion
+    // to the difference between the desired pitch rate vs actual pitch rate
+    // output
     // @Range: 0.01 0.50
     // @Increment: 0.005
     // @User: Standard
 
     // @Param: RAT_PIT_I
     // @DisplayName: Pitch axis rate controller I gain
-    // @Description: Pitch axis rate controller I gain.  Corrects long-term difference in desired pitch rate vs actual pitch rate
+    // @Description: Pitch axis rate controller I gain.  Corrects long-term
+    // difference in desired pitch rate vs actual pitch rate
     // @Range: 0.01 2.0
     // @Increment: 0.01
     // @User: Standard
 
     // @Param: RAT_PIT_IMAX
     // @DisplayName: Pitch axis rate controller I gain maximum
-    // @Description: Pitch axis rate controller I gain maximum.  Constrains the maximum that the I term will output
+    // @Description: Pitch axis rate controller I gain maximum.  Constrains the
+    // maximum that the I term will output
     // @Range: 0 1
     // @Increment: 0.01
     // @User: Standard
 
     // @Param: RAT_PIT_D
     // @DisplayName: Pitch axis rate controller D gain
-    // @Description: Pitch axis rate controller D gain.  Compensates for short-term change in desired pitch rate vs actual pitch rate
+    // @Description: Pitch axis rate controller D gain.  Compensates for
+    // short-term change in desired pitch rate vs actual pitch rate
     // @Range: 0.0 0.05
     // @Increment: 0.001
     // @User: Standard
@@ -163,20 +182,29 @@ const AP_Param::GroupInfo AC_AttitudeControl_Multi::var_info[] = {
 
     // @Param: RAT_PIT_SMAX
     // @DisplayName: Pitch slew rate limit
-    // @Description: Sets an upper limit on the slew rate produced by the combined P and D gains. If the amplitude of the control action produced by the rate feedback exceeds this value, then the D+P gain is reduced to respect the limit. This limits the amplitude of high frequency oscillations caused by an excessive gain. The limit should be set to no more than 25% of the actuators maximum slew rate to allow for load effects. Note: The gain will not be reduced to less than 10% of the nominal value. A value of zero will disable this feature.
+    // @Description: Sets an upper limit on the slew rate produced by the
+    // combined P and D gains. If the amplitude of the control action produced
+    // by the rate feedback exceeds this value, then the D+P gain is reduced to
+    // respect the limit. This limits the amplitude of high frequency
+    // oscillations caused by an excessive gain. The limit should be set to no
+    // more than 25% of the actuators maximum slew rate to allow for load
+    // effects. Note: The gain will not be reduced to less than 10% of the
+    // nominal value. A value of zero will disable this feature.
     // @Range: 0 200
     // @Increment: 0.5
     // @User: Advanced
 
     // @Param: RAT_PIT_PDMX
     // @DisplayName: Pitch axis rate controller PD sum maximum
-    // @Description: Pitch axis rate controller PD sum maximum.  The maximum/minimum value that the sum of the P and D term can output
+    // @Description: Pitch axis rate controller PD sum maximum.  The
+    // maximum/minimum value that the sum of the P and D term can output
     // @Range: 0 1
     // @Increment: 0.01
 
     // @Param: RAT_PIT_D_FF
     // @DisplayName: Pitch Derivative FeedForward Gain
-    // @Description: FF D Gain which produces an output that is proportional to the rate of change of the target
+    // @Description: FF D Gain which produces an output that is proportional to
+    // the rate of change of the target
     // @Range: 0 0.02
     // @Increment: 0.0001
     // @User: Advanced
@@ -193,32 +221,37 @@ const AP_Param::GroupInfo AC_AttitudeControl_Multi::var_info[] = {
     // @Range: 1 8
     // @User: Advanced
 
-    AP_SUBGROUPINFO(_pid_rate_pitch, "RAT_PIT_", 2, AC_AttitudeControl_Multi, AC_PID),
+    AP_SUBGROUPINFO(_pid_rate_pitch, "RAT_PIT_", 2, AC_AttitudeControl_Multi,
+                    AC_PID),
 
     // @Param: RAT_YAW_P
     // @DisplayName: Yaw axis rate controller P gain
-    // @Description: Yaw axis rate controller P gain.  Corrects in proportion to the difference between the desired yaw rate vs actual yaw rate
+    // @Description: Yaw axis rate controller P gain.  Corrects in proportion to
+    // the difference between the desired yaw rate vs actual yaw rate
     // @Range: 0.10 2.50
     // @Increment: 0.005
     // @User: Standard
 
     // @Param: RAT_YAW_I
     // @DisplayName: Yaw axis rate controller I gain
-    // @Description: Yaw axis rate controller I gain.  Corrects long-term difference in desired yaw rate vs actual yaw rate
+    // @Description: Yaw axis rate controller I gain.  Corrects long-term
+    // difference in desired yaw rate vs actual yaw rate
     // @Range: 0.010 1.0
     // @Increment: 0.01
     // @User: Standard
 
     // @Param: RAT_YAW_IMAX
     // @DisplayName: Yaw axis rate controller I gain maximum
-    // @Description: Yaw axis rate controller I gain maximum.  Constrains the maximum that the I term will output
+    // @Description: Yaw axis rate controller I gain maximum.  Constrains the
+    // maximum that the I term will output
     // @Range: 0 1
     // @Increment: 0.01
     // @User: Standard
 
     // @Param: RAT_YAW_D
     // @DisplayName: Yaw axis rate controller D gain
-    // @Description: Yaw axis rate controller D gain.  Compensates for short-term change in desired yaw rate vs actual yaw rate
+    // @Description: Yaw axis rate controller D gain.  Compensates for
+    // short-term change in desired yaw rate vs actual yaw rate
     // @Range: 0.000 0.02
     // @Increment: 0.001
     // @User: Standard
@@ -256,20 +289,29 @@ const AP_Param::GroupInfo AC_AttitudeControl_Multi::var_info[] = {
 
     // @Param: RAT_YAW_SMAX
     // @DisplayName: Yaw slew rate limit
-    // @Description: Sets an upper limit on the slew rate produced by the combined P and D gains. If the amplitude of the control action produced by the rate feedback exceeds this value, then the D+P gain is reduced to respect the limit. This limits the amplitude of high frequency oscillations caused by an excessive gain. The limit should be set to no more than 25% of the actuators maximum slew rate to allow for load effects. Note: The gain will not be reduced to less than 10% of the nominal value. A value of zero will disable this feature.
+    // @Description: Sets an upper limit on the slew rate produced by the
+    // combined P and D gains. If the amplitude of the control action produced
+    // by the rate feedback exceeds this value, then the D+P gain is reduced to
+    // respect the limit. This limits the amplitude of high frequency
+    // oscillations caused by an excessive gain. The limit should be set to no
+    // more than 25% of the actuators maximum slew rate to allow for load
+    // effects. Note: The gain will not be reduced to less than 10% of the
+    // nominal value. A value of zero will disable this feature.
     // @Range: 0 200
     // @Increment: 0.5
     // @User: Advanced
 
     // @Param: RAT_YAW_PDMX
     // @DisplayName: Yaw axis rate controller PD sum maximum
-    // @Description: Yaw axis rate controller PD sum maximum.  The maximum/minimum value that the sum of the P and D term can output
+    // @Description: Yaw axis rate controller PD sum maximum.  The
+    // maximum/minimum value that the sum of the P and D term can output
     // @Range: 0 1
     // @Increment: 0.01
 
     // @Param: RAT_YAW_D_FF
     // @DisplayName: Yaw Derivative FeedForward Gain
-    // @Description: FF D Gain which produces an output that is proportional to the rate of change of the target
+    // @Description: FF D Gain which produces an output that is proportional to
+    // the rate of change of the target
     // @Range: 0 0.02
     // @Increment: 0.0001
     // @User: Advanced
@@ -287,38 +329,77 @@ const AP_Param::GroupInfo AC_AttitudeControl_Multi::var_info[] = {
     // @Range: 1 8
     // @User: Advanced
 
-    AP_SUBGROUPINFO(_pid_rate_yaw, "RAT_YAW_", 3, AC_AttitudeControl_Multi, AC_PID),
+    AP_SUBGROUPINFO(_pid_rate_yaw, "RAT_YAW_", 3, AC_AttitudeControl_Multi,
+                    AC_PID),
 
     // @Param: THR_MIX_MIN
     // @DisplayName: Throttle Mix Minimum
-    // @Description: Throttle vs attitude control prioritisation used when landing (higher values mean we prioritise attitude control over throttle)
+    // @Description: Throttle vs attitude control prioritisation used when
+    // landing (higher values mean we prioritise attitude control over throttle)
     // @Range: 0.1 0.25
     // @User: Advanced
-    AP_GROUPINFO("THR_MIX_MIN", 4, AC_AttitudeControl_Multi, _thr_mix_min, AC_ATTITUDE_CONTROL_MIN_DEFAULT),
+    AP_GROUPINFO("THR_MIX_MIN", 4, AC_AttitudeControl_Multi, _thr_mix_min,
+                 AC_ATTITUDE_CONTROL_MIN_DEFAULT),
 
     // @Param: THR_MIX_MAX
     // @DisplayName: Throttle Mix Maximum
-    // @Description: Throttle vs attitude control prioritisation used during active flight (higher values mean we prioritise attitude control over throttle)
+    // @Description: Throttle vs attitude control prioritisation used during
+    // active flight (higher values mean we prioritise attitude control over
+    // throttle)
     // @Range: 0.5 0.9
     // @User: Advanced
-    AP_GROUPINFO("THR_MIX_MAX", 5, AC_AttitudeControl_Multi, _thr_mix_max, AC_ATTITUDE_CONTROL_MAX_DEFAULT),
+    AP_GROUPINFO("THR_MIX_MAX", 5, AC_AttitudeControl_Multi, _thr_mix_max,
+                 AC_ATTITUDE_CONTROL_MAX_DEFAULT),
 
     // @Param: THR_MIX_MAN
     // @DisplayName: Throttle Mix Manual
-    // @Description: Throttle vs attitude control prioritisation used during manual flight (higher values mean we prioritise attitude control over throttle)
+    // @Description: Throttle vs attitude control prioritisation used during
+    // manual flight (higher values mean we prioritise attitude control over
+    // throttle)
     // @Range: 0.1 0.9
     // @User: Advanced
-    AP_GROUPINFO("THR_MIX_MAN", 6, AC_AttitudeControl_Multi, _thr_mix_man, AC_ATTITUDE_CONTROL_MAN_DEFAULT),
+    AP_GROUPINFO("THR_MIX_MAN", 6, AC_AttitudeControl_Multi, _thr_mix_man,
+                 AC_ATTITUDE_CONTROL_MAN_DEFAULT),
 
     // @Param: THR_G_BOOST
     // @DisplayName: Throttle-gain boost
-    // @Description: Throttle-gain boost ratio. A value of 0 means no boosting is applied, a value of 1 means full boosting is applied. Describes the ratio increase that is applied to angle P and PD on pitch and roll.
+    // @Description: Throttle-gain boost ratio. A value of 0 means no boosting
+    // is applied, a value of 1 means full boosting is applied. Describes the
+    // ratio increase that is applied to angle P and PD on pitch and roll.
     // @Range: 0 1
     // @User: Advanced
-    AP_GROUPINFO("THR_G_BOOST", 7, AC_AttitudeControl_Multi, _throttle_gain_boost, 0.0f),
+    AP_GROUPINFO("THR_G_BOOST", 7, AC_AttitudeControl_Multi,
+                 _throttle_gain_boost, 0.0f),
 
-    AP_GROUPEND
-};
+    // @Param: ANG_BST_PGN
+    // @DisplayName: Angle-boost pitch gain
+    // @Description: How much extra throttle to add per radian of pitch when
+    // angle-boost is on
+    // @Range: 0 2
+    // @Increment: 0.01)
+    // @User: Advanced
+    AP_GROUPINFO("ANG_BST_PGN", 8, AC_AttitudeControl_Multi, _angle_boost_pgain,
+                 0.1f),
+
+    // @Param: ANG_BST_PMX
+    // @DisplayName: Angle-boost pitch max
+    // @Description: Maximum extra throttle fraction added from pitch boost
+    // @Range: 0 2
+    // @Increment: 0.01
+    // @User: Advanced
+    AP_GROUPINFO("ANG_BST_PMX", 9, AC_AttitudeControl_Multi, _angle_boost_pmax,
+                 0.2f),
+
+    // @Param: ANG_BST_PIT
+    // @DisplayName: Angle-boost pitch angle
+    // @Description: Angle beyond which throttle boost is applied
+    // @Range: 0 85
+    // @Increment: 1
+    // @User: Advanced
+    AP_GROUPINFO("ANG_BST_PIT", 10, AC_AttitudeControl_Multi,
+                 _pitch_boost_angle, 0.2f),
+
+    AP_GROUPEND};
 
 AC_AttitudeControl_Multi::AC_AttitudeControl_Multi(AP_AHRS_View &ahrs, const AP_MultiCopter &aparm, AP_MotorsMulticopter& motors) :
     AC_AttitudeControl(ahrs, aparm, motors),
@@ -369,31 +450,6 @@ void AC_AttitudeControl_Multi::set_throttle_mix_max(float ratio)
     _throttle_rpy_mix_desired = (1.0f - ratio) * _thr_mix_min + ratio * _thr_mix_max;
 }
 
-// Below is the old code for get_throttle_boosted commented out
-
-// returns a throttle including compensation for roll/pitch angle
-// throttle value should be 0 ~ 1
-// float AC_AttitudeControl_Multi::get_throttle_boosted(float throttle_in)
-//{
-//    if (!_angle_boost_enabled) {
-//        _angle_boost = 0;
-//        return throttle_in;
-//    }
-// inverted_factor is 1 for tilt angles below 60 degrees
-// inverted_factor reduces from 1 to 0 for tilt angles between 60 and 90 degrees
-
-//    float cos_tilt = _ahrs.cos_pitch() * _ahrs.cos_roll();
-//    float inverted_factor = constrain_float(10.0f * cos_tilt, 0.0f, 1.0f);
-//    float cos_tilt_target = cosf(_thrust_angle);
-//    float boost_factor = 1.0f / constrain_float(cos_tilt_target, 0.1f, 1.0f);
-
-//    float throttle_out = throttle_in * inverted_factor * boost_factor;
-//    _angle_boost = constrain_float(throttle_out - throttle_in, -1.0f, 1.0f);
-//    return throttle_out;
-//}
-
-// Adding Chatgpt new code for boosting throttle as pitch angle increases
-
 float AC_AttitudeControl_Multi::get_throttle_boosted(float throttle_in)
 {
     if (!_angle_boost_enabled) {
@@ -401,12 +457,11 @@ float AC_AttitudeControl_Multi::get_throttle_boosted(float throttle_in)
         return throttle_in;
     }
 
-    float pitch_rad_a = atan2(_ahrs.sin_pitch(), _ahrs.cos_pitch());
-    float _angle_boost_pgain = 1.5f;
-    float _angle_boost_pmax = 2.0f;
+    float pitch_rad_a = _ahrs.pitch;
     float abs_pitch_rad = fabsf(pitch_rad_a);
+    float _boost_angle_rad = radians(_pitch_boost_angle);
 
-    if (abs_pitch_rad > 0.785398) {
+    if (abs_pitch_rad > _boost_angle_rad) {
       // existing tilt-based boost
       float cos_tilt = _ahrs.cos_pitch() * _ahrs.cos_roll();
       float inverted_factor = constrain_float(10.0f * cos_tilt, 0.0f, 1.0f);
@@ -415,28 +470,24 @@ float AC_AttitudeControl_Multi::get_throttle_boosted(float throttle_in)
 
       float throttle_tilt_boosted =
           throttle_in * inverted_factor * boost_factor;
-      // commenting out below line as it is not needed
-      // float tilt_boost = throttle_tilt_boosted - throttle_in;
 
       // new: pitch-angle proportional boost
-      // Commented out below line to use sin and cosine components for
-      // calculation of pitch angle float pitch_rad = _ahrs.get_pitch();  //
-      // positive nose-up
-      float pitch_rad = atan2(_ahrs.sin_pitch(), _ahrs.cos_pitch());
-      float pitch_boost = constrain_float(fabsf(pitch_rad) * _angle_boost_pgain,
-                                          0.0f, _angle_boost_pmax);
+
+      float pitch_boost =
+          constrain_float(abs_pitch_rad * _angle_boost_pgain.get(), 0.0f,
+                          _angle_boost_pmax.get());
+
+      // Apply boost with smoothing
+      static float last_boost = 1.0f;
+      pitch_boost = 0.95f * last_boost + 0.05f * pitch_boost;
+      last_boost = pitch_boost;
 
       // apply pitch boost as an additive fraction of full throttle
       float throttle_with_pitch_boost = throttle_tilt_boosted + pitch_boost;
       float throttle_out = throttle_with_pitch_boost;
-
-      // record total boost for logging
-      //_angle_boost = (throttle_with_pitch_boost - throttle_in);
-
       return throttle_out;
-    } else {
-      return throttle_in;
     }
+    return throttle_in;
 }
 
 // returns a throttle including compensation for roll/pitch angle

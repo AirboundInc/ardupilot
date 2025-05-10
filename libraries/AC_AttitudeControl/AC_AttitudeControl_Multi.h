@@ -149,4 +149,9 @@ protected:
 
     // angle_p/pd boost multiplier
     AP_Float              _throttle_gain_boost;
+
+    // angle boost parameters
+    AP_Float _angle_boost_pgain;
+    AP_Float _angle_boost_pmax;
+    AP_Float _pitch_boost_angle;
 };
