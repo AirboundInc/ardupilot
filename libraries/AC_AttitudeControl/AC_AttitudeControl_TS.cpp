@@ -124,3 +124,33 @@ void AC_AttitudeControl_TS::input_euler_rate_yaw_euler_angle_pitch_bf_roll(bool 
     // Compute the angular velocity target from the attitude error
     _ang_vel_body = update_ang_vel_target_from_att_error(att_error);
 }
+
+void AC_AttitudeControl_TS::rate_controller_run() {
+    // // boost angle_p/pd each cycle on high throttle slew
+    // update_throttle_gain_boost();
+
+    // // move throttle vs attitude mixing towards desired (called from here because this is conveniently called on every iteration)
+    // update_throttle_rpy_mix();
+
+    // _ang_vel_body += _sysid_ang_vel_body;
+
+    // Vector3f gyro_latest = _ahrs.get_gyro_latest();
+
+    // _motors.set_roll(get_rate_roll_pid().update_all(_ang_vel_body.x, gyro_latest.x,  _dt, _motors.limit.roll, _pd_scale.x) + _actuator_sysid.x);
+    // _motors.set_roll_ff(get_rate_roll_pid().get_ff());
+
+    // _motors.set_pitch(get_rate_pitch_pid().update_all(_ang_vel_body.y, gyro_latest.y,  _dt, _motors.limit.pitch, _pd_scale.y) + _actuator_sysid.y);
+    // _motors.set_pitch_ff(get_rate_pitch_pid().get_ff());
+
+    // _motors.set_yaw(get_rate_yaw_pid().update_all(_ang_vel_body.z, gyro_latest.z,  _dt, _motors.limit.yaw, _pd_scale.z) + _actuator_sysid.z);
+    // _motors.set_yaw_ff(get_rate_yaw_pid().get_ff()*_feedforward_scalar);
+
+    // _sysid_ang_vel_body.zero();
+    // _actuator_sysid.zero();
+
+    // _pd_scale_used = _pd_scale;
+    // _pd_scale = VECTORF_111;
+
+    // control_monitor_update();
+    // gcs().send_text(MAV_SEVERITY_INFO, "Running custom rate loop for tailsitters!!");
+}
