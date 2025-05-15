@@ -156,7 +156,15 @@ void AC_AttitudeControl_TS::rate_controller_run() {
 
     // control_monitor_update();
     // gcs().send_text(MAV_SEVERITY_INFO, "Running custom rate loop for tailsitters!!");
-    get_servo_min(4);
+
+    // Log/Run stuff at 1Hz
+    static uint32_t last_log_ms = 0;
+    uint32_t now = AP_HAL::millis();
+
+    if (now - last_log_ms >= 1000) {
+        last_log_ms = now;
+        get_servo_min(4);
+    }
 }
 
 float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
@@ -169,10 +177,36 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
 // Calculate thrust components using craft pitch and thrust vectoring angle
 float AC_AttitudeControl_TS::calculate_thrust(float rpm, float pitch, float tv_angle)
 {
-    // float theta_rad = pitch * DEG_TO_RAD;
-    // float phi_rad = tv_angle * DEG_TO_RAD;
+    // TODO: Limit inputs to sane values/check
 
-    return 0.0;
+    float theta_rad = pitch * DEG_TO_RAD;
+    float phi_rad = tv_angle * DEG_TO_RAD;
+
+    float thrust; // thrust from motor
+    float thrust_h; // horizontal component in global frame
+    float thrust_v; // vertical component in global frame
+    float thrust_p; // perpendicular component to body
+
+    double coeff_a = 6.369 * 10e-8;
+    double coeff_b = -2.724 * 10e-5;
+    double coeff_c = 0.007676;
+
+    thrust = coeff_a * rpm * rpm + coeff_b * rpm + coeff_c;
+    thrust *= GRAVITY_MSS;
+
+    thrust_h = thrust * sinf(theta_rad + phi_rad);
+    thrust_v = thrust * cosf(theta_rad + phi_rad);
+    thrust_p = thrust * sinf(phi_rad);
+
+    static uint32_t last_log_ms = 0;
+    uint32_t now = AP_HAL::millis();
+
+    if (now - last_log_ms >= 1000) {
+        last_log_ms = now;
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>>Thrust values (h,v,p): %f %f %f", thrust_h, thrust_v, thrust_p);
+    }
+
+    return thrust_p;
 }
 float AC_AttitudeControl_TS::pwm_to_angle(uint16_t pwm, uint16_t pwm_min, uint16_t pwm_max)
 {
@@ -184,7 +218,7 @@ uint16_t AC_AttitudeControl_TS::get_servo_min(uint8_t channel)
     char param_name[17];
     hal.util->snprintf(param_name, sizeof(param_name), "SERVO%u_MIN", channel);
 
-    float servo_min = get_param_value_by_name(param_name, 1000);
+    float servo_min = get_param_value_by_name(param_name, 845);
 
     return (uint16_t)servo_min;
 }
@@ -199,8 +233,6 @@ float AC_AttitudeControl_TS::get_param_value_by_name(char* param_name, float def
         value = default_value;
     }
 
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>>Got min servo value for (%s)", param_name);
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Value: (%f)", (float)value);
-
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>>Got value for %s: %f", param_name, (float)value);
     return value;
 }
