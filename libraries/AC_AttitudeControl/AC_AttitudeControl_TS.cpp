@@ -194,7 +194,8 @@ void AC_AttitudeControl_TS::update_wind_boost()
 float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
 {
     // get current thrust vectoring angle for left motor
-    float tv_pwm_left = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
+    uint16_t tv_pwm_left;
+    SRV_Channels::get_output_pwm(SRV_Channel::k_tiltMotorLeft, tv_pwm_left);
     uint16_t phi_min_pwm_left = get_servo_min(LEFT_SERVO_CHANNEL);
     uint16_t phi_max_pwm_left = get_servo_max(LEFT_SERVO_CHANNEL);
     float phi_left = pwm_to_angle(tv_pwm_left, phi_min_pwm_left, phi_max_pwm_left);
@@ -202,7 +203,8 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
     float thrust_p_left = calculate_thrust(rpm_left, pitch, phi_left);
 
     // get current thrust vectoring angle for right motor
-    float tv_pwm_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
+    uint16_t tv_pwm_right;
+    SRV_Channels::get_output_pwm(SRV_Channel::k_tiltMotorRight, tv_pwm_right);
     uint16_t phi_min_pwm_right = get_servo_min(RIGHT_SERVO_CHANNEL);
     uint16_t phi_max_pwm_right = get_servo_max(RIGHT_SERVO_CHANNEL);
     float phi_right = pwm_to_angle(tv_pwm_right, phi_min_pwm_right, phi_max_pwm_right);
@@ -231,6 +233,7 @@ float AC_AttitudeControl_TS::calculate_thrust(float rpm, float pitch, float tv_a
     float thrust_v; // vertical component in global frame
     float thrust_p; // perpendicular component to body
 
+    // generated via experimental mapping of rpm to thrust
     double coeff_a = 6.369 * 10e-8;
     double coeff_b = -2.724 * 10e-5;
     double coeff_c = 0.007676;
@@ -256,10 +259,12 @@ float AC_AttitudeControl_TS::calculate_thrust(float rpm, float pitch, float tv_a
 // Convert pwm to thrust vectoring angle in degrees
 float AC_AttitudeControl_TS::pwm_to_angle(uint16_t pwm, uint16_t pwm_min, uint16_t pwm_max)
 {
+    uint16_t error_delta = 250;
     // Check if the PWM value is within the valid range
-    if (pwm < pwm_min || pwm > pwm_max) {
+    if (pwm < pwm_min - error_delta || pwm > pwm_max + error_delta) {
         // Handle invalid input
         GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "PWM value out of range! (%f)", (float)pwm);
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "PWM min, max! (%f, %f)", (float)pwm_min, (float)pwm_max);
         return 0.0f; // Return a default value or handle error as needed
     }
 
@@ -295,10 +300,10 @@ float AC_AttitudeControl_TS::get_param_value_by_name(char* param_name, float def
 
     if (!AP_Param::get(param_name, value)) {
         // Return default if parameter not found
-        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Param read failed (%s)", param_name);
+        // GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Param read failed (%s)", param_name);
         value = default_value;
     }
 
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>>Got value for %s: %f", param_name, (float)value);
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>>Got value for %s: %f", param_name, (float)value);
     return value;
 }
