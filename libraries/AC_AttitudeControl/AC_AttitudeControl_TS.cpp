@@ -192,6 +192,7 @@ void AC_AttitudeControl_TS::update_wind_boost()
     static float last_boost = 0.0;
 
     _pitch_pid_boost_wind = 0.95 * last_boost + 0.05 * pitch_boost_wind;
+    last_boost = _pitch_pid_boost_wind;
 }
 
 // Calculate force of wind perpendicular to body while pitching
