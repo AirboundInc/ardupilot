@@ -167,11 +167,32 @@ void AC_AttitudeControl_TS::rate_controller_run() {
     }
 }
 
+// Calculate force of wind perpendicular to body while pitching
 float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
 {
-    float force_wind = 0.0; // Newtons
+    // get current thrust vectoring angle for left motor
+    float tv_pwm_left = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
+    uint16_t phi_min_pwm_left = get_servo_min(LEFT_SERVO_CHANNEL);
+    uint16_t phi_max_pwm_left = get_servo_max(LEFT_SERVO_CHANNEL);
+    float phi_left = pwm_to_angle(tv_pwm_left, phi_min_pwm_left, phi_max_pwm_left);
+    float rpm_left = _telem.get_average_motor_rpm(SRV_Channel::k_throttleLeft);
+    float thrust_p_left = calculate_thrust(rpm_left, pitch, phi_left);
 
-    return force_wind;
+    // get current thrust vectoring angle for right motor
+    float tv_pwm_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
+    uint16_t phi_min_pwm_right = get_servo_min(RIGHT_SERVO_CHANNEL);
+    uint16_t phi_max_pwm_right = get_servo_max(RIGHT_SERVO_CHANNEL);
+    float phi_right = pwm_to_angle(tv_pwm_right, phi_min_pwm_right, phi_max_pwm_right);
+    float rpm_right = _telem.get_average_motor_rpm(SRV_Channel::k_throttleRight);
+    float thrust_p_right = calculate_thrust(rpm_right, pitch, phi_right);
+
+    float total_thrust_perpendicular = thrust_p_left + thrust_p_right;
+
+    float accel_z = _ahrs.get_accel_ef().z;
+    float force_net_perpendicular = accel_z * CRAFT_MASS_KG;
+    float force_wind_perpendicular = force_net_perpendicular - total_thrust_perpendicular; // Newtons
+
+    return force_wind_perpendicular;
 }
 
 // Calculate thrust components using craft pitch and thrust vectoring angle
@@ -233,6 +254,16 @@ uint16_t AC_AttitudeControl_TS::get_servo_min(uint8_t channel)
     float servo_min = get_param_value_by_name(param_name, 845);
 
     return (uint16_t)servo_min;
+}
+
+uint16_t AC_AttitudeControl_TS::get_servo_max(uint8_t channel)
+{
+    char param_name[17];
+    hal.util->snprintf(param_name, sizeof(param_name), "SERVO%u_MAX", channel);
+
+    float servo_max = get_param_value_by_name(param_name, 2145);
+
+    return (uint16_t)servo_max;
 }
 
 float AC_AttitudeControl_TS::get_param_value_by_name(char* param_name, float default_value)

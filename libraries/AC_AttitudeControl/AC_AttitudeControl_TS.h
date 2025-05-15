@@ -4,11 +4,14 @@
 /// @brief   ArduCopter attitude control library
 
 #include "AC_AttitudeControl_Multi.h"
+#include <AP_ESC_Telem/AP_ESC_Telem.h>
 
 // TODO: Turn into params
 const float CRAFT_MASS_KG = 1.3;
 const float VECTORING_MIN_ANGLE_DEG = -45.0;
 const float VECTORING_MAX_ANGLE_DEG = 45.0;
+
+const uint8_t LEFT_SERVO_CHANNEL = 14, RIGHT_SERVO_CHANNEL = 4;
 
 class AC_AttitudeControl_TS : public AC_AttitudeControl_Multi
 {
@@ -32,6 +35,10 @@ public:
 
     // Helper methods
     uint16_t get_servo_min(uint8_t channel);
+    uint16_t get_servo_max(uint8_t channel);
     float get_param_value_by_name(char *param_name, float default_value);
     float pwm_to_angle(uint16_t pwm, uint16_t pwm_min, uint16_t pwm_max);
+
+private:
+    AP_ESC_Telem& _telem = AP::esc_telem();
 };
