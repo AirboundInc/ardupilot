@@ -208,9 +208,21 @@ float AC_AttitudeControl_TS::calculate_thrust(float rpm, float pitch, float tv_a
 
     return thrust_p;
 }
+
+// Convert pwm to thrust vectoring angle in degrees
 float AC_AttitudeControl_TS::pwm_to_angle(uint16_t pwm, uint16_t pwm_min, uint16_t pwm_max)
 {
-    return 0.0;
+    // Check if the PWM value is within the valid range
+    if (pwm < pwm_min || pwm > pwm_max) {
+        // Handle invalid input
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "PWM value out of range! (%f)", (float)pwm);
+        return 0.0f; // Return a default value or handle error as needed
+    }
+
+    // TODO: Update to analytical curve based mapping once not for SITL
+    float tv_angle = (pwm - pwm_min) * (VECTORING_MAX_ANGLE_DEG - VECTORING_MIN_ANGLE_DEG) / (pwm_max - pwm_min) + VECTORING_MIN_ANGLE_DEG;
+
+    return tv_angle;
 }
 
 uint16_t AC_AttitudeControl_TS::get_servo_min(uint8_t channel)
