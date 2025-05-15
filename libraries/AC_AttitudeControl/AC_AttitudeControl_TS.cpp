@@ -167,6 +167,25 @@ void AC_AttitudeControl_TS::rate_controller_run() {
     }
 }
 
+void AC_AttitudeControl_TS::update_wind_boost()
+{
+    float theta = _ahrs.pitch_sensor * 0.01f; // centidegrees to degrees
+    float wind_force_p = calculate_wind_force(theta);
+
+    float moment_wind = wind_force_p * (CS_CRAFT_M - CG_CRAFT_M);
+    float phi_max_rad = DEG_TO_RAD * VECTORING_MAX_ANGLE_DEG;
+
+    // Assuming hover thrust to be same as craft mass
+    float thrust_hover = CRAFT_MASS_KG;
+    float thrust_p_max = thrust_hover * sinf(phi_max_rad);
+
+    float pitch_boost_wind = -moment_wind / ((CG_CRAFT_M - MOTOR_POS_M) * thrust_p_max);
+
+    static float last_boost = 0.0;
+
+    _pitch_pid_boost_wind = 0.95 * last_boost + 0.05 * pitch_boost_wind;
+}
+
 // Calculate force of wind perpendicular to body while pitching
 float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
 {

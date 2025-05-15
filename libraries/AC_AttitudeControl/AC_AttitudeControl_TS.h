@@ -8,6 +8,9 @@
 
 // TODO: Turn into params
 const float CRAFT_MASS_KG = 1.3;
+const float CG_CRAFT_M = 0.225; // Center of Gravity of the drone in m. Measured as distance to nosetip along chord axis
+const float CS_CRAFT_M = 0.250; // Center of Surface area of the drone in m. Where the point vector of wind acts on. Measured from distance to nosetip along chord axis.
+const float MOTOR_POS_M = 0.100; // Position of the motor in m. Measured from distance to nosetip along chord axis with motor at neutral position (Phi=0)
 const float VECTORING_MIN_ANGLE_DEG = -45.0;
 const float VECTORING_MAX_ANGLE_DEG = 45.0;
 
@@ -30,8 +33,9 @@ public:
     virtual void rate_controller_run() override;
 
     // wind force boost methods
-    float calculate_thrust(float rpm, float pitch, float tv_angle);
+    void update_wind_boost();
     float calculate_wind_force(float pitch);
+    float calculate_thrust(float rpm, float pitch, float tv_angle);
 
     // Helper methods
     uint16_t get_servo_min(uint8_t channel);
@@ -41,4 +45,5 @@ public:
 
 private:
     AP_ESC_Telem& _telem = AP::esc_telem();
+    float _pitch_pid_boost_wind = 0.0;
 };
