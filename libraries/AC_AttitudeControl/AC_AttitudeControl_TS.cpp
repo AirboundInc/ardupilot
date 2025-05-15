@@ -180,8 +180,12 @@ void AC_AttitudeControl_TS::update_wind_boost()
     float phi_max_rad = DEG_TO_RAD * VECTORING_MAX_ANGLE_DEG;
 
     // Assuming hover thrust to be same as craft mass
-    float thrust_hover = CRAFT_MASS_KG;
+    float thrust_hover = CRAFT_MASS_KG * GRAVITY_MSS;
     float thrust_p_max = thrust_hover * sinf(phi_max_rad);
+
+    // -moment_wind / ((CG_CRAFT_M - MOTOR_POS_M) converts the countermoment demanded
+    // to the perpendicular thrust required from the system.
+    // In the conversion from perpendicular thrust to PID out, we need to multiply the term by 1/(thrust_p_max)
 
     float pitch_boost_wind = -moment_wind / ((CG_CRAFT_M - MOTOR_POS_M) * thrust_p_max);
 
