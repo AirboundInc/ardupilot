@@ -162,12 +162,11 @@ void AC_AttitudeControl_TS::rate_controller_run() {
     control_monitor_update();
 
     // Log/Run stuff at 1Hz
-    static uint32_t last_log_ms = 0;
     uint32_t now = AP_HAL::millis();
 
-    if (now - last_log_ms >= 1000) {
+    if (now - last_log_ms >= LOGGING_INTERVAL_MS) {
         last_log_ms = now;
-        get_servo_min(4);
+        // TODO: call main write block logging method here
     }
 }
 
@@ -200,23 +199,33 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
 {
     // get current thrust vectoring angle for left motor
     uint16_t tv_pwm_left;
-    SRV_Channels::get_output_pwm(SRV_Channel::k_tiltMotorLeft, tv_pwm_left);
+    bool success = SRV_Channels::get_output_pwm(SRV_Channel::k_tiltMotorLeft, tv_pwm_left);
+    if (!success) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output PWM for tilt motor left");
+        return 0.0;
+    }
+
     uint16_t phi_min_pwm_left = get_servo_min(LEFT_SERVO_CHANNEL);
     uint16_t phi_max_pwm_left = get_servo_max(LEFT_SERVO_CHANNEL);
     float phi_left = pwm_to_angle(tv_pwm_left, phi_min_pwm_left, phi_max_pwm_left);
     float rpm_left = _telem.get_average_motor_rpm(SRV_Channel::k_throttleLeft);
-    float thrust_p_left = calculate_thrust(rpm_left, pitch, phi_left);
+    thrust_left = calculate_thrust(rpm_left, pitch, phi_left);
 
     // get current thrust vectoring angle for right motor
     uint16_t tv_pwm_right;
-    SRV_Channels::get_output_pwm(SRV_Channel::k_tiltMotorRight, tv_pwm_right);
+    success = SRV_Channels::get_output_pwm(SRV_Channel::k_tiltMotorRight, tv_pwm_right);
+    if (!success) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output PWM for tilt motor right");
+        return 0.0;
+    }
     uint16_t phi_min_pwm_right = get_servo_min(RIGHT_SERVO_CHANNEL);
     uint16_t phi_max_pwm_right = get_servo_max(RIGHT_SERVO_CHANNEL);
     float phi_right = pwm_to_angle(tv_pwm_right, phi_min_pwm_right, phi_max_pwm_right);
     float rpm_right = _telem.get_average_motor_rpm(SRV_Channel::k_throttleRight);
-    float thrust_p_right = calculate_thrust(rpm_right, pitch, phi_right);
+    thrust_right = calculate_thrust(rpm_right, pitch, phi_right);
 
-    float total_thrust_perpendicular = thrust_p_left + thrust_p_right;
+    float total_thrust_perpendicular
+        = thrust_left.perpendicular + thrust_right.perpendicular;
 
     float accel_z = _ahrs.get_accel_ef().z;
     float force_net_perpendicular = accel_z * CRAFT_MASS_KG;
@@ -226,39 +235,28 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
 }
 
 // Calculate thrust components using craft pitch and thrust vectoring angle
-float AC_AttitudeControl_TS::calculate_thrust(float rpm, float pitch, float tv_angle)
+AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rpm, float pitch, float tv_angle)
 {
     // TODO: Limit inputs to sane values/check
 
+    thrust_t result;
+
     float theta_rad = pitch * DEG_TO_RAD;
     float phi_rad = tv_angle * DEG_TO_RAD;
-
-    float thrust; // thrust from motor
-    float thrust_h; // horizontal component in global frame
-    float thrust_v; // vertical component in global frame
-    float thrust_p; // perpendicular component to body
 
     // generated via experimental mapping of rpm to thrust
     double coeff_a = 6.369 * 10e-8;
     double coeff_b = -2.724 * 10e-5;
     double coeff_c = 0.007676;
 
-    thrust = coeff_a * rpm * rpm + coeff_b * rpm + coeff_c;
-    thrust *= GRAVITY_MSS;
+    result.thrust = coeff_a * rpm * rpm + coeff_b * rpm + coeff_c;
+    result.thrust *= GRAVITY_MSS;
 
-    thrust_h = thrust * sinf(theta_rad + phi_rad);
-    thrust_v = thrust * cosf(theta_rad + phi_rad);
-    thrust_p = thrust * sinf(phi_rad);
+    result.horizontal = result.thrust * sinf(theta_rad + phi_rad);
+    result.vertical = result.thrust * cosf(theta_rad + phi_rad);
+    result.perpendicular = result.thrust * sinf(phi_rad);
 
-    static uint32_t last_log_ms = 0;
-    uint32_t now = AP_HAL::millis();
-
-    if (now - last_log_ms >= 1000) {
-        last_log_ms = now;
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>>Thrust values (h,v,p): %f %f %f", thrust_h, thrust_v, thrust_p);
-    }
-
-    return thrust_p;
+    return result;
 }
 
 // Convert pwm to thrust vectoring angle in degrees

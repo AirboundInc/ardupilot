@@ -16,6 +16,8 @@ const float VECTORING_MAX_ANGLE_DEG = 45.0;
 
 const uint8_t LEFT_SERVO_CHANNEL = 14, RIGHT_SERVO_CHANNEL = 4;
 
+const uint32_t LOGGING_INTERVAL_MS = 40; // 25Hz
+
 class AC_AttitudeControl_TS : public AC_AttitudeControl_Multi
 {
 public:
@@ -32,18 +34,28 @@ public:
     // run custom rate loop for tailsitters
     virtual void rate_controller_run() override;
 
+private:
+    AP_ESC_Telem& _telem = AP::esc_telem();
+    float _pitch_pid_boost_wind = 0.0;
+    uint32_t last_log_ms = 0;
+
+    struct thrust_t {
+        float thrust;
+        float horizontal;
+        float vertical;
+        float perpendicular;
+    };
+
+    thrust_t thrust_left, thrust_right;
+
     // wind force boost methods
     void update_wind_boost();
     float calculate_wind_force(float pitch);
-    float calculate_thrust(float rpm, float pitch, float tv_angle);
+    thrust_t calculate_thrust(float rpm, float pitch, float tv_angle);
 
     // Helper methods
     uint16_t get_servo_min(uint8_t channel);
     uint16_t get_servo_max(uint8_t channel);
     float get_param_value_by_name(char *param_name, float default_value);
     float pwm_to_angle(uint16_t pwm, uint16_t pwm_min, uint16_t pwm_max);
-
-private:
-    AP_ESC_Telem& _telem = AP::esc_telem();
-    float _pitch_pid_boost_wind = 0.0;
 };
