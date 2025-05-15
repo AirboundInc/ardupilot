@@ -18,6 +18,9 @@
    2) a relax_attitude_controller method needed for coping with vectored tailsitters
  */
 #include "AC_AttitudeControl_TS.h"
+#include <GCS_MAVLink/GCS.h>
+
+extern const AP_HAL::HAL& hal;
 
 void AC_AttitudeControl_TS::relax_attitude_controllers(bool exclude_pitch)
 {
@@ -153,4 +156,51 @@ void AC_AttitudeControl_TS::rate_controller_run() {
 
     // control_monitor_update();
     // gcs().send_text(MAV_SEVERITY_INFO, "Running custom rate loop for tailsitters!!");
+    get_servo_min(4);
+}
+
+float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
+{
+    float force_wind = 0.0; // Newtons
+
+    return force_wind;
+}
+
+// Calculate thrust components using craft pitch and thrust vectoring angle
+float AC_AttitudeControl_TS::calculate_thrust(float rpm, float pitch, float tv_angle)
+{
+    // float theta_rad = pitch * DEG_TO_RAD;
+    // float phi_rad = tv_angle * DEG_TO_RAD;
+
+    return 0.0;
+}
+float AC_AttitudeControl_TS::pwm_to_angle(uint16_t pwm, uint16_t pwm_min, uint16_t pwm_max)
+{
+    return 0.0;
+}
+
+uint16_t AC_AttitudeControl_TS::get_servo_min(uint8_t channel)
+{
+    char param_name[17];
+    hal.util->snprintf(param_name, sizeof(param_name), "SERVO%u_MIN", channel);
+
+    float servo_min = get_param_value_by_name(param_name, 1000);
+
+    return (uint16_t)servo_min;
+}
+
+float AC_AttitudeControl_TS::get_param_value_by_name(char* param_name, float default_value)
+{
+    float value;
+
+    if (!AP_Param::get(param_name, value)) {
+        // Return default if parameter not found
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Param read failed (%s)", param_name);
+        value = default_value;
+    }
+
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>>Got min servo value for (%s)", param_name);
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Value: (%f)", (float)value);
+
+    return value;
 }
