@@ -30,10 +30,20 @@ struct PACKED log_AttControlTS {
     uint64_t time_us;
     float filt_acc_z;
     float f_net_p;
-    
-
+    float f_wind_p;
+    float phi_left;
+    float phi_right;
+    float thrust_right;
+    float thrust_right_h;
+    float thrust_right_v;
+    float thrust_right_p;
+    float thrust_left;
+    float thrust_left_h;
+    float thrust_left_v;
+    float thrust_left_p;
+    float pitch_pid_boost_wind;
 };
 
-#define LOG_STRUCTURE_FROM_ATT_CONTROL                                     \
-    { LOG_ATT_CONTROL_TS_MSG, sizeof(log_Windforce),                           \
-      "ACTS",    "QBBfffffffIIB",    "TimeUS,Heal,TAcq,pX,pY,vX,vY,mX,mY,mZ,LastMeasMS,EKFOutl,Est", "s--mmnnmmms--","F--BBBBBBBC--" , true },
+#define LOG_STRUCTURE_FROM_ATT_CONTROL                  \
+    { LOG_ATT_CONTROL_TS_MSG, sizeof(log_AttControlTS), \
+        "ACTS", "Qffffffffffffff", "TimeUS,FiltAccZ,FnetP,FwindP,PhiLeft,PhiRight,ThrustRight,ThrustRightH,ThrustRightP,ThrustLeft,ThrustLeftH,ThrustLeftV,ThrustLeftP,PitchPIDBoostWind", "soNNddNNNNNNNN-", "F--------------", true },
