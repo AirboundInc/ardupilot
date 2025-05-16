@@ -63,4 +63,5 @@ private:
 
     thrust_t thrust_left, thrust_right;
     float accel_z, force_net_perpendicular, force_wind_perpendicular;
+    float phi_left, phi_right; // thrust vectoring angles of each tilt servo
 };
