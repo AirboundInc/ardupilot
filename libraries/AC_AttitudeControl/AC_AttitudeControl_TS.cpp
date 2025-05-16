@@ -262,6 +262,7 @@ AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rp
 // Convert pwm to thrust vectoring angle in degrees
 float AC_AttitudeControl_TS::pwm_to_angle(uint16_t pwm, uint16_t pwm_min, uint16_t pwm_max)
 {
+    // TODO: If pwm < pwm_min - delta, set pwm to pwm_min and also for max
     uint16_t error_delta = 250;
     // Check if the PWM value is within the valid range
     if (pwm < pwm_min - error_delta || pwm > pwm_max + error_delta) {
