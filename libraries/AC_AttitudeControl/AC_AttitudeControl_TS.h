@@ -36,18 +36,12 @@ public:
     virtual void rate_controller_run() override;
 
 private:
-    AP_ESC_Telem& _telem = AP::esc_telem();
-    float _pitch_pid_boost_wind = 0.0;
-    uint32_t last_log_ms = 0;
-
     struct thrust_t {
         float thrust;
         float horizontal;
         float vertical;
         float perpendicular;
     };
-
-    thrust_t thrust_left, thrust_right;
 
     // wind force boost methods
     void update_wind_boost();
@@ -60,5 +54,13 @@ private:
     float get_param_value_by_name(char *param_name, float default_value);
     float pwm_to_angle(uint16_t pwm, uint16_t pwm_min, uint16_t pwm_max);
 
-    void write_AttControlTS_log(float accel_z, float f_net_p);
+    void write_AttControlTS_log();
+
+    AP_ESC_Telem& _telem = AP::esc_telem();
+    uint32_t last_log_ms = 0;
+
+    float _pitch_pid_boost_wind = 0.0;
+
+    thrust_t thrust_left, thrust_right;
+    float accel_z, force_net_perpendicular, force_wind_perpendicular;
 };

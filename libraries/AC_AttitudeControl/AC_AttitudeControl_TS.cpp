@@ -166,7 +166,7 @@ void AC_AttitudeControl_TS::rate_controller_run() {
 
     if (now - last_log_ms >= LOGGING_INTERVAL_MS) {
         last_log_ms = now;
-        // TODO: call main write block logging method here
+        write_AttControlTS_log();
     }
 }
 
@@ -227,11 +227,9 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
     float total_thrust_perpendicular
         = thrust_left.perpendicular + thrust_right.perpendicular;
 
-    float accel_z = _ahrs.get_accel_ef().z;
-    float force_net_perpendicular = accel_z * CRAFT_MASS_KG;
-    float force_wind_perpendicular = force_net_perpendicular - total_thrust_perpendicular; // Newtons
-
-    write_AttControlTS_log(accel_z, force_net_perpendicular);
+    accel_z = _ahrs.get_accel_ef().z;
+    force_net_perpendicular = accel_z * CRAFT_MASS_KG;
+    force_wind_perpendicular = force_net_perpendicular - total_thrust_perpendicular; // Newtons
 
     return force_wind_perpendicular;
 }
@@ -314,13 +312,14 @@ float AC_AttitudeControl_TS::get_param_value_by_name(char* param_name, float def
     return value;
 }
 
-void AC_AttitudeControl_TS::write_AttControlTS_log(float accel_z, float f_net_p)
+void AC_AttitudeControl_TS::write_AttControlTS_log()
 {
     const struct log_AttControlTS pkt {
         LOG_PACKET_HEADER_INIT(LOG_ATT_CONTROL_TS_MSG),
         time_us : AP_HAL::micros64(),
         filt_acc_z : accel_z,
-        f_net_p : f_net_p
+        f_net_p : force_net_perpendicular,
+        f_wind_p : force_wind_perpendicular
     };
     AP::logger().WriteBlock(&pkt, sizeof(pkt));
 }
