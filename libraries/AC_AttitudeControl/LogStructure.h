@@ -47,8 +47,9 @@ struct PACKED log_AttControlTS {
     LOG_PACKET_HEADER;
     uint64_t time_us;
     float filt_acc_z;
+    float f_net_p;
 };
 
 #define LOG_STRUCTURE_FROM_ATTC                         \
     { LOG_ATT_CONTROL_TS_MSG, sizeof(log_AttControlTS), \
-        "ACTS", "Qf", "TimeUS,FiltAccZ", "so", "F-", true },
+        "ACTS", "Qff", "TimeUS,FiltAccZ,FnetP", "soN", "F--", true },
