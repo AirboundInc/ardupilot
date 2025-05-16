@@ -51,8 +51,13 @@ struct PACKED log_AttControlTS {
     float f_wind_p;
     float phi_left;
     float phi_right;
+
+    float thrust_right;
+    float thrust_right_h;
+    float thrust_right_v;
+    float thrust_right_p;
 };
 
 #define LOG_STRUCTURE_FROM_ATTC                         \
     { LOG_ATT_CONTROL_TS_MSG, sizeof(log_AttControlTS), \
-        "ACTS", "Qfffff", "TimeUS,FiltAccZ,FnetP,FwindP,PhiLeft,PhiRight", "soNNdd", "F-----", true },
+        "ACTS", "Qfffffffff", "TimeUS,FiltAccZ,FnetP,FwindP,PhiLeft,PhiRight,ThrustRight,ThrustRightH,ThrustRightV,ThrustRightP", "soNNddNNNN", "F---------", true },
