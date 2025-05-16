@@ -43,10 +43,6 @@
 //     float pitch_pid_boost_wind;
 // };
 
-// #define LOG_STRUCTURE_FROM_ATTC                         \
-//     { LOG_ATT_CONTROL_TS_MSG, sizeof(log_AttControlTS), \
-//         "ACTS", "Qffffffffffffff", "TimeUS,FiltAccZ,FnetP,FwindP,PhiLeft,PhiRight,ThrustRight,ThrustRightH,ThrustRightV,ThrustRightP,ThrustLeft,ThrustLeftH,ThrustLeftV,ThrustLeftP,PitchPIDBoostWind", "soNNddNNNNNNNN-", "F--------------", true },
-
 struct PACKED log_AttControlTS {
     LOG_PACKET_HEADER;
     uint64_t time_us;

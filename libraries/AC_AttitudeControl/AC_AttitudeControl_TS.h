@@ -5,6 +5,7 @@
 
 #include "AC_AttitudeControl_Multi.h"
 #include <AP_ESC_Telem/AP_ESC_Telem.h>
+#include <AP_Logger/AP_Logger.h>
 
 // TODO: Turn into params
 const float CRAFT_MASS_KG = 1.3;
@@ -59,5 +60,5 @@ private:
     float get_param_value_by_name(char *param_name, float default_value);
     float pwm_to_angle(uint16_t pwm, uint16_t pwm_min, uint16_t pwm_max);
 
-    void Write_AttControlTS();
+    void write_AttControlTS_log(float accel_z);
 };
