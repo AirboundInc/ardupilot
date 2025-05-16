@@ -49,8 +49,10 @@ struct PACKED log_AttControlTS {
     float filt_acc_z;
     float f_net_p;
     float f_wind_p;
+    float phi_left;
+    float phi_right;
 };
 
 #define LOG_STRUCTURE_FROM_ATTC                         \
     { LOG_ATT_CONTROL_TS_MSG, sizeof(log_AttControlTS), \
-        "ACTS", "Qfff", "TimeUS,FiltAccZ,FnetP,FwindP", "soNN", "F---", true },
+        "ACTS", "Qfffff", "TimeUS,FiltAccZ,FnetP,FwindP,PhiLeft,PhiRight", "soNNdd", "F-----", true },
