@@ -231,6 +231,8 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
     float force_net_perpendicular = accel_z * CRAFT_MASS_KG;
     float force_wind_perpendicular = force_net_perpendicular - total_thrust_perpendicular; // Newtons
 
+    write_AttControlTS_log(accel_z);
+
     return force_wind_perpendicular;
 }
 
@@ -310,4 +312,14 @@ float AC_AttitudeControl_TS::get_param_value_by_name(char* param_name, float def
 
     // GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>>Got value for %s: %f", param_name, (float)value);
     return value;
+}
+
+void AC_AttitudeControl_TS::write_AttControlTS_log(float accel_z)
+{
+    const struct log_AttControlTS pkt {
+        LOG_PACKET_HEADER_INIT(LOG_ATT_CONTROL_TS_MSG),
+        time_us : AP_HAL::micros64(),
+        filt_acc_z : accel_z
+    };
+    AP::logger().WriteBlock(&pkt, sizeof(pkt));
 }
