@@ -60,5 +60,5 @@ private:
     float get_param_value_by_name(char *param_name, float default_value);
     float pwm_to_angle(uint16_t pwm, uint16_t pwm_min, uint16_t pwm_max);
 
-    void write_AttControlTS_log(float accel_z);
+    void write_AttControlTS_log(float accel_z, float f_net_p);
 };
