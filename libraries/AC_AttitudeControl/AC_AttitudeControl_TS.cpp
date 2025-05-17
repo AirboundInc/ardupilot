@@ -323,9 +323,9 @@ void AC_AttitudeControl_TS::write_AttControlTS_log()
         phi_left : phi_left,
         phi_right : phi_right,
         thrust_right : thrust_right.thrust,
-        thrust_right_h : thrust_right.horizontal,
-        thrust_right_v : thrust_right.vertical,
-        thrust_right_p : thrust_right.perpendicular,
+        // thrust_right_h : thrust_right.horizontal,
+        // thrust_right_v : thrust_right.vertical,
+        // thrust_right_p : thrust_right.perpendicular,
     };
     AP::logger().WriteBlock(&pkt, sizeof(pkt));
 }
