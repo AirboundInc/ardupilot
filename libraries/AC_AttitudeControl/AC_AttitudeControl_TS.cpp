@@ -166,7 +166,8 @@ void AC_AttitudeControl_TS::rate_controller_run() {
 
     if (now - last_log_ms >= LOGGING_INTERVAL_MS) {
         last_log_ms = now;
-        write_AttControlTS_log();
+        log_write_ACTS0();
+        log_write_ACTS1();
     }
 }
 
@@ -312,10 +313,10 @@ float AC_AttitudeControl_TS::get_param_value_by_name(char* param_name, float def
     return value;
 }
 
-void AC_AttitudeControl_TS::write_AttControlTS_log()
+void AC_AttitudeControl_TS::log_write_ACTS0()
 {
-    const struct log_AttControlTS pkt {
-        LOG_PACKET_HEADER_INIT(LOG_ATT_CONTROL_TS_MSG),
+    const struct log_ACTS0 pkt {
+        LOG_PACKET_HEADER_INIT(LOG_ACTS0_MSG),
         time_us : AP_HAL::micros64(),
         filt_acc_z : accel_z,
         f_net_p : force_net_perpendicular,
@@ -323,10 +324,23 @@ void AC_AttitudeControl_TS::write_AttControlTS_log()
         phi_left : phi_left,
         phi_right : phi_right,
         pitch_pid_boost_wind : _pitch_pid_boost_wind,
-        // thrust_right : thrust_right.thrust,
-        // thrust_right_h : thrust_right.horizontal,
-        // thrust_right_v : thrust_right.vertical,
-        // thrust_right_p : thrust_right.perpendicular,
     };
     AP::logger().WriteBlock(&pkt, sizeof(pkt));
+}
+
+void AC_AttitudeControl_TS::log_write_ACTS1()
+{
+    const struct log_ACTS1 pkt2 {
+        LOG_PACKET_HEADER_INIT(LOG_ACTS1_MSG),
+        time_us : AP_HAL::micros64(),
+        thrust_left : thrust_left.thrust,
+        thrust_left_h : thrust_left.horizontal,
+        thrust_left_v : thrust_left.vertical,
+        thrust_left_p : thrust_left.perpendicular,
+        thrust_right : thrust_right.thrust,
+        thrust_right_h : thrust_right.horizontal,
+        thrust_right_v : thrust_right.vertical,
+        thrust_right_p : thrust_right.perpendicular,
+    };
+    AP::logger().WriteBlock(&pkt2, sizeof(pkt2));
 }

@@ -54,7 +54,8 @@ private:
     float get_param_value_by_name(char *param_name, float default_value);
     float pwm_to_angle(uint16_t pwm, uint16_t pwm_min, uint16_t pwm_max);
 
-    void write_AttControlTS_log();
+    void log_write_ACTS0();
+    void log_write_ACTS1();
 
     AP_ESC_Telem& _telem = AP::esc_telem();
     uint32_t last_log_ms = 0;
