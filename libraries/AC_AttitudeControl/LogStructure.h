@@ -23,6 +23,8 @@ struct PACKED log_ACTS0 {
     float f_wind_p;
     float phi_left;
     float phi_right;
+    float rpm_left;
+    float rpm_right;
     float pitch_pid_boost_wind;
 };
 
@@ -52,8 +54,8 @@ struct PACKED log_ACTS1 {
     float thrust_right_p;
 };
 
-#define LOG_STRUCTURE_FROM_ATTC                                                                                    \
-    { LOG_ACTS0_MSG, sizeof(log_ACTS0),                                                                            \
-        "ATS0", "Qffffff", "TimeUS,FiltAccZ,FnetP,FwindP,PhiLeft,PhiRight,PIDBoost", "soNNdd-", "F------", true }, \
-        { LOG_ACTS1_MSG, sizeof(log_ACTS1),                                                                        \
+#define LOG_STRUCTURE_FROM_ATTC                                                                                                  \
+    { LOG_ACTS0_MSG, sizeof(log_ACTS0),                                                                                          \
+        "ATS0", "Qffffffff", "TimeUS,FiltAccZ,FnetP,FwindP,PhiLeft,PhiRight,rpmL,rpmR,PIDBst", "soNNdd---", "F--------", true }, \
+        { LOG_ACTS1_MSG, sizeof(log_ACTS1),                                                                                      \
             "ATS1", "Qffffffff", "TimeUS,ThstL,ThstLH,ThstLV,ThstLP,ThstR,ThstRH,ThstRV,ThstRP", "sNNNNNNNN", "F--------", true },

@@ -15,7 +15,11 @@ const float MOTOR_POS_M = 0.100; // Position of the motor in m. Measured from di
 const float VECTORING_MIN_ANGLE_DEG = -45.0;
 const float VECTORING_MAX_ANGLE_DEG = 45.0;
 
-const uint8_t LEFT_SERVO_CHANNEL = 14, RIGHT_SERVO_CHANNEL = 4;
+// TRT
+// const uint8_t LEFT_SERVO_CHANNEL = 14, RIGHT_SERVO_CHANNEL = 4;
+
+// SITL
+const uint8_t LEFT_SERVO_CHANNEL = 3, RIGHT_SERVO_CHANNEL = 4;
 
 const uint32_t LOGGING_INTERVAL_MS = 40; // 25Hz
 
@@ -65,4 +69,5 @@ private:
     thrust_t thrust_left, thrust_right;
     float accel_z, force_net_perpendicular, force_wind_perpendicular;
     float phi_left, phi_right; // thrust vectoring angles of each tilt servo
+    float rpm_left, rpm_right;
 };
