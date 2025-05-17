@@ -52,7 +52,7 @@ struct PACKED log_AttControlTS {
     float phi_left;
     float phi_right;
 
-    float thrust_right;
+    float pitch_pid_boost_wind;
     // float thrust_right_h;
     // float thrust_right_v;
     // float thrust_right_p;
@@ -60,4 +60,4 @@ struct PACKED log_AttControlTS {
 
 #define LOG_STRUCTURE_FROM_ATTC                         \
     { LOG_ATT_CONTROL_TS_MSG, sizeof(log_AttControlTS), \
-        "ACTS", "Qffffff", "TimeUS,FiltAccZ,FnetP,FwindP,PhiLeft,PhiRight,ThrustRight", "soNNddN", "F------", true },
+        "ACTS", "Qffffff", "TimeUS,FiltAccZ,FnetP,FwindP,PhiLeft,PhiRight,PitchPIDBoostWind", "soNNdd-", "F------", true },
