@@ -370,9 +370,9 @@ void JSON::recv_fdm(const struct sitl_input &input)
 
     if (is_positive(deltat) && deltat < 0.1) {
         // time in us to hz
-        if (use_time_sync) {
-           adjust_frame_time(1.0 / deltat);
-        }
+        //if (use_time_sync) { // SIMNET: Disable
+        //    adjust_frame_time(1.0 / deltat);
+        //}
         // match actual frame rate with desired speedup
         time_advance();
     }
@@ -461,7 +461,7 @@ void JSON::update(const struct sitl_input &input)
     update_mag_field_bf();
 
     // allow for changes in physics step
-    adjust_frame_time(constrain_float(sitl->loop_rate_hz, rate_hz-1, rate_hz+1));
+    //adjust_frame_time(constrain_float(sitl->loop_rate_hz, rate_hz-1, rate_hz+1)); // SIMNET: Disable
 
 #if 0
     // report frame rate
