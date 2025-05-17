@@ -242,8 +242,9 @@ AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rp
 
     thrust_t result;
 
-    float theta_rad = pitch * DEG_TO_RAD;
-    float phi_rad = tv_angle * DEG_TO_RAD;
+    // Convention: Left is positive, counterclockwise is positive
+    float theta_rad = -pitch * DEG_TO_RAD;
+    float phi_rad = -tv_angle * DEG_TO_RAD;
 
     // generated via experimental mapping of rpm to thrust
     double coeff_a = 6.369 * 10e-8;
