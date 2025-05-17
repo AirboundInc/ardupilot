@@ -18,6 +18,9 @@
    2) a relax_attitude_controller method needed for coping with vectored tailsitters
  */
 #include "AC_AttitudeControl_TS.h"
+#include <GCS_MAVLink/GCS.h>
+
+extern const AP_HAL::HAL& hal;
 
 void AC_AttitudeControl_TS::relax_attitude_controllers(bool exclude_pitch)
 {
@@ -123,4 +126,224 @@ void AC_AttitudeControl_TS::input_euler_rate_yaw_euler_angle_pitch_bf_roll(bool 
 
     // Compute the angular velocity target from the attitude error
     _ang_vel_body = update_ang_vel_target_from_att_error(att_error);
+}
+
+void AC_AttitudeControl_TS::rate_controller_run() {
+    // boost angle_p/pd each cycle on high throttle slew
+    update_throttle_gain_boost();
+
+    // move throttle vs attitude mixing towards desired (called from here because this is conveniently called on every iteration)
+    update_throttle_rpy_mix();
+
+    _ang_vel_body += _sysid_ang_vel_body;
+
+    Vector3f gyro_latest = _ahrs.get_gyro_latest();
+
+    _motors.set_roll(get_rate_roll_pid().update_all(_ang_vel_body.x, gyro_latest.x, _dt, _motors.limit.roll, _pd_scale.x) + _actuator_sysid.x);
+    _motors.set_roll_ff(get_rate_roll_pid().get_ff());
+
+    // add custom wind force based boost to pitch pid output
+    float pitch_pid_out = get_rate_pitch_pid().update_all(_ang_vel_body.y, gyro_latest.y, _dt, _motors.limit.pitch, _pd_scale.y) + _actuator_sysid.y;
+    update_wind_boost();
+    float pitch_in = pitch_pid_out + _pitch_pid_boost_wind;
+    pitch_in = constrain_float(pitch_in, -1.0, 1.0);
+    _motors.set_pitch(pitch_in);
+    _motors.set_pitch_ff(get_rate_pitch_pid().get_ff());
+
+    _motors.set_yaw(get_rate_yaw_pid().update_all(_ang_vel_body.z, gyro_latest.z, _dt, _motors.limit.yaw, _pd_scale.z) + _actuator_sysid.z);
+    _motors.set_yaw_ff(get_rate_yaw_pid().get_ff() * _feedforward_scalar);
+
+    _sysid_ang_vel_body.zero();
+    _actuator_sysid.zero();
+
+    _pd_scale_used = _pd_scale;
+    _pd_scale = VECTORF_111;
+
+    control_monitor_update();
+
+    // Log/Run stuff at 1Hz
+    uint32_t now = AP_HAL::millis();
+
+    if (now - last_log_ms >= LOGGING_INTERVAL_MS) {
+        last_log_ms = now;
+        log_write_ACTS0();
+        log_write_ACTS1();
+    }
+}
+
+void AC_AttitudeControl_TS::update_wind_boost()
+{
+    float theta = _ahrs.pitch_sensor * 0.01f; // centidegrees to degrees
+    float wind_force_p = calculate_wind_force(theta);
+
+    float moment_wind = wind_force_p * (CS_CRAFT_M - CG_CRAFT_M);
+    float phi_max_rad = DEG_TO_RAD * VECTORING_MAX_ANGLE_DEG;
+
+    // Assuming hover thrust to be same as craft mass
+    float thrust_hover = CRAFT_MASS_KG * GRAVITY_MSS;
+    float thrust_p_max = thrust_hover * sinf(phi_max_rad);
+
+    // -moment_wind / ((CG_CRAFT_M - MOTOR_POS_M) converts the countermoment demanded
+    // to the perpendicular thrust required from the system.
+    // In the conversion from perpendicular thrust to PID out, we need to multiply the term by 1/(thrust_p_max)
+
+    float pitch_boost_wind = -moment_wind / ((CG_CRAFT_M - MOTOR_POS_M) * thrust_p_max);
+
+    static float last_boost = 0.0;
+
+    _pitch_pid_boost_wind = 0.95 * last_boost + 0.05 * pitch_boost_wind;
+    last_boost = _pitch_pid_boost_wind;
+}
+
+// Calculate force of wind perpendicular to body while pitching
+float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
+{
+    // get current thrust vectoring angle for left motor
+    uint16_t tv_pwm_left;
+    bool success = SRV_Channels::get_output_pwm(SRV_Channel::k_tiltMotorLeft, tv_pwm_left);
+    if (!success) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output PWM for tilt motor left");
+        return 0.0;
+    }
+
+    uint16_t phi_min_pwm_left = get_servo_min(LEFT_SERVO_CHANNEL);
+    uint16_t phi_max_pwm_left = get_servo_max(LEFT_SERVO_CHANNEL);
+    phi_left = pwm_to_angle(tv_pwm_left, phi_min_pwm_left, phi_max_pwm_left);
+    rpm_left = _telem.get_average_motor_rpm(SRV_Channel::k_throttleLeft);
+    thrust_left = calculate_thrust(rpm_left, pitch, phi_left);
+
+    // get current thrust vectoring angle for right motor
+    uint16_t tv_pwm_right;
+    success = SRV_Channels::get_output_pwm(SRV_Channel::k_tiltMotorRight, tv_pwm_right);
+    if (!success) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output PWM for tilt motor right");
+        return 0.0;
+    }
+    uint16_t phi_min_pwm_right = get_servo_min(RIGHT_SERVO_CHANNEL);
+    uint16_t phi_max_pwm_right = get_servo_max(RIGHT_SERVO_CHANNEL);
+    phi_right = pwm_to_angle(tv_pwm_right, phi_min_pwm_right, phi_max_pwm_right);
+    rpm_right = _telem.get_average_motor_rpm(SRV_Channel::k_throttleRight);
+    thrust_right = calculate_thrust(rpm_right, pitch, phi_right);
+
+    float total_thrust_perpendicular
+        = thrust_left.perpendicular + thrust_right.perpendicular;
+
+    accel_z = _ahrs.get_accel_ef().z;
+    force_net_perpendicular = accel_z * CRAFT_MASS_KG;
+    force_wind_perpendicular = force_net_perpendicular - total_thrust_perpendicular; // Newtons
+
+    return force_wind_perpendicular;
+}
+
+// Calculate thrust components using craft pitch and thrust vectoring angle
+AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rpm, float pitch, float tv_angle)
+{
+    // TODO: Limit inputs to sane values/check
+
+    thrust_t result;
+
+    // Convention: Left is positive, counterclockwise is positive
+    float theta_rad = -pitch * DEG_TO_RAD;
+    float phi_rad = -tv_angle * DEG_TO_RAD;
+
+    // generated via experimental mapping of rpm to thrust
+    double coeff_a = 6.369 * 10e-8;
+    double coeff_b = -2.724 * 10e-5;
+    double coeff_c = 0.007676;
+
+    result.thrust = coeff_a * rpm * rpm + coeff_b * rpm + coeff_c;
+    result.thrust *= GRAVITY_MSS;
+
+    result.horizontal = result.thrust * sinf(theta_rad + phi_rad);
+    result.vertical = result.thrust * cosf(theta_rad + phi_rad);
+    result.perpendicular = result.thrust * sinf(phi_rad);
+
+    return result;
+}
+
+// Convert pwm to thrust vectoring angle in degrees
+float AC_AttitudeControl_TS::pwm_to_angle(uint16_t pwm, uint16_t pwm_min, uint16_t pwm_max)
+{
+    // TODO: If pwm < pwm_min - delta, set pwm to pwm_min and also for max
+    uint16_t error_delta = 250;
+    // Check if the PWM value is within the valid range
+    if (pwm < pwm_min - error_delta || pwm > pwm_max + error_delta) {
+        // Handle invalid input
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "PWM value out of range! (%f)", (float)pwm);
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "PWM min, max! (%f, %f)", (float)pwm_min, (float)pwm_max);
+        return 0.0f; // Return a default value or handle error as needed
+    }
+
+    // TODO: Update to analytical curve based mapping once not for SITL
+    float tv_angle = (pwm - pwm_min) * (VECTORING_MAX_ANGLE_DEG - VECTORING_MIN_ANGLE_DEG) / (pwm_max - pwm_min) + VECTORING_MIN_ANGLE_DEG;
+
+    return tv_angle;
+}
+
+uint16_t AC_AttitudeControl_TS::get_servo_min(uint8_t channel)
+{
+    char param_name[17];
+    hal.util->snprintf(param_name, sizeof(param_name), "SERVO%u_MIN", channel);
+
+    float servo_min = get_param_value_by_name(param_name, 845);
+
+    return (uint16_t)servo_min;
+}
+
+uint16_t AC_AttitudeControl_TS::get_servo_max(uint8_t channel)
+{
+    char param_name[17];
+    hal.util->snprintf(param_name, sizeof(param_name), "SERVO%u_MAX", channel);
+
+    float servo_max = get_param_value_by_name(param_name, 2145);
+
+    return (uint16_t)servo_max;
+}
+
+float AC_AttitudeControl_TS::get_param_value_by_name(char* param_name, float default_value)
+{
+    float value;
+
+    if (!AP_Param::get(param_name, value)) {
+        // Return default if parameter not found
+        // GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Param read failed (%s)", param_name);
+        value = default_value;
+    }
+
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>>Got value for %s: %f", param_name, (float)value);
+    return value;
+}
+
+void AC_AttitudeControl_TS::log_write_ACTS0()
+{
+    const struct log_ACTS0 pkt {
+        LOG_PACKET_HEADER_INIT(LOG_ACTS0_MSG),
+        time_us : AP_HAL::micros64(),
+        filt_acc_z : accel_z,
+        f_net_p : force_net_perpendicular,
+        f_wind_p : force_wind_perpendicular,
+        phi_left : phi_left,
+        phi_right : phi_right,
+        rpm_left : rpm_left,
+        rpm_right : rpm_right,
+        pitch_pid_boost_wind : _pitch_pid_boost_wind,
+    };
+    AP::logger().WriteBlock(&pkt, sizeof(pkt));
+}
+
+void AC_AttitudeControl_TS::log_write_ACTS1()
+{
+    const struct log_ACTS1 pkt2 {
+        LOG_PACKET_HEADER_INIT(LOG_ACTS1_MSG),
+        time_us : AP_HAL::micros64(),
+        thrust_left : thrust_left.thrust,
+        thrust_left_h : thrust_left.horizontal,
+        thrust_left_v : thrust_left.vertical,
+        thrust_left_p : thrust_left.perpendicular,
+        thrust_right : thrust_right.thrust,
+        thrust_right_h : thrust_right.horizontal,
+        thrust_right_v : thrust_right.vertical,
+        thrust_right_p : thrust_right.perpendicular,
+    };
+    AP::logger().WriteBlock(&pkt2, sizeof(pkt2));
 }
