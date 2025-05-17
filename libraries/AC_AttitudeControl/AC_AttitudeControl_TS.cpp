@@ -209,7 +209,7 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
     uint16_t phi_min_pwm_left = get_servo_min(LEFT_SERVO_CHANNEL);
     uint16_t phi_max_pwm_left = get_servo_max(LEFT_SERVO_CHANNEL);
     phi_left = pwm_to_angle(tv_pwm_left, phi_min_pwm_left, phi_max_pwm_left);
-    float rpm_left = _telem.get_average_motor_rpm(SRV_Channel::k_throttleLeft);
+    rpm_left = _telem.get_average_motor_rpm(SRV_Channel::k_throttleLeft);
     thrust_left = calculate_thrust(rpm_left, pitch, phi_left);
 
     // get current thrust vectoring angle for right motor
@@ -222,7 +222,7 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
     uint16_t phi_min_pwm_right = get_servo_min(RIGHT_SERVO_CHANNEL);
     uint16_t phi_max_pwm_right = get_servo_max(RIGHT_SERVO_CHANNEL);
     phi_right = pwm_to_angle(tv_pwm_right, phi_min_pwm_right, phi_max_pwm_right);
-    float rpm_right = _telem.get_average_motor_rpm(SRV_Channel::k_throttleRight);
+    rpm_right = _telem.get_average_motor_rpm(SRV_Channel::k_throttleRight);
     thrust_right = calculate_thrust(rpm_right, pitch, phi_right);
 
     float total_thrust_perpendicular
@@ -324,6 +324,8 @@ void AC_AttitudeControl_TS::log_write_ACTS0()
         f_wind_p : force_wind_perpendicular,
         phi_left : phi_left,
         phi_right : phi_right,
+        rpm_left : rpm_left,
+        rpm_right : rpm_right,
         pitch_pid_boost_wind : _pitch_pid_boost_wind,
     };
     AP::logger().WriteBlock(&pkt, sizeof(pkt));
