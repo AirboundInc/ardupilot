@@ -206,10 +206,14 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
         return 0.0;
     }
 
-    uint16_t phi_min_pwm_left = get_servo_min(LEFT_SERVO_CHANNEL);
-    uint16_t phi_max_pwm_left = get_servo_max(LEFT_SERVO_CHANNEL);
+    uint16_t phi_min_pwm_left = get_servo_min(LEFT_TVSERVO_CHANNEL);
+    uint16_t phi_max_pwm_left = get_servo_max(LEFT_TVSERVO_CHANNEL);
     phi_left = pwm_to_angle(tv_pwm_left, phi_min_pwm_left, phi_max_pwm_left);
-    rpm_left = _telem.get_average_motor_rpm(SRV_Channel::k_throttleLeft);
+    success = _telem.get_rpm(LEFT_ESC_INDEX, rpm_left);
+    if (!success) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output RPM for %f", (float)LEFT_ESC_INDEX);
+        return 0.0;
+    }
     thrust_left = calculate_thrust(rpm_left, pitch, phi_left);
 
     // get current thrust vectoring angle for right motor
@@ -219,10 +223,14 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
         GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output PWM for tilt motor right");
         return 0.0;
     }
-    uint16_t phi_min_pwm_right = get_servo_min(RIGHT_SERVO_CHANNEL);
-    uint16_t phi_max_pwm_right = get_servo_max(RIGHT_SERVO_CHANNEL);
+    uint16_t phi_min_pwm_right = get_servo_min(RIGHT_TVSERVO_CHANNEL);
+    uint16_t phi_max_pwm_right = get_servo_max(RIGHT_TVSERVO_CHANNEL);
     phi_right = pwm_to_angle(tv_pwm_right, phi_min_pwm_right, phi_max_pwm_right);
-    rpm_right = _telem.get_average_motor_rpm(SRV_Channel::k_throttleRight);
+    success = _telem.get_rpm(RIGHT_ESC_INDEX, rpm_right);
+    if (!success) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output RPM for %f", (float)RIGHT_ESC_INDEX);
+        return 0.0;
+    }
     thrust_right = calculate_thrust(rpm_right, pitch, phi_right);
 
     float total_thrust_perpendicular
