@@ -176,7 +176,7 @@ void AC_AttitudeControl_TS::update_wind_boost()
     float theta = _ahrs.pitch_sensor * 0.01f; // centidegrees to degrees
     float wind_force_p = calculate_wind_force(theta);
 
-    float moment_wind = wind_force_p * (CS_CRAFT_M - CG_CRAFT_M);
+    float moment_wind = wind_force_p * (CG_CRAFT_M - CS_CRAFT_M);
     float phi_max_rad = DEG_TO_RAD * VECTORING_MAX_ANGLE_DEG;
 
     // Assuming hover thrust to be same as craft mass

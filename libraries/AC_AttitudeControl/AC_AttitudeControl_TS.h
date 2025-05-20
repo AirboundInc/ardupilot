@@ -8,24 +8,29 @@
 #include <AP_Logger/AP_Logger.h>
 
 // TODO: Turn into params
-const float CRAFT_MASS_KG = 1.3;
+const float CRAFT_MASS_KG = 2.5;
 
-const float CG_CRAFT_M = 0.225; // Center of Gravity of the drone in m. Measured as distance to nosetip along chord axis
-// CG==CS to disable boost
-const float CS_CRAFT_M = 0.225; // Center of Gravity of the drone in m. Measured as distance to nosetip along chord axis
+// Center of Gravity of the drone in m.
+// Measured as distance to nosetip along chord axis
+const float CG_CRAFT_M = 0.230;
 
-// const float CS_CRAFT_M = 0.250; // Center of Surface area of the drone in m. Where the point vector of wind acts on. Measured from distance to nosetip along chord axis.
+// Center of Surface area of the drone in m.
+// Where the point vector of wind acts on.
+// Measured from distance to nosetip along chord axis.
+// const float CS_CRAFT_M = 0.336;
+const float CS_CRAFT_M = 0.230;
+
 const float MOTOR_POS_M = 0.100; // Position of the motor in m. Measured from distance to nosetip along chord axis with motor at neutral position (Phi=0)
 const float VECTORING_MIN_ANGLE_DEG = -45.0;
 const float VECTORING_MAX_ANGLE_DEG = 45.0;
 
 // TRT
-const uint8_t LEFT_TVSERVO_CHANNEL = 14, RIGHT_TVSERVO_CHANNEL = 4;
-const uint8_t LEFT_ESC_INDEX = 1, RIGHT_ESC_INDEX = 2;
+// const uint8_t LEFT_TVSERVO_CHANNEL = 14, RIGHT_TVSERVO_CHANNEL = 4;
+// const uint8_t LEFT_ESC_INDEX = 1, RIGHT_ESC_INDEX = 2;
 
 // SITL
-// const uint8_t LEFT_TVSERVO_CHANNEL = 3, RIGHT_TVSERVO_CHANNEL = 4;
-// const uint8_t LEFT_ESC_INDEX = 1, RIGHT_ESC_INDEX = 1;
+const uint8_t LEFT_TVSERVO_CHANNEL = 3, RIGHT_TVSERVO_CHANNEL = 4;
+const uint8_t LEFT_ESC_INDEX = 1, RIGHT_ESC_INDEX = 1;
 
 const uint32_t LOGGING_INTERVAL_MS = 40; // 25Hz
 
