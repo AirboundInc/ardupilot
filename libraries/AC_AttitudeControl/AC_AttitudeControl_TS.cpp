@@ -251,8 +251,8 @@ AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rp
     thrust_t result;
 
     // Convention: Left is positive, counterclockwise is positive
-    float theta_rad = -pitch * DEG_TO_RAD;
-    float phi_rad = -tv_angle * DEG_TO_RAD;
+    float theta_rad = pitch * DEG_TO_RAD;
+    float phi_rad = tv_angle * DEG_TO_RAD;
 
     // generated via experimental mapping of rpm to thrust
     double coeff_a = 6.369 * 10e-8;
@@ -284,7 +284,6 @@ float AC_AttitudeControl_TS::pwm_to_angle(uint16_t pwm, uint16_t pwm_min, uint16
 
     // TODO: Update to analytical curve based mapping once not for SITL
     float tv_angle = (pwm - pwm_min) * (VECTORING_MAX_ANGLE_DEG - VECTORING_MIN_ANGLE_DEG) / (pwm_max - pwm_min) + VECTORING_MIN_ANGLE_DEG;
-
     return tv_angle;
 }
 
