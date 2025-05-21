@@ -4,7 +4,8 @@
 
 #define LOG_IDS_FROM_ATT_CONTROL \
     LOG_ACTS0_MSG,               \
-        LOG_ACTS1_MSG
+        LOG_ACTS1_MSG,           \
+        LOG_ACTS2_MSG
 
 // @LoggerMessage: ATS0
 // @Description: Attitude control TailSitter messages 0
@@ -54,8 +55,24 @@ struct PACKED log_ACTS1 {
     float thrust_right_p;
 };
 
-#define LOG_STRUCTURE_FROM_ATTC                                                                                                  \
-    { LOG_ACTS0_MSG, sizeof(log_ACTS0),                                                                                          \
-        "ATS0", "Qffffffff", "TimeUS,FiltAccZ,FnetP,FwindP,PhiLeft,PhiRight,rpmL,rpmR,PIDBst", "soNNdd---", "F--------", true }, \
-        { LOG_ACTS1_MSG, sizeof(log_ACTS1),                                                                                      \
-            "ATS1", "Qffffffff", "TimeUS,ThstL,ThstLH,ThstLV,ThstLP,ThstR,ThstRH,ThstRV,ThstRP", "sNNNNNNNN", "F--------", true },
+// @LoggerMessage: ATS2
+// @Description: Attitude control TailSitter messages 2
+// @Field: TimeUS: Time since system startup
+// @Field: FiltAccX: Filtered acceleration along X axis
+// @Field: FiltAccY: Filtered acceleration along Y axis
+// @Field: FiltAccZ: Filtered acceleration along Z axis
+struct PACKED log_ACTS2 {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    float filt_acc_x;
+    float filt_acc_y;
+    float filt_acc_z;
+};
+
+#define LOG_STRUCTURE_FROM_ATTC                                                                                                    \
+    { LOG_ACTS0_MSG, sizeof(log_ACTS0),                                                                                            \
+        "ATS0", "Qffffffff", "TimeUS,FiltAccZ,FnetP,FwindP,PhiLeft,PhiRight,rpmL,rpmR,PIDBst", "soNNdd---", "F--------", true },   \
+        { LOG_ACTS1_MSG, sizeof(log_ACTS1),                                                                                        \
+            "ATS1", "Qffffffff", "TimeUS,ThstL,ThstLH,ThstLV,ThstLP,ThstR,ThstRH,ThstRV,ThstRP", "sNNNNNNNN", "F--------", true }, \
+        { LOG_ACTS2_MSG, sizeof(log_ACTS2),                                                                                        \
+            "ATS2", "Qfff", "TimeUS,FiltAccX,FiltAccY,FiltAccZ", "sooo", "F---", true },
