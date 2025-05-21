@@ -255,8 +255,8 @@ AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rp
     float phi_rad = tv_angle * DEG_TO_RAD;
 
     // generated via experimental mapping of rpm to thrust
-    double coeff_a = 6.369 * 10e-8;
-    double coeff_b = -2.724 * 10e-5;
+    double coeff_a = 6.369e-8;
+    double coeff_b = -2.724e-5;
     double coeff_c = 0.007676;
 
     result.thrust = coeff_a * rpm * rpm + coeff_b * rpm + coeff_c;
