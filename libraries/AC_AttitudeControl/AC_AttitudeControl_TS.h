@@ -86,6 +86,7 @@ private:
 
     void log_write_ACTS0();
     void log_write_ACTS1();
+    void log_write_ACTS2();
 
     AP_ESC_Telem& _telem = AP::esc_telem();
     uint32_t last_log_ms = 0;
@@ -93,7 +94,8 @@ private:
     float _pitch_pid_boost_wind = 0.0;
 
     thrust_t thrust_left, thrust_right;
-    float accel_z, force_net_perpendicular, force_wind_perpendicular;
+    float accel_z, accel_y, accel_x;
+    float force_net_perpendicular, force_wind_perpendicular;
     float phi_left, phi_right; // thrust vectoring angles of each tilt servo
     float rpm_left, rpm_right;
 };

@@ -168,6 +168,7 @@ void AC_AttitudeControl_TS::rate_controller_run() {
         last_log_ms = now;
         log_write_ACTS0();
         log_write_ACTS1();
+        log_write_ACTS2();
     }
 }
 
@@ -237,6 +238,8 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
         = thrust_left.perpendicular + thrust_right.perpendicular;
 
     accel_z = _ahrs.get_accel_ef().z;
+    accel_y = _ahrs.get_accel_ef().y;
+    accel_x = _ahrs.get_accel_ef().x;
     force_net_perpendicular = accel_z * CRAFT_MASS_KG;
     force_wind_perpendicular = force_net_perpendicular - total_thrust_perpendicular; // Newtons
 
@@ -368,4 +371,16 @@ void AC_AttitudeControl_TS::log_write_ACTS1()
         thrust_right_p : thrust_right.perpendicular,
     };
     AP::logger().WriteBlock(&pkt2, sizeof(pkt2));
+}
+
+void AC_AttitudeControl_TS::log_write_ACTS2()
+{
+    const struct log_ACTS2 pkt3 {
+        LOG_PACKET_HEADER_INIT(LOG_ACTS2_MSG),
+        time_us : AP_HAL::micros64(),
+        filt_acc_x : accel_x,
+        filt_acc_y : accel_y,
+        filt_acc_z : accel_z,
+    };
+    AP::logger().WriteBlock(&pkt3, sizeof(pkt3));
 }
