@@ -254,12 +254,27 @@ AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rp
     float theta_rad = pitch * DEG_TO_RAD;
     float phi_rad = tv_angle * DEG_TO_RAD;
 
+#ifdef SITL_DEBUG
+    // https://www.rcgroups.com/forums/showthread.php?288091-How-to-calculate-thrust-given-RPM-prop-pitch-and-prop-diameter
+    // Using formula for propellers Pitch/Diameter <=0.6
+    // Thrust = P X D^3 X RPM^2 X 10^-10 oz.
+    float prop_pitch = PROPELLER_PITCH_IN;
+    float prop_dia = PROPELLER_DIAMETER_IN;
+    // convert from oz to kg
+    double conversion_const = 1e-10 / 35.274;
+    double compensation_const = 0.8626;
+
+    result.thrust = prop_pitch * prop_dia * prop_dia * prop_dia * rpm * rpm * conversion_const * compensation_const;
+
+#else
     // generated via experimental mapping of rpm to thrust
     double coeff_a = 6.369e-8;
     double coeff_b = -2.724e-5;
     double coeff_c = 0.007676;
-
     result.thrust = coeff_a * rpm * rpm + coeff_b * rpm + coeff_c;
+#endif
+
+    // convert from kg to N
     result.thrust *= GRAVITY_MSS;
 
     result.horizontal = result.thrust * sinf(theta_rad + phi_rad);
