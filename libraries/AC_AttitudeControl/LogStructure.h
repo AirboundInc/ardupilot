@@ -58,15 +58,15 @@ struct PACKED log_ACTS1 {
 // @LoggerMessage: ATS2
 // @Description: Attitude control TailSitter messages 2
 // @Field: TimeUS: Time since system startup
-// @Field: FiltAccX: Filtered acceleration along X axis
-// @Field: FiltAccY: Filtered acceleration along Y axis
-// @Field: FiltAccZ: Filtered acceleration along Z axis
+// @Field: BodyAccX: Body acceleration along X axis
+// @Field: BodyAccY: Body acceleration along Y axis
+// @Field: BodyAccZ: Body acceleration along Z axis
 struct PACKED log_ACTS2 {
     LOG_PACKET_HEADER;
     uint64_t time_us;
-    float filt_acc_x;
-    float filt_acc_y;
-    float filt_acc_z;
+    float body_acc_x;
+    float body_acc_y;
+    float body_acc_z;
 };
 
 #define LOG_STRUCTURE_FROM_ATTC                                                                                                    \
@@ -75,4 +75,4 @@ struct PACKED log_ACTS2 {
         { LOG_ACTS1_MSG, sizeof(log_ACTS1),                                                                                        \
             "ATS1", "Qffffffff", "TimeUS,ThstL,ThstLH,ThstLV,ThstLP,ThstR,ThstRH,ThstRV,ThstRP", "sNNNNNNNN", "F--------", true }, \
         { LOG_ACTS2_MSG, sizeof(log_ACTS2),                                                                                        \
-            "ATS2", "Qfff", "TimeUS,FiltAccX,FiltAccY,FiltAccZ", "sooo", "F---", true },
+            "ATS2", "Qfff", "TimeUS,BodyAccX,BodyAccY,BodyAccZ", "sooo", "F---", true },
