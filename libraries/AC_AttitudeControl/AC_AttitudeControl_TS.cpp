@@ -305,6 +305,7 @@ float AC_AttitudeControl_TS::pwm_to_angle(uint16_t pwm, uint16_t pwm_min, uint16
 
     // TODO: Update to analytical curve based mapping once not for SITL
     float tv_angle = (pwm - pwm_min) * (VECTORING_MAX_ANGLE_DEG - VECTORING_MIN_ANGLE_DEG) / (pwm_max - pwm_min) + VECTORING_MIN_ANGLE_DEG;
+    tv_angle *= -1.0f;
     return tv_angle;
 }
 
