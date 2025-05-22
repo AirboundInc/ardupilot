@@ -10,7 +10,7 @@
 // @LoggerMessage: ATS0
 // @Description: Attitude control TailSitter messages 0
 // @Field: TimeUS: Time since system startup
-// @Field: FiltAccZ: Filtered acceleration along Z axis
+// @Field: BodyAccZ: Filtered acceleration along Z axis in body frame
 // @Field: FnetP: Net perpendicular force
 // @Field: FwindP: Wind perpendicular force
 // @Field: PhiLeft: Thrust vectoring angle left
@@ -19,7 +19,7 @@
 struct PACKED log_ACTS0 {
     LOG_PACKET_HEADER;
     uint64_t time_us;
-    float filt_acc_z;
+    float body_acc_z;
     float f_net_p;
     float f_wind_p;
     float phi_left;
@@ -71,7 +71,7 @@ struct PACKED log_ACTS2 {
 
 #define LOG_STRUCTURE_FROM_ATTC                                                                                                    \
     { LOG_ACTS0_MSG, sizeof(log_ACTS0),                                                                                            \
-        "ATS0", "Qffffffff", "TimeUS,FiltAccZ,FnetP,FwindP,PhiLeft,PhiRight,rpmL,rpmR,PIDBst", "soNNdd---", "F--------", true },   \
+        "ATS0", "Qffffffff", "TimeUS,BodyAccZ,FnetP,FwindP,PhiLeft,PhiRight,rpmL,rpmR,PIDBst", "soNNdd---", "F--------", true },   \
         { LOG_ACTS1_MSG, sizeof(log_ACTS1),                                                                                        \
             "ATS1", "Qffffffff", "TimeUS,ThstL,ThstLH,ThstLV,ThstLP,ThstR,ThstRH,ThstRV,ThstRP", "sNNNNNNNN", "F--------", true }, \
         { LOG_ACTS2_MSG, sizeof(log_ACTS2),                                                                                        \
