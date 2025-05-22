@@ -94,8 +94,8 @@ private:
     float _pitch_pid_boost_wind = 0.0;
 
     thrust_t thrust_left, thrust_right;
-    float accel_z, accel_y, accel_x, body_accel_z;
-    Vector3f accel_filtered;
+    float accel_z, accel_y, accel_x;
+    Vector3f accel_body;
     float force_net_perpendicular, force_wind_perpendicular;
     float phi_left, phi_right; // thrust vectoring angles of each tilt servo
     float rpm_left, rpm_right;

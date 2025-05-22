@@ -145,6 +145,14 @@ public:
         return ahrs.get_accel_ef();
     }
 
+    const Vector3f &get_accel(void) const {
+        return ahrs.get_accel();
+    }
+
+    const Vector3f &get_accel_bias(void) const {
+        return ahrs.get_accel_bias();
+    }
+
     uint32_t getLastPosNorthEastReset(Vector2f &pos) WARN_IF_UNUSED {
         return ahrs.getLastPosNorthEastReset(pos);
     }

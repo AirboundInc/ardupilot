@@ -237,13 +237,11 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
     float total_thrust_perpendicular
         = thrust_left.perpendicular + thrust_right.perpendicular;
 
-    accel_filtered = _ahrs.get_accel_ef();
-    // filtered accel is in earth frame, rotate to body
-    _ahrs.rotate(accel_filtered);
+    accel_body = _ahrs.get_accel() - _ahrs.get_accel_bias();
 
-    accel_x = accel_filtered.x;
-    accel_y = accel_filtered.y;
-    accel_z = accel_filtered.z;
+    accel_x = accel_body.x;
+    accel_y = accel_body.y;
+    accel_z = accel_body.z;
 
     force_net_perpendicular = accel_z * CRAFT_MASS_KG;
     force_wind_perpendicular = force_net_perpendicular - total_thrust_perpendicular; // Newtons
@@ -383,9 +381,9 @@ void AC_AttitudeControl_TS::log_write_ACTS2()
     const struct log_ACTS2 pkt3 {
         LOG_PACKET_HEADER_INIT(LOG_ACTS2_MSG),
         time_us : AP_HAL::micros64(),
-        filt_acc_x : accel_x,
-        filt_acc_y : accel_y,
-        filt_acc_z : accel_z,
+        body_acc_x : accel_x,
+        body_acc_y : accel_y,
+        body_acc_z : accel_z,
     };
     AP::logger().WriteBlock(&pkt3, sizeof(pkt3));
 }
