@@ -101,6 +101,15 @@ Vector2f AP_AHRS_View::body_to_earth2D(const Vector2f &bf) const
                     bf.x * trig.sin_yaw + bf.y * trig.cos_yaw);
 }
 
+// rotate a 2D vector from body frame to earth frame for XZ plane (earth local frame - elf) using pitch
+Vector2f AP_AHRS_View::body_to_earth2D_pitch(const Vector2f& bf) const
+{
+    // Vector2f bf.x maps to z and
+    // bf.y maps to x
+    return Vector2f(bf.x * trig.cos_pitch - bf.y * trig.sin_pitch,
+        bf.x * trig.sin_pitch + bf.y * trig.cos_pitch);
+}
+
 // Rotate vector from AHRS reference frame to AHRS view reference frame
 void AP_AHRS_View::rotate(Vector3f &vec) const
 {

@@ -241,16 +241,24 @@ void AC_AttitudeControl_TS::calculate_wind_force(float pitch)
 
     float total_thrust_parallel = thrust_left.parallel + thrust_right.parallel;
 
-    accel_ef = _ahrs.get_accel_ef();
-    accel_x_ef = accel_ef.x;
-    accel_y_ef = accel_ef.y;
-    accel_z_ef = accel_ef.z;
+    // NED frame accels
+    // accel_ef = _ahrs.get_accel_ef();
+    // accel_x_ef = accel_ef.x;
+    // accel_y_ef = accel_ef.y;
+    // accel_z_ef = accel_ef.z;
 
     accel_body = _ahrs.get_accel() - _ahrs.get_accel_bias();
 
     accel_x = accel_body.x;
     accel_y = accel_body.y;
     accel_z = accel_body.z;
+
+    accel_zx.x = accel_z;
+    accel_zx.y = accel_x;
+
+    accel_elf_zx = _ahrs.body_to_earth2D_pitch(accel_zx);
+    accel_z_elf = accel_elf_zx.x;
+    accel_x_elf = accel_elf_zx.y;
 
     float theta_rad = pitch * DEG_TO_RAD;
     accel_z_g_comp = accel_z - GRAVITY_MSS * sinf(theta_rad);
@@ -408,9 +416,8 @@ void AC_AttitudeControl_TS::log_write_ACTS2()
         body_acc_z : accel_z,
         accel_x_g_comp : accel_x_g_comp,
         accel_z_g_comp : accel_z_g_comp,
-        ef_acc_x : accel_x_ef,
-        ef_acc_y : accel_y_ef,
-        ef_acc_z : accel_z_ef,
+        elf_acc_x : accel_x_elf,
+        elf_acc_z : accel_z_elf,
     };
     AP::logger().WriteBlock(&pkt3, sizeof(pkt3));
 }

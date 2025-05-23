@@ -63,10 +63,8 @@ struct PACKED log_ACTS1 {
 // @Field: BAccZ: Body acceleration along Z axis
 // @Field: AccXGC: Body acceleration along X axis - GRAVITY_MSS * cos(pitch)
 // @Field: AccZGC: Body acceleration along Z axis - GRAVITY_MSS * sin(pitch)
-// @Field: EFAccX: Earth frame acceleration along X axis
-// @Field: EFAccY: Earth frame acceleration along Y axis
-// @Field: EFAccZ: Earth frame acceleration along Z axis
-
+// @Field: ELFAccX: Earth local frame (ZX) acceleration along X axis
+// @Field: ELFAccZ: Earth local frame (ZX) acceleration along Z axis
 struct PACKED log_ACTS2 {
     LOG_PACKET_HEADER;
     uint64_t time_us;
@@ -75,9 +73,8 @@ struct PACKED log_ACTS2 {
     float body_acc_z;
     float accel_x_g_comp;
     float accel_z_g_comp;
-    float ef_acc_x;
-    float ef_acc_y;
-    float ef_acc_z;
+    float elf_acc_x;
+    float elf_acc_z;
 };
 
 #define LOG_STRUCTURE_FROM_ATTC                                                                                                    \
@@ -86,4 +83,4 @@ struct PACKED log_ACTS2 {
         { LOG_ACTS1_MSG, sizeof(log_ACTS1),                                                                                        \
             "ATS1", "Qffffffff", "TimeUS,ThstL,ThstLH,ThstLV,ThstLP,ThstR,ThstRH,ThstRV,ThstRP", "sNNNNNNNN", "F--------", true }, \
         { LOG_ACTS2_MSG, sizeof(log_ACTS2),                                                                                        \
-            "ATS2", "Qffffffff", "TimeUS,BAccX,BAccY,BAccZ,AccXGC,AccZGC,EFAccX,EFAccY,EFAccZ", "soooooooo", "F--------", true },
+            "ATS2", "Qfffffff", "TimeUS,BAccX,BAccY,BAccZ,AccXGC,AccZGC,ELFAccX,ELFAccZ", "sooooooo", "F-------", true },
