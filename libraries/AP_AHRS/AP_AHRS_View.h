@@ -173,6 +173,10 @@ public:
     // in input, z is right, x is up
     Vector2f body_to_earth2D_pitch(const Vector2f& bf) const;
 
+    // rotate a 2D vector from body frame to earth frame
+    // in input, z is right, x is up
+    Vector2f earth_to_body2D_pitch(const Vector2f& elf) const;
+
     // return the average size of the roll/pitch error estimate
     // since last call
     float get_error_rp(void) const {
