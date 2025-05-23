@@ -10,18 +10,18 @@
 // @LoggerMessage: ATS0
 // @Description: Attitude control TailSitter messages 0
 // @Field: TimeUS: Time since system startup
-// @Field: BodyAccZ: Filtered acceleration along Z axis in body frame
 // @Field: FnetP: Net perpendicular force
 // @Field: FwindP: Wind perpendicular force
+// @Field: FwindPar: Wind parallel force
 // @Field: PhiLeft: Thrust vectoring angle left
 // @Field: PhiRight: Thrust vectoring angle right
 // @Field: PIDBoost: Calculated Pitch PID boost wind
 struct PACKED log_ACTS0 {
     LOG_PACKET_HEADER;
     uint64_t time_us;
-    float body_acc_z;
     float f_net_p;
     float f_wind_p;
+    float f_wind_para;
     float phi_left;
     float phi_right;
     float rpm_left;
@@ -58,23 +58,32 @@ struct PACKED log_ACTS1 {
 // @LoggerMessage: ATS2
 // @Description: Attitude control TailSitter messages 2
 // @Field: TimeUS: Time since system startup
-// @Field: BodyAccX: Body acceleration along X axis
-// @Field: BodyAccY: Body acceleration along Y axis
-// @Field: BodyAccZ: Body acceleration along Z axis
+// @Field: BAccX: Body acceleration along X axis
+// @Field: BAccY: Body acceleration along Y axis
+// @Field: BAccZ: Body acceleration along Z axis
+// @Field: AccXGC: Body acceleration along X axis - GRAVITY_MSS * cos(pitch)
 // @Field: AccZGC: Body acceleration along Z axis - GRAVITY_MSS * sin(pitch)
+// @Field: EFAccX: Earth frame acceleration along X axis
+// @Field: EFAccY: Earth frame acceleration along Y axis
+// @Field: EFAccZ: Earth frame acceleration along Z axis
+
 struct PACKED log_ACTS2 {
     LOG_PACKET_HEADER;
     uint64_t time_us;
     float body_acc_x;
     float body_acc_y;
     float body_acc_z;
+    float accel_x_g_comp;
     float accel_z_g_comp;
+    float ef_acc_x;
+    float ef_acc_y;
+    float ef_acc_z;
 };
 
 #define LOG_STRUCTURE_FROM_ATTC                                                                                                    \
     { LOG_ACTS0_MSG, sizeof(log_ACTS0),                                                                                            \
-        "ATS0", "Qffffffff", "TimeUS,BodyAccZ,FnetP,FwindP,PhiLeft,PhiRight,rpmL,rpmR,PIDBst", "soNNdd---", "F--------", true },   \
+        "ATS0", "Qffffffff", "TimeUS,FnetP,FwindP,FwindPar,PhiLeft,PhiRight,rpmL,rpmR,PIDBst", "sNNNdd---", "F--------", true },   \
         { LOG_ACTS1_MSG, sizeof(log_ACTS1),                                                                                        \
             "ATS1", "Qffffffff", "TimeUS,ThstL,ThstLH,ThstLV,ThstLP,ThstR,ThstRH,ThstRV,ThstRP", "sNNNNNNNN", "F--------", true }, \
         { LOG_ACTS2_MSG, sizeof(log_ACTS2),                                                                                        \
-            "ATS2", "Qffff", "TimeUS,BodyAccX,BodyAccY,BodyAccZ,AccZGC", "soooo", "F----", true },
+            "ATS2", "Qffffffff", "TimeUS,BAccX,BAccY,BAccZ,AccXGC,AccZGC,EFAccX,EFAccY,EFAccZ", "soooooooo", "F--------", true },

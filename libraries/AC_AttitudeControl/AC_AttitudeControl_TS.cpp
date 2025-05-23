@@ -175,8 +175,10 @@ void AC_AttitudeControl_TS::rate_controller_run() {
 void AC_AttitudeControl_TS::update_wind_boost()
 {
     float theta = _ahrs.pitch_sensor * 0.01f; // centidegrees to degrees
-    float wind_force_p = calculate_wind_force(theta);
 
+    calculate_wind_force(theta);
+
+    float wind_force_p = force_wind_perpendicular;
     float moment_wind = wind_force_p * (CG_CRAFT_M - CS_CRAFT_M);
     float phi_max_rad = DEG_TO_RAD * VECTORING_MAX_ANGLE_DEG;
 
@@ -197,14 +199,14 @@ void AC_AttitudeControl_TS::update_wind_boost()
 }
 
 // Calculate force of wind perpendicular to body while pitching
-float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
+void AC_AttitudeControl_TS::calculate_wind_force(float pitch)
 {
     // get current thrust vectoring angle for left motor
     uint16_t tv_pwm_left;
     bool success = SRV_Channels::get_output_pwm(SRV_Channel::k_tiltMotorLeft, tv_pwm_left);
     if (!success) {
         GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output PWM for tilt motor left");
-        return 0.0;
+        return;
     }
 
     uint16_t phi_min_pwm_left = get_servo_min(LEFT_TVSERVO_CHANNEL);
@@ -213,7 +215,7 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
     success = _telem.get_rpm(LEFT_ESC_INDEX, rpm_left);
     if (!success) {
         GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output RPM for %f", (float)LEFT_ESC_INDEX);
-        return 0.0;
+        return;
     }
     thrust_left = calculate_thrust(rpm_left, pitch, phi_left);
 
@@ -222,7 +224,7 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
     success = SRV_Channels::get_output_pwm(SRV_Channel::k_tiltMotorRight, tv_pwm_right);
     if (!success) {
         GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output PWM for tilt motor right");
-        return 0.0;
+        return;
     }
     uint16_t phi_min_pwm_right = get_servo_min(RIGHT_TVSERVO_CHANNEL);
     uint16_t phi_max_pwm_right = get_servo_max(RIGHT_TVSERVO_CHANNEL);
@@ -230,12 +232,19 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
     success = _telem.get_rpm(RIGHT_ESC_INDEX, rpm_right);
     if (!success) {
         GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output RPM for %f", (float)RIGHT_ESC_INDEX);
-        return 0.0;
+        return;
     }
     thrust_right = calculate_thrust(rpm_right, pitch, phi_right);
 
     float total_thrust_perpendicular
         = thrust_left.perpendicular + thrust_right.perpendicular;
+
+    float total_thrust_parallel = thrust_left.parallel + thrust_right.parallel;
+
+    accel_ef = _ahrs.get_accel_ef();
+    accel_x_ef = accel_ef.x;
+    accel_y_ef = accel_ef.y;
+    accel_z_ef = accel_ef.z;
 
     accel_body = _ahrs.get_accel() - _ahrs.get_accel_bias();
 
@@ -245,11 +254,13 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
 
     float theta_rad = pitch * DEG_TO_RAD;
     accel_z_g_comp = accel_z - GRAVITY_MSS * sinf(theta_rad);
+    accel_x_g_comp = accel_x - GRAVITY_MSS * cosf(theta_rad);
 
     force_net_perpendicular = accel_z_g_comp * CRAFT_MASS_KG;
-    force_wind_perpendicular = force_net_perpendicular - total_thrust_perpendicular; // Newtons
+    force_net_parallel = accel_x_g_comp * CRAFT_MASS_KG;
 
-    return force_wind_perpendicular;
+    force_wind_perpendicular = force_net_perpendicular - total_thrust_perpendicular; // Newtons
+    force_wind_parallel = force_net_parallel - total_thrust_parallel; // Newtons
 }
 
 // Calculate thrust components using craft pitch and thrust vectoring angle
@@ -293,6 +304,7 @@ AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rp
     result.horizontal = result.thrust * sinf(net_tilt_angle);
     result.vertical = result.thrust * cosf(net_tilt_angle);
     result.perpendicular = result.thrust * sinf(-phi_rad);
+    result.parallel = result.thrust * cosf(-phi_rad);
 
     return result;
 }
@@ -357,9 +369,9 @@ void AC_AttitudeControl_TS::log_write_ACTS0()
     const struct log_ACTS0 pkt {
         LOG_PACKET_HEADER_INIT(LOG_ACTS0_MSG),
         time_us : AP_HAL::micros64(),
-        body_acc_z : accel_z,
         f_net_p : force_net_perpendicular,
         f_wind_p : force_wind_perpendicular,
+        f_wind_para : force_wind_parallel,
         phi_left : phi_left,
         phi_right : phi_right,
         rpm_left : rpm_left,
@@ -394,7 +406,11 @@ void AC_AttitudeControl_TS::log_write_ACTS2()
         body_acc_x : accel_x,
         body_acc_y : accel_y,
         body_acc_z : accel_z,
+        accel_x_g_comp : accel_x_g_comp,
         accel_z_g_comp : accel_z_g_comp,
+        ef_acc_x : accel_x_ef,
+        ef_acc_y : accel_y_ef,
+        ef_acc_z : accel_z_ef,
     };
     AP::logger().WriteBlock(&pkt3, sizeof(pkt3));
 }

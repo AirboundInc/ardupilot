@@ -69,14 +69,15 @@ public:
 private:
     struct thrust_t {
         float thrust;
-        float horizontal;
-        float vertical;
-        float perpendicular;
+        float horizontal; // global frame
+        float vertical; // global frame
+        float perpendicular; // to local body surface
+        float parallel; // to local body surface
     };
 
     // wind force boost methods
     void update_wind_boost();
-    float calculate_wind_force(float pitch);
+    void calculate_wind_force(float pitch);
     thrust_t calculate_thrust(float rpm, float pitch, float tv_angle);
 
     // Helper methods
@@ -95,9 +96,11 @@ private:
     float _pitch_pid_boost_wind = 0.0;
 
     thrust_t thrust_left, thrust_right;
-    float accel_z, accel_y, accel_x, accel_z_g_comp;
-    Vector3f accel_body;
+    float accel_z, accel_y, accel_x, accel_z_g_comp, accel_x_g_comp;
+    float accel_x_ef, accel_y_ef, accel_z_ef;
+    Vector3f accel_body, accel_ef;
     float force_net_perpendicular, force_wind_perpendicular;
+    float force_net_parallel, force_wind_parallel;
     float phi_left, phi_right; // thrust vectoring angles of each tilt servo
     float rpm_left, rpm_right;
 };
