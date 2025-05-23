@@ -283,9 +283,13 @@ AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rp
     // convert from kg to N
     result.thrust *= GRAVITY_MSS;
 
-    result.horizontal = result.thrust * sinf(theta_rad + phi_rad);
-    result.vertical = result.thrust * cosf(theta_rad + phi_rad);
-    result.perpendicular = result.thrust * sinf(phi_rad);
+    // Here we have to make phi_rad and theta_rad negative to
+    // validate sign convention, as right is positive and CCW angles are positive
+    float net_tilt_angle = -(theta_rad + phi_rad);
+
+    result.horizontal = result.thrust * sinf(net_tilt_angle);
+    result.vertical = result.thrust * cosf(net_tilt_angle);
+    result.perpendicular = result.thrust * sinf(-phi_rad);
 
     return result;
 }
@@ -305,6 +309,8 @@ float AC_AttitudeControl_TS::pwm_to_angle(uint16_t pwm, uint16_t pwm_min, uint16
 
     // TODO: Update to analytical curve based mapping once not for SITL
     float tv_angle = (pwm - pwm_min) * (VECTORING_MAX_ANGLE_DEG - VECTORING_MIN_ANGLE_DEG) / (pwm_max - pwm_min) + VECTORING_MIN_ANGLE_DEG;
+
+    // TODO: Check if this is needed, only needed if phi is inversely proportional to RPM
     tv_angle *= -1.0f;
     return tv_angle;
 }
