@@ -394,7 +394,7 @@ void AC_AttitudeControl_TS::log_write_ACTS2()
         body_acc_x : accel_x,
         body_acc_y : accel_y,
         body_acc_z : accel_z,
-        accel_g_z_comp : accel_z_g_comp,
+        accel_z_g_comp : accel_z_g_comp,
     };
     AP::logger().WriteBlock(&pkt3, sizeof(pkt3));
 }

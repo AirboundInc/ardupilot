@@ -68,7 +68,7 @@ struct PACKED log_ACTS2 {
     float body_acc_x;
     float body_acc_y;
     float body_acc_z;
-    float accel_g_z_comp;
+    float accel_z_g_comp;
 };
 
 #define LOG_STRUCTURE_FROM_ATTC                                                                                                    \
