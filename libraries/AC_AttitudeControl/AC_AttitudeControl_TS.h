@@ -96,15 +96,20 @@ private:
     float _pitch_pid_boost_wind = 0.0;
 
     thrust_t thrust_left, thrust_right;
-    float accel_z, accel_y, accel_x, accel_z_g_comp, accel_x_g_comp;
+    // body frame accels
+    float accel_z, accel_y, accel_x;
+    // earth frame (NED) accels
     float accel_x_ef, accel_y_ef, accel_z_ef;
+    // earth local 2D frame ZX plane accels
     float accel_x_elf, accel_z_elf;
 
     Vector3f accel_body, accel_ef;
     Vector2f accel_elf_zx, accel_zx;
 
-    float force_net_perpendicular, force_wind_perpendicular;
-    float force_net_parallel, force_wind_parallel;
+    float force_net_z, force_net_x;
+    float force_wind_z, force_wind_x;
+    float force_wind_perpendicular;
+
     float phi_left, phi_right; // thrust vectoring angles of each tilt servo
     float rpm_left, rpm_right;
 };

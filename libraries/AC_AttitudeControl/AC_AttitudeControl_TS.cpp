@@ -236,11 +236,6 @@ void AC_AttitudeControl_TS::calculate_wind_force(float pitch)
     }
     thrust_right = calculate_thrust(rpm_right, pitch, phi_right);
 
-    float total_thrust_perpendicular
-        = thrust_left.perpendicular + thrust_right.perpendicular;
-
-    float total_thrust_parallel = thrust_left.parallel + thrust_right.parallel;
-
     // NED frame accels
     // accel_ef = _ahrs.get_accel_ef();
     // accel_x_ef = accel_ef.x;
@@ -260,15 +255,21 @@ void AC_AttitudeControl_TS::calculate_wind_force(float pitch)
     accel_z_elf = accel_elf_zx.x;
     accel_x_elf = accel_elf_zx.y;
 
-    float theta_rad = pitch * DEG_TO_RAD;
-    accel_z_g_comp = accel_z - GRAVITY_MSS * sinf(theta_rad);
-    accel_x_g_comp = accel_x - GRAVITY_MSS * cosf(theta_rad);
+    float total_thrust_horizontal = thrust_left.horizontal + thrust_right.horizontal;
+    float total_thrust_vertical = thrust_left.vertical + thrust_right.vertical;
 
-    force_net_perpendicular = accel_z_g_comp * CRAFT_MASS_KG;
-    force_net_parallel = accel_x_g_comp * CRAFT_MASS_KG;
+    force_net_z = accel_z_elf * CRAFT_MASS_KG;
+    force_wind_z = force_net_z - total_thrust_horizontal;
 
-    force_wind_perpendicular = force_net_perpendicular - total_thrust_perpendicular; // Newtons
-    force_wind_parallel = force_net_parallel - total_thrust_parallel; // Newtons
+    force_net_x = accel_x_elf * CRAFT_MASS_KG;
+    force_wind_x = force_net_x - total_thrust_vertical;
+
+    Vector2f force_wind_elf = { force_wind_z, force_wind_x };
+    Vector2f force_wind_bf = _ahrs.earth_to_body2D_pitch(force_wind_elf);
+
+    // local body frame z force of wind
+
+    force_wind_perpendicular = force_wind_bf.z;
 }
 
 // Calculate thrust components using craft pitch and thrust vectoring angle
@@ -377,9 +378,9 @@ void AC_AttitudeControl_TS::log_write_ACTS0()
     const struct log_ACTS0 pkt {
         LOG_PACKET_HEADER_INIT(LOG_ACTS0_MSG),
         time_us : AP_HAL::micros64(),
-        f_net_p : force_net_perpendicular,
+        f_net_z : force_net_z,
+        f_net_x : force_net_x,
         f_wind_p : force_wind_perpendicular,
-        f_wind_para : force_wind_parallel,
         phi_left : phi_left,
         phi_right : phi_right,
         rpm_left : rpm_left,
