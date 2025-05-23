@@ -243,7 +243,10 @@ float AC_AttitudeControl_TS::calculate_wind_force(float pitch)
     accel_y = accel_body.y;
     accel_z = accel_body.z;
 
-    force_net_perpendicular = accel_z * CRAFT_MASS_KG;
+    float theta_rad = pitch * DEG_TO_RAD;
+    accel_z_g_comp = accel_z - GRAVITY_MSS * sinf(theta_rad);
+
+    force_net_perpendicular = accel_z_g_comp * CRAFT_MASS_KG;
     force_wind_perpendicular = force_net_perpendicular - total_thrust_perpendicular; // Newtons
 
     return force_wind_perpendicular;
@@ -391,6 +394,7 @@ void AC_AttitudeControl_TS::log_write_ACTS2()
         body_acc_x : accel_x,
         body_acc_y : accel_y,
         body_acc_z : accel_z,
+        accel_g_z_comp : accel_z_g_comp,
     };
     AP::logger().WriteBlock(&pkt3, sizeof(pkt3));
 }

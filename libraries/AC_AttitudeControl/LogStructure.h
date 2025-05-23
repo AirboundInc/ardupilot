@@ -61,12 +61,14 @@ struct PACKED log_ACTS1 {
 // @Field: BodyAccX: Body acceleration along X axis
 // @Field: BodyAccY: Body acceleration along Y axis
 // @Field: BodyAccZ: Body acceleration along Z axis
+// @Field: AccZGC: Body acceleration along Z axis - GRAVITY_MSS * sin(pitch)
 struct PACKED log_ACTS2 {
     LOG_PACKET_HEADER;
     uint64_t time_us;
     float body_acc_x;
     float body_acc_y;
     float body_acc_z;
+    float accel_g_z_comp;
 };
 
 #define LOG_STRUCTURE_FROM_ATTC                                                                                                    \
@@ -75,4 +77,4 @@ struct PACKED log_ACTS2 {
         { LOG_ACTS1_MSG, sizeof(log_ACTS1),                                                                                        \
             "ATS1", "Qffffffff", "TimeUS,ThstL,ThstLH,ThstLV,ThstLP,ThstR,ThstRH,ThstRV,ThstRP", "sNNNNNNNN", "F--------", true }, \
         { LOG_ACTS2_MSG, sizeof(log_ACTS2),                                                                                        \
-            "ATS2", "Qfff", "TimeUS,BodyAccX,BodyAccY,BodyAccZ", "sooo", "F---", true },
+            "ATS2", "Qffff", "TimeUS,BodyAccX,BodyAccY,BodyAccZ,AccZGC", "soooo", "F----", true },
