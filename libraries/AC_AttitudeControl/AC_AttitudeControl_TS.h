@@ -36,6 +36,7 @@ const uint8_t RIGHT_ESC_INDEX = 1;
 
 const float CG_CRAFT_M = 0.230;
 const float CS_CRAFT_M = 0.230;
+// const float CS_CRAFT_M = 0.336;
 #else
 // TRT (hardware) configuration
 const uint8_t LEFT_TVSERVO_CHANNEL = 14;
