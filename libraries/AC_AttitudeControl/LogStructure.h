@@ -21,7 +21,7 @@ struct PACKED log_ACTS0 {
     uint64_t time_us;
     float force_net_z;
     float force_net_x;
-    float f_wind_p;
+    float force_wind_p;
     float phi_left;
     float phi_right;
     float rpm_left;
@@ -61,8 +61,6 @@ struct PACKED log_ACTS1 {
 // @Field: BAccX: Body acceleration along X axis
 // @Field: BAccY: Body acceleration along Y axis
 // @Field: BAccZ: Body acceleration along Z axis
-// @Field: AccXGC: Body acceleration along X axis - GRAVITY_MSS * cos(pitch)
-// @Field: AccZGC: Body acceleration along Z axis - GRAVITY_MSS * sin(pitch)
 // @Field: ELFAccX: Earth local frame (ZX) acceleration along X axis
 // @Field: ELFAccZ: Earth local frame (ZX) acceleration along Z axis
 struct PACKED log_ACTS2 {
@@ -71,8 +69,6 @@ struct PACKED log_ACTS2 {
     float body_acc_x;
     float body_acc_y;
     float body_acc_z;
-    float accel_x_g_comp;
-    float accel_z_g_comp;
     float elf_acc_x;
     float elf_acc_z;
 };
@@ -83,4 +79,4 @@ struct PACKED log_ACTS2 {
         { LOG_ACTS1_MSG, sizeof(log_ACTS1),                                                                                        \
             "ATS1", "Qffffffff", "TimeUS,ThstL,ThstLH,ThstLV,ThstLP,ThstR,ThstRH,ThstRV,ThstRP", "sNNNNNNNN", "F--------", true }, \
         { LOG_ACTS2_MSG, sizeof(log_ACTS2),                                                                                        \
-            "ATS2", "Qfffffff", "TimeUS,BAccX,BAccY,BAccZ,AccXGC,AccZGC,ELFAccX,ELFAccZ", "sooooooo", "F-------", true },
+            "ATS2", "Qfffff", "TimeUS,BAccX,BAccY,BAccZ,ELFAccX,ELFAccZ", "sooooo", "F-----", true },
