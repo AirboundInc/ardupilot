@@ -268,8 +268,8 @@ void AC_AttitudeControl_TS::calculate_wind_force(float pitch)
     Vector2f force_wind_bf = _ahrs.earth_to_body2D_pitch(force_wind_elf);
 
     // local body frame z force of wind
-
-    force_wind_perpendicular = force_wind_bf.z;
+    // force_wind_bf has components .x (Z) and .y (X), we want the Z one
+    force_wind_perpendicular = force_wind_bf.x;
 }
 
 // Calculate thrust components using craft pitch and thrust vectoring angle
@@ -378,9 +378,9 @@ void AC_AttitudeControl_TS::log_write_ACTS0()
     const struct log_ACTS0 pkt {
         LOG_PACKET_HEADER_INIT(LOG_ACTS0_MSG),
         time_us : AP_HAL::micros64(),
-        f_net_z : force_net_z,
-        f_net_x : force_net_x,
-        f_wind_p : force_wind_perpendicular,
+        force_net_z : force_net_z,
+        force_net_x : force_net_x,
+        force_wind_p : force_wind_perpendicular,
         phi_left : phi_left,
         phi_right : phi_right,
         rpm_left : rpm_left,
@@ -415,8 +415,6 @@ void AC_AttitudeControl_TS::log_write_ACTS2()
         body_acc_x : accel_x,
         body_acc_y : accel_y,
         body_acc_z : accel_z,
-        accel_x_g_comp : accel_x_g_comp,
-        accel_z_g_comp : accel_z_g_comp,
         elf_acc_x : accel_x_elf,
         elf_acc_z : accel_z_elf,
     };
