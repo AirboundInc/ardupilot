@@ -7,7 +7,7 @@
 #include <AP_ESC_Telem/AP_ESC_Telem.h>
 #include <AP_Logger/AP_Logger.h>
 
-#define SITL_DEBUG // Comment out if not doing SITL DEBUG
+// #define SITL_DEBUG // Comment out if not doing SITL DEBUG
 
 const bool ENABLE_WIND_COMP = false;
 
@@ -46,7 +46,7 @@ const uint8_t LEFT_ESC_INDEX = 1;
 const uint8_t RIGHT_ESC_INDEX = 2;
 
 const float CG_CRAFT_M = 0.230;
-const float CS_CRAFT_M = 0.336;
+const float CS_CRAFT_M = 0.318;
 #endif
 
 const uint32_t LOGGING_INTERVAL_MS = 40; // 25Hz
