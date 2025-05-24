@@ -145,8 +145,11 @@ void AC_AttitudeControl_TS::rate_controller_run() {
     // add custom wind force based boost to pitch pid output
     float pitch_pid_out = get_rate_pitch_pid().update_all(_ang_vel_body.y, gyro_latest.y, _dt, _motors.limit.pitch, _pd_scale.y) + _actuator_sysid.y;
     update_wind_boost();
-    float pitch_in = pitch_pid_out + _pitch_pid_boost_wind;
-    pitch_in = constrain_float(pitch_in, -1.0, 1.0);
+    float pitch_in = pitch_pid_out;
+    if (ENABLE_WIND_COMP) {
+        pitch_in += _pitch_pid_boost_wind;
+        pitch_in = constrain_float(pitch_in, -1.0, 1.0);
+    }
     _motors.set_pitch(pitch_in);
     _motors.set_pitch_ff(get_rate_pitch_pid().get_ff());
 
