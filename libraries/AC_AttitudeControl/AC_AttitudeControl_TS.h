@@ -9,7 +9,7 @@
 
 #define SITL_DEBUG // Comment out if not doing SITL DEBUG
 
-const bool ENABLE_WIND_COMP = false;
+const bool ENABLE_WIND_COMP = true;
 
 // TODO: Turn into params
 const float CRAFT_MASS_KG = 2.5;
