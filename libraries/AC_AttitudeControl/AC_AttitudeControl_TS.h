@@ -9,6 +9,8 @@
 
 #define SITL_DEBUG // Comment out if not doing SITL DEBUG
 
+const bool ENABLE_WIND_COMP = false;
+
 // TODO: Turn into params
 const float CRAFT_MASS_KG = 2.5;
 const float PROPELLER_PITCH_IN = 10;
@@ -35,8 +37,7 @@ const uint8_t LEFT_ESC_INDEX = 1;
 const uint8_t RIGHT_ESC_INDEX = 1;
 
 const float CG_CRAFT_M = 0.230;
-const float CS_CRAFT_M = 0.230;
-// const float CS_CRAFT_M = 0.336;
+const float CS_CRAFT_M = 0.336;
 #else
 // TRT (hardware) configuration
 const uint8_t LEFT_TVSERVO_CHANNEL = 14;
