@@ -145,10 +145,11 @@ void AC_AttitudeControl_TS::rate_controller_run() {
     // add custom wind force based boost to pitch pid output
     float pitch_pid_out = get_rate_pitch_pid().update_all(_ang_vel_body.y, gyro_latest.y, _dt, _motors.limit.pitch, _pd_scale.y) + _actuator_sysid.y;
     update_wind_boost();
-    float pitch_in = pitch_pid_out;
+    pitch_in = pitch_pid_out;
     if (ENABLE_WIND_COMP) {
         pitch_in += _pitch_pid_boost_wind;
         pitch_in = constrain_float(pitch_in, -1.0, 1.0);
+        // TODO: figure out pitch_in logging
     }
     _motors.set_pitch(pitch_in);
     _motors.set_pitch_ff(get_rate_pitch_pid().get_ff());
@@ -387,7 +388,6 @@ void AC_AttitudeControl_TS::log_write_ACTS0()
         phi_right : phi_right,
         rpm_left : rpm_left,
         rpm_right : rpm_right,
-        pitch_pid_boost_wind : _pitch_pid_boost_wind,
     };
     AP::logger().WriteBlock(&pkt, sizeof(pkt));
 }
@@ -419,6 +419,8 @@ void AC_AttitudeControl_TS::log_write_ACTS2()
         body_acc_z : accel_z,
         elf_acc_x : accel_x_elf,
         elf_acc_z : accel_z_elf,
+        pitch_pid_boost_wind : _pitch_pid_boost_wind,
+        pid_out_boosted : pitch_in,
     };
     AP::logger().WriteBlock(&pkt3, sizeof(pkt3));
 }

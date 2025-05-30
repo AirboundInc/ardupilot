@@ -15,7 +15,6 @@
 // @Field: FwindP: Wind perpendicular force
 // @Field: PhiLeft: Thrust vectoring angle left
 // @Field: PhiRight: Thrust vectoring angle right
-// @Field: PIDBoost: Calculated Pitch PID boost wind
 struct PACKED log_ACTS0 {
     LOG_PACKET_HEADER;
     uint64_t time_us;
@@ -26,7 +25,6 @@ struct PACKED log_ACTS0 {
     float phi_right;
     float rpm_left;
     float rpm_right;
-    float pitch_pid_boost_wind;
 };
 
 // @LoggerMessage: ATS1
@@ -63,6 +61,8 @@ struct PACKED log_ACTS1 {
 // @Field: BAccZ: Body acceleration along Z axis
 // @Field: ELFAccX: Earth local frame (ZX) acceleration along X axis
 // @Field: ELFAccZ: Earth local frame (ZX) acceleration along Z axis
+// @Field: PIDBst: Calculated Pitch PID boost wind
+// @Field: PIDOutBst: Calculated Pitch PID output post boosting
 struct PACKED log_ACTS2 {
     LOG_PACKET_HEADER;
     uint64_t time_us;
@@ -71,12 +71,14 @@ struct PACKED log_ACTS2 {
     float body_acc_z;
     float elf_acc_x;
     float elf_acc_z;
+    float pitch_pid_boost_wind;
+    float pid_out_boosted;
 };
 
 #define LOG_STRUCTURE_FROM_ATTC                                                                                                    \
     { LOG_ACTS0_MSG, sizeof(log_ACTS0),                                                                                            \
-        "ATS0", "Qffffffff", "TimeUS,FnetZ,FnetX,FwindP,PhiLeft,PhiRight,rpmL,rpmR,PIDBst", "sNNNdd---", "F--------", true },      \
+        "ATS0", "Qfffffff", "TimeUS,FnetZ,FnetX,FwindP,PhiLeft,PhiRight,rpmL,rpmR", "sNNNdd--", "F-------", true },                \
         { LOG_ACTS1_MSG, sizeof(log_ACTS1),                                                                                        \
             "ATS1", "Qffffffff", "TimeUS,ThstL,ThstLH,ThstLV,ThstLP,ThstR,ThstRH,ThstRV,ThstRP", "sNNNNNNNN", "F--------", true }, \
         { LOG_ACTS2_MSG, sizeof(log_ACTS2),                                                                                        \
-            "ATS2", "Qfffff", "TimeUS,BAccX,BAccY,BAccZ,ELFAccX,ELFAccZ", "sooooo", "F-----", true },
+            "ATS2", "Qfffffff", "TimeUS,BAccX,BAccY,BAccZ,ELFAccX,ELFAccZ,PIDBst,PIDOutBst", "sooooo--", "F-------", true },
