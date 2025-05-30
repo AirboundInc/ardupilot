@@ -94,7 +94,7 @@ private:
     AP_ESC_Telem& _telem = AP::esc_telem();
     uint32_t last_log_ms = 0;
 
-    float _pitch_pid_boost_wind = 0.0;
+    float _pitch_pid_boost_wind = 0.0, pitch_in = 0.0;
 
     thrust_t thrust_left, thrust_right;
     // body frame accels
