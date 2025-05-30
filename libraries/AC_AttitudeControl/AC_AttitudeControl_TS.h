@@ -42,8 +42,8 @@ const float CS_CRAFT_M = 0.336;
 // TRT (hardware) configuration
 const uint8_t LEFT_TVSERVO_CHANNEL = 14;
 const uint8_t RIGHT_TVSERVO_CHANNEL = 4;
-const uint8_t LEFT_ESC_INDEX = 1;
-const uint8_t RIGHT_ESC_INDEX = 2;
+const uint8_t LEFT_ESC_INDEX = 11; // l_throttle - channel 12
+const uint8_t RIGHT_ESC_INDEX = 10; // r_throttle - channel 11
 
 const float CG_CRAFT_M = 0.230;
 const float CS_CRAFT_M = 0.318;
