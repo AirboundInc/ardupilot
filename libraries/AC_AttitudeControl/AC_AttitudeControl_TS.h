@@ -7,9 +7,10 @@
 #include <AP_ESC_Telem/AP_ESC_Telem.h>
 #include <AP_Logger/AP_Logger.h>
 
-#define SITL_DEBUG // Comment out if not doing SITL DEBUG
+// #define SITL_DEBUG // Comment out if not doing SITL DEBUG
 
-const bool ENABLE_WIND_COMP = true;
+// const bool ENABLE_WIND_COMP = true;
+const bool ENABLE_WIND_COMP = false;
 
 // TODO: Turn into params
 const float CRAFT_MASS_KG = 2.5;
