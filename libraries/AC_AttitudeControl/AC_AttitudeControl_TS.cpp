@@ -218,7 +218,7 @@ void AC_AttitudeControl_TS::calculate_wind_force(float pitch)
     success = _telem.get_rpm(LEFT_ESC_INDEX, rpm_left);
     if (!success) {
         GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output RPM for %f", (float)LEFT_ESC_INDEX);
-        return;
+        rpm_left = 0.0f;
     }
     thrust_left = calculate_thrust(rpm_left, pitch, phi_left);
 
@@ -235,7 +235,7 @@ void AC_AttitudeControl_TS::calculate_wind_force(float pitch)
     success = _telem.get_rpm(RIGHT_ESC_INDEX, rpm_right);
     if (!success) {
         GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output RPM for %f", (float)RIGHT_ESC_INDEX);
-        return;
+        rpm_right = 0.0f;
     }
     thrust_right = calculate_thrust(rpm_right, pitch, phi_right);
 
@@ -286,17 +286,29 @@ AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rp
     float theta_rad = pitch * DEG_TO_RAD;
     float phi_rad = tv_angle * DEG_TO_RAD;
 
-    // check throttle values for thrust estimation
-    const float hover_throttle = _motors.get_throttle_hover();
-    const float throttle = _motors.get_throttle_out();
+    // Here we have to make phi_rad and theta_rad negative to
+    // validate sign convention, as right is positive and CCW angles are positive
+    float net_tilt_angle = -(theta_rad + phi_rad);
 
-    AP::logger().Write("THRT", "TimeUS,Throttle,ThrottleHover",
-        "s--", // seconds, degrees
-        "F--", // micro (1e-6), no mult (1e0)
-        "Qff", // uint64_t, float
-        AP_HAL::micros64(),
-        throttle,
-        hover_throttle);
+    const float hover_throttle = _motors.get_throttle_hover();
+    static float throttle_to_thrust = (CRAFT_MASS_KG * GRAVITY_MSS) / hover_throttle;
+    const float current_throttle = _motors.get_throttle_out();
+
+    if (is_zero(rpm)) {
+        // Fallback to throttle based thrust estimation if rpm is zero
+        result.thrust = current_throttle * throttle_to_thrust + THROTTLE_THRUST_INTERCEPT; // Newtons
+        calculate_thrust_components(result, net_tilt_angle, phi_rad);
+
+        AP::logger().Write("THRT", "TimeUS,Throttle,ThrottleHover,ThrustThrottleSlope",
+            "s---", // seconds, unitless
+            "F---", // micro (1e-6), no mult (1e0)
+            "Qfff", // uint64_t, float
+            AP_HAL::micros64(),
+            current_throttle,
+            hover_throttle,
+            throttle_to_thrust);
+        return result;
+    }
 
 #ifdef SITL_DEBUG
     // https://www.rcgroups.com/forums/showthread.php?288091-How-to-calculate-thrust-given-RPM-prop-pitch-and-prop-diameter
@@ -321,16 +333,24 @@ AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rp
     // convert from kg to N
     result.thrust *= GRAVITY_MSS;
 
-    // Here we have to make phi_rad and theta_rad negative to
-    // validate sign convention, as right is positive and CCW angles are positive
-    float net_tilt_angle = -(theta_rad + phi_rad);
+    calculate_thrust_components(result, net_tilt_angle, phi_rad);
+
+    // update fallback conversion factor in normal case
+    throttle_to_thrust = (result.thrust - THROTTLE_THRUST_INTERCEPT) / current_throttle;
+
+    return result;
+}
+
+// calculate horizontal, vertical, perpendicular, parallel components of thrust
+void AC_AttitudeControl_TS::calculate_thrust_components(thrust_t& result, float tilt_angle_rad, float vectoring_angle_rad)
+{
+    float net_tilt_angle = tilt_angle_rad;
+    float phi_rad = vectoring_angle_rad;
 
     result.horizontal = result.thrust * sinf(net_tilt_angle);
     result.vertical = result.thrust * cosf(net_tilt_angle);
     result.perpendicular = result.thrust * sinf(-phi_rad);
     result.parallel = result.thrust * cosf(-phi_rad);
-
-    return result;
 }
 
 // Convert pwm to thrust vectoring angle in degrees

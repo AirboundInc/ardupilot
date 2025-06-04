@@ -40,6 +40,7 @@ const uint8_t RIGHT_ESC_INDEX = 1;
 
 const float CG_CRAFT_M = 0.230;
 const float CS_CRAFT_M = 0.336;
+const float THROTTLE_THRUST_INTERCEPT = 0.89; // analytically calculated
 #else
 // TRT (hardware) configuration
 const uint8_t LEFT_TVSERVO_CHANNEL = 14;
@@ -49,6 +50,7 @@ const uint8_t RIGHT_ESC_INDEX = 10; // r_throttle - channel 11
 
 const float CG_CRAFT_M = 0.230;
 const float CS_CRAFT_M = 0.318;
+const float THROTTLE_THRUST_INTERCEPT = 0.89; // TODO: Get this value!
 #endif
 
 const uint32_t LOGGING_INTERVAL_MS = 40; // 25Hz
@@ -82,6 +84,7 @@ private:
     void update_wind_boost();
     void calculate_wind_force(float pitch);
     thrust_t calculate_thrust(float rpm, float pitch, float tv_angle);
+    void calculate_thrust_components(thrust_t& result, float tilt_angle_rad, float vectoring_angle_rad);
 
     // Helper methods
     uint16_t get_servo_min(uint8_t channel);
