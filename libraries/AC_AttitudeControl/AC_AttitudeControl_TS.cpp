@@ -149,7 +149,6 @@ void AC_AttitudeControl_TS::rate_controller_run() {
     if (ENABLE_WIND_COMP) {
         pitch_in += _pitch_pid_boost_wind;
         pitch_in = constrain_float(pitch_in, -1.0, 1.0);
-        // TODO: figure out pitch_in logging
     }
     _motors.set_pitch(pitch_in);
     _motors.set_pitch_ff(get_rate_pitch_pid().get_ff());
@@ -286,6 +285,18 @@ AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rp
     // Convention: Left is positive, counterclockwise is positive
     float theta_rad = pitch * DEG_TO_RAD;
     float phi_rad = tv_angle * DEG_TO_RAD;
+
+    // check throttle values for thrust estimation
+    const float hover_throttle = _motors.get_throttle_hover();
+    const float throttle = _motors.get_throttle_out();
+
+    AP::logger().Write("THRT", "TimeUS,Throttle,ThrottleHover",
+        "s--", // seconds, degrees
+        "F--", // micro (1e-6), no mult (1e0)
+        "Qff", // uint64_t, float
+        AP_HAL::micros64(),
+        throttle,
+        hover_throttle);
 
 #ifdef SITL_DEBUG
     // https://www.rcgroups.com/forums/showthread.php?288091-How-to-calculate-thrust-given-RPM-prop-pitch-and-prop-diameter
