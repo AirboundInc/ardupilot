@@ -9,8 +9,8 @@
 
 #define SITL_DEBUG // Comment out if not doing SITL DEBUG
 
-// const bool ENABLE_WIND_COMP = true;
-const bool ENABLE_WIND_COMP = false;
+const bool ENABLE_WIND_COMP = true;
+// const bool ENABLE_WIND_COMP = false;
 
 // TODO: Turn into params
 const float CRAFT_MASS_KG = 2.5;
@@ -35,8 +35,13 @@ const float VECTORING_MAX_ANGLE_DEG = 45.0;
 // SITL configuration
 const uint8_t LEFT_TVSERVO_CHANNEL = 3;
 const uint8_t RIGHT_TVSERVO_CHANNEL = 4;
-const uint8_t LEFT_ESC_INDEX = 1;
-const uint8_t RIGHT_ESC_INDEX = 1;
+
+// const uint8_t LEFT_ESC_INDEX = 1;
+// const uint8_t RIGHT_ESC_INDEX = 1;
+// TODO: revert after throttle fallback test, 0 is wrong, 1 is correct for SITL ESC channel
+
+const uint8_t LEFT_ESC_INDEX = 0;
+const uint8_t RIGHT_ESC_INDEX = 0;
 
 const float CG_CRAFT_M = 0.230;
 const float CS_CRAFT_M = 0.336;
@@ -52,6 +57,8 @@ const float CG_CRAFT_M = 0.230;
 const float CS_CRAFT_M = 0.318;
 const float THROTTLE_THRUST_INTERCEPT = 0.89; // TODO: Get this value!
 #endif
+
+const float DEFAULT_HOVER_THROTTLE = 0.3;
 
 const uint32_t LOGGING_INTERVAL_MS = 40; // 25Hz
 
