@@ -290,23 +290,29 @@ AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rp
     // validate sign convention, as right is positive and CCW angles are positive
     float net_tilt_angle = -(theta_rad + phi_rad);
 
-    const float hover_throttle = _motors.get_throttle_hover();
-    static float throttle_to_thrust = (CRAFT_MASS_KG * GRAVITY_MSS) / hover_throttle;
     const float current_throttle = _motors.get_throttle_out();
+    float hover_throttle = _motors.get_throttle_hover();
+    if (is_zero(hover_throttle)) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Hover throttle zero! Current_throttle! (%f) Hover_throttle (%f)", current_throttle, hover_throttle);
+        hover_throttle = DEFAULT_HOVER_THROTTLE;
+    }
+
+    static float throttle_to_thrust = (CRAFT_MASS_KG * GRAVITY_MSS) / hover_throttle;
+
+    AP::logger().Write("THRT", "TimeUS,Throttle,ThrottleHover,ThrustThrottleSlope",
+        "s---", // seconds, unitless
+        "F---", // micro (1e-6), no mult (1e0)
+        "Qfff", // uint64_t, float
+        AP_HAL::micros64(),
+        current_throttle,
+        hover_throttle,
+        throttle_to_thrust);
 
     if (is_zero(rpm)) {
         // Fallback to throttle based thrust estimation if rpm is zero
         result.thrust = current_throttle * throttle_to_thrust + THROTTLE_THRUST_INTERCEPT; // Newtons
         calculate_thrust_components(result, net_tilt_angle, phi_rad);
 
-        AP::logger().Write("THRT", "TimeUS,Throttle,ThrottleHover,ThrustThrottleSlope",
-            "s---", // seconds, unitless
-            "F---", // micro (1e-6), no mult (1e0)
-            "Qfff", // uint64_t, float
-            AP_HAL::micros64(),
-            current_throttle,
-            hover_throttle,
-            throttle_to_thrust);
         return result;
     }
 
@@ -336,7 +342,9 @@ AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rp
     calculate_thrust_components(result, net_tilt_angle, phi_rad);
 
     // update fallback conversion factor in normal case
-    throttle_to_thrust = (result.thrust - THROTTLE_THRUST_INTERCEPT) / current_throttle;
+    if (is_positive(current_throttle)) {
+        throttle_to_thrust = (result.thrust - THROTTLE_THRUST_INTERCEPT) / current_throttle;
+    }
 
     return result;
 }
