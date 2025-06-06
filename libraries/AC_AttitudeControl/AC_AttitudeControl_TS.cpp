@@ -308,7 +308,7 @@ AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rp
         hover_throttle,
         throttle_to_thrust);
 
-    if (is_zero(rpm)) {
+    if (rpm <= MIN_RPM_FALLBACK_THRESHOLD && _motors.armed()) {
         // Fallback to throttle based thrust estimation if rpm is zero
         result.thrust = current_throttle * throttle_to_thrust + THROTTLE_THRUST_INTERCEPT; // Newtons
         calculate_thrust_components(result, net_tilt_angle, phi_rad);
