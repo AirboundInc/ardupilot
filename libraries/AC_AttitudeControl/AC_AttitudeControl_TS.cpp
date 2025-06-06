@@ -146,7 +146,7 @@ void AC_AttitudeControl_TS::rate_controller_run() {
     float pitch_pid_out = get_rate_pitch_pid().update_all(_ang_vel_body.y, gyro_latest.y, _dt, _motors.limit.pitch, _pd_scale.y) + _actuator_sysid.y;
     update_wind_boost();
     pitch_in = pitch_pid_out;
-    if (ENABLE_WIND_COMP) {
+    if (enable_wind_comp) {
         pitch_in += _pitch_pid_boost_wind;
         pitch_in = constrain_float(pitch_in, -1.0, 1.0);
     }
@@ -199,6 +199,20 @@ void AC_AttitudeControl_TS::update_wind_boost()
 
     _pitch_pid_boost_wind = (1 - BOOST_WEIGHT) * last_boost + BOOST_WEIGHT * pitch_boost_wind;
     last_boost = _pitch_pid_boost_wind;
+
+    static uint16_t boost_enable;
+    bool success = SRV_Channels::get_output_pwm(SRV_Channel::k_scripting1, boost_enable);
+    if (!success) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output PWM for scripting1!");
+    }
+
+    if (boost_enable >= BOOST_ENABLE_THRESHOLD) {
+        enable_wind_comp = true;
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Enabling Wind compensation based PID Boost!");
+    } else {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Disabling Wind compensation based PID Boost!");
+        enable_wind_comp = false;
+    }
 }
 
 // Calculate force of wind perpendicular to body while pitching
