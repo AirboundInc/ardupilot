@@ -9,7 +9,8 @@
 
 #define SITL_DEBUG // Comment out if not doing SITL DEBUG
 
-const uint16_t BOOST_ENABLE_THRESHOLD = 1500;
+const uint8_t BOOST_RC_CHANNEL = 8;
+const uint16_t ENABLE_BOOST_THRESHOLD = 1500;
 
 // TODO: Turn into params
 const float CRAFT_MASS_KG = 2.5;
@@ -126,5 +127,6 @@ private:
     float phi_left, phi_right; // thrust vectoring angles of each tilt servo
     float rpm_left, rpm_right;
 
-    bool enable_wind_comp = true;
+    bool enable_wind_comp = true, prev_enable_wind_comp = true;
+    int16_t enable_boost_pwm;
 };

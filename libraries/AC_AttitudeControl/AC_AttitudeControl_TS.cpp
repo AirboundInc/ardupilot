@@ -200,19 +200,26 @@ void AC_AttitudeControl_TS::update_wind_boost()
     _pitch_pid_boost_wind = (1 - BOOST_WEIGHT) * last_boost + BOOST_WEIGHT * pitch_boost_wind;
     last_boost = _pitch_pid_boost_wind;
 
-    static uint16_t boost_enable;
-    bool success = SRV_Channels::get_output_pwm(SRV_Channel::k_scripting1, boost_enable);
-    if (!success) {
-        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output PWM for scripting1!");
+    // bool success = SRV_Channels::get_output_pwm(SRV_Channel::k_scripting2, enable_boost_pwm);
+    // if (!success) {
+    //
+    // }
+    RC_Channel* rc = RC_Channels::rc_channel(BOOST_RC_CHANNEL - 1);
+    if (rc == nullptr) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output PWM for RC %f!", (float)BOOST_RC_CHANNEL);
     }
+    enable_boost_pwm = rc->get_radio_in();
 
-    if (boost_enable >= BOOST_ENABLE_THRESHOLD) {
+    if (enable_boost_pwm >= ENABLE_BOOST_THRESHOLD) {
         enable_wind_comp = true;
-        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Enabling Wind compensation based PID Boost!");
     } else {
-        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Disabling Wind compensation based PID Boost!");
         enable_wind_comp = false;
     }
+
+    if (enable_wind_comp != prev_enable_wind_comp) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Setting enable wind comp to: %f", (float)enable_wind_comp);
+    }
+    prev_enable_wind_comp = enable_wind_comp;
 }
 
 // Calculate force of wind perpendicular to body while pitching
@@ -313,14 +320,16 @@ AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rp
 
     static float throttle_to_thrust = (CRAFT_MASS_KG * GRAVITY_MSS) / hover_throttle;
 
-    AP::logger().Write("THRT", "TimeUS,Throttle,ThrottleHover,ThrustThrottleSlope",
-        "s---", // seconds, unitless
-        "F---", // micro (1e-6), no mult (1e0)
-        "Qfff", // uint64_t, float
+    AP::logger().Write("THRT", "TimeUS,Throttle,ThrottleHov,ThrstThrotSlope,EnBoost,EnWindC",
+        "s-----", // seconds, unitless
+        "F-----", // micro (1e-6), no mult (1e0)
+        "Qfffff", // uint64_t, float
         AP_HAL::micros64(),
         current_throttle,
         hover_throttle,
-        throttle_to_thrust);
+        throttle_to_thrust,
+        (float)enable_boost_pwm,
+        (float)enable_wind_comp);
 
     if (rpm <= MIN_RPM_FALLBACK_THRESHOLD && _motors.armed()) {
         // Fallback to throttle based thrust estimation if rpm is zero
