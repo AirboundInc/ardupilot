@@ -60,7 +60,7 @@ const struct UnitStructure log_Units[] = {
     { 'L', "rad/s/s" },       // radians per second per second
     { 'm', "m" },             // metres
     { 'n', "m/s" },           // metres per second
-    // { 'N', "N" },          // Newton
+    { 'N', "N" },             // Newton
     { 'o', "m/s/s" },         // metres per second per second
     { 'O', "degC" },          // degrees Celsius. Not SI, but Kelvin is too cumbersome for most users
     { '%', "%" },             // percent
@@ -143,6 +143,7 @@ const struct MultiplierStructure log_Multipliers[] = {
 #include <AP_RPM/LogStructure.h>
 #include <AC_Fence/LogStructure.h>
 #include <AP_Landing/LogStructure.h>
+#include <AC_AttitudeControl/LogStructure.h>
 
 // structure used to define logging format
 // It is packed on ChibiOS to save flash space; however, this causes problems
@@ -1240,6 +1241,7 @@ LOG_STRUCTURE_FROM_GPS \
     { LOG_RSSI_MSG, sizeof(log_RSSI), \
       "RSSI",  "Qff",     "TimeUS,RXRSSI,RXLQ", "s--", "F--", true  }, \
 LOG_STRUCTURE_FROM_BARO \
+LOG_STRUCTURE_FROM_ATTC \
 LOG_STRUCTURE_FROM_PRECLAND \
     { LOG_POWR_MSG, sizeof(log_POWR), \
       "POWR","QffHHB","TimeUS,Vcc,VServo,Flags,AccFlags,Safety", "svv---", "F00---", true }, \
@@ -1426,6 +1428,7 @@ enum LogMessages : uint8_t {
     LOG_RCOUT2_MSG,
     LOG_RCOUT3_MSG,
     LOG_IDS_FROM_FENCE,
+    LOG_IDS_FROM_ATT_CONTROL,
 
     _LOG_LAST_MSG_
 };
