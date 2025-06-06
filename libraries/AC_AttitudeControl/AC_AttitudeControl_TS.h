@@ -9,14 +9,14 @@
 
 #define SITL_DEBUG // Comment out if not doing SITL DEBUG
 
-// const bool ENABLE_WIND_COMP = true;
-const bool ENABLE_WIND_COMP = false;
+const bool ENABLE_WIND_COMP = true;
+// const bool ENABLE_WIND_COMP = false;
 
 // TODO: Turn into params
 const float CRAFT_MASS_KG = 2.5;
 const float PROPELLER_PITCH_IN = 10;
 const float PROPELLER_DIAMETER_IN = 15;
-const float BOOST_WEIGHT = 0.05; // Use 5 percent of new value
+const float BOOST_WEIGHT = 0.01; // how much of the new value should be used vs old
 
 // CG_CRAFT_M
 // Center of Gravity of the drone in m.
