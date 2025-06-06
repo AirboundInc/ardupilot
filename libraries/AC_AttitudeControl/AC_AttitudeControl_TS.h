@@ -9,8 +9,8 @@
 
 #define SITL_DEBUG // Comment out if not doing SITL DEBUG
 
-const bool ENABLE_WIND_COMP = true;
-// const bool ENABLE_WIND_COMP = false;
+// const bool ENABLE_WIND_COMP = true;
+const bool ENABLE_WIND_COMP = false;
 
 // TODO: Turn into params
 const float CRAFT_MASS_KG = 2.5;
@@ -59,6 +59,7 @@ const float THROTTLE_THRUST_INTERCEPT = 0.89; // TODO: Get this value!
 #endif
 
 const float DEFAULT_HOVER_THROTTLE = 0.3;
+const float MIN_RPM_FALLBACK_THRESHOLD = 100; // RPM below which we want to switch to throttle based thrust calc
 
 const uint32_t LOGGING_INTERVAL_MS = 40; // 25Hz
 
