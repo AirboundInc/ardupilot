@@ -9,7 +9,7 @@
 
 #define SITL_DEBUG // Comment out if not doing SITL DEBUG
 
-const uint8_t BOOST_RC_CHANNEL = 8;
+const uint8_t BOOST_RC_CHANNEL = 6;
 const uint16_t ENABLE_BOOST_THRESHOLD = 1500;
 
 // TODO: Turn into params
