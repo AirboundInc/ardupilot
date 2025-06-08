@@ -200,10 +200,6 @@ void AC_AttitudeControl_TS::update_wind_boost()
     _pitch_pid_boost_wind = (1 - BOOST_WEIGHT) * last_boost + BOOST_WEIGHT * pitch_boost_wind;
     last_boost = _pitch_pid_boost_wind;
 
-    // bool success = SRV_Channels::get_output_pwm(SRV_Channel::k_scripting2, enable_boost_pwm);
-    // if (!success) {
-    //
-    // }
     RC_Channel* rc = RC_Channels::rc_channel(BOOST_RC_CHANNEL - 1);
     if (rc == nullptr) {
         GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Unable to get output PWM for RC %f!", (float)BOOST_RC_CHANNEL);
