@@ -41,11 +41,15 @@ void AC_PD::set_and_save_kd(float d)
 }
 
 // Update for one step
-float AC_PD::update_pd(float error, float error_dot, float dt)
+float AC_PD::update_pd(float error, float error_delta, float dt)
 {
     // Calculate P and D terms
     float p_term = error * _kp;
-    float d_term = error_dot * _kd;
+    float d_term = 0;
+
+    if (!is_zero(dt)) {
+        d_term = (error_delta * _kd) / dt;
+    }
 
     // Return combined PD term
     return p_term + d_term;
