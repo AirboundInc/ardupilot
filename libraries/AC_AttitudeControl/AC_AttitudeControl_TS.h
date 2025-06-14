@@ -129,4 +129,5 @@ private:
 
     bool enable_wind_comp = true, prev_enable_wind_comp = true;
     int16_t enable_boost_pwm;
+    bool use_throttle_thrust_fallback = false;
 };
