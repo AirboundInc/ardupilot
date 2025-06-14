@@ -93,7 +93,14 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @Range: 3.000 12.000
     // @Range{Sub}: 0.0 12.000
     // @User: Standard
-    AP_SUBGROUPINFO(_p_angle_pitch, "ANG_PIT_", 14, AC_AttitudeControl, AC_P),
+
+    // @Param: ANG_PIT_D
+    // @DisplayName: Pitch axis angle controller D gain
+    // @Description: Pitch axis angle controller D gain.  Converts the error between the desired pitch angle and actual angle to a desired pitch rate
+    // @Range: 3.000 12.000
+    // @Range{Sub}: 0.0 12.000
+    // @User: Standard
+    AP_SUBGROUPINFO(_pd_angle_pitch, "ANG_PIT_", 14, AC_AttitudeControl, AC_PD),
 
     // @Param: ANG_YAW_P
     // @DisplayName: Yaw axis angle controller P gain
@@ -872,7 +879,7 @@ void AC_AttitudeControl::input_shaping_rate_predictor(const Vector2f &error_angl
         target_ang_vel.y = input_shaping_angle(wrap_PI(error_angle.y), _input_tc, get_accel_pitch_max_radss(), target_ang_vel.y, dt);
     } else {
         const float angleP_roll = _p_angle_roll.kP() * _angle_P_scale.x;
-        const float angleP_pitch = _p_angle_pitch.kP() * _angle_P_scale.y;
+        const float angleP_pitch = _pd_angle_pitch.kP() * _angle_P_scale.y;
         target_ang_vel.x = angleP_roll * wrap_PI(error_angle.x);
         target_ang_vel.y = angleP_pitch * wrap_PI(error_angle.y);
     }
@@ -1022,10 +1029,11 @@ Vector3f AC_AttitudeControl::update_ang_vel_target_from_att_error(const Vector3f
     }
 
     // Compute the pitch angular velocity demand from the pitch angle error
-    const float angleP_pitch = _p_angle_pitch.kP() * _angle_P_scale.y;
+    const float angleP_pitch = _pd_angle_pitch.kP() * _angle_P_scale.y;
     if (_use_sqrt_controller && !is_zero(get_accel_pitch_max_radss())) {
         rate_target_ang_vel.y = sqrt_controller(attitude_error_rot_vec_rad.y, angleP_pitch, constrain_float(get_accel_pitch_max_radss() / 2.0f, AC_ATTITUDE_ACCEL_RP_CONTROLLER_MIN_RADSS, AC_ATTITUDE_ACCEL_RP_CONTROLLER_MAX_RADSS), _dt);
     } else {
+        // TODO: Add kD mult here
         rate_target_ang_vel.y = angleP_pitch * attitude_error_rot_vec_rad.y;
     }
 

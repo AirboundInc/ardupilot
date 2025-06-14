@@ -10,9 +10,11 @@
 #include <AP_Motors/AP_Motors.h>
 #include <AC_PID/AC_PID.h>
 #include <AC_PID/AC_P.h>
+#include <AC_PID/AC_PD.h>
 #include <AP_Vehicle/AP_MultiCopter.h>
 
 #define AC_ATTITUDE_CONTROL_ANGLE_P                     4.5f             // default angle P gain for roll, pitch and yaw
+#define AC_ATTITUDE_CONTROL_ANGLE_D                     1.5f             // default angle D gain for roll, pitch and yaw
 
 #define AC_ATTITUDE_ACCEL_RP_CONTROLLER_MIN_RADSS       radians(40.0f)   // minimum body-frame acceleration limit for the stability controller (for roll and pitch axis)
 #define AC_ATTITUDE_ACCEL_RP_CONTROLLER_MAX_RADSS       radians(720.0f)  // maximum body-frame acceleration limit for the stability controller (for roll and pitch axis)
@@ -50,7 +52,7 @@ public:
                         const AP_MultiCopter &aparm,
                         AP_Motors& motors) :
         _p_angle_roll(AC_ATTITUDE_CONTROL_ANGLE_P),
-        _p_angle_pitch(AC_ATTITUDE_CONTROL_ANGLE_P),
+        _pd_angle_pitch(AC_ATTITUDE_CONTROL_ANGLE_P, AC_ATTITUDE_CONTROL_ANGLE_D),
         _p_angle_yaw(AC_ATTITUDE_CONTROL_ANGLE_P),
         _angle_boost(0),
         _use_sqrt_controller(true),
@@ -79,7 +81,7 @@ public:
 
     // pid accessors
     AC_P& get_angle_roll_p() { return _p_angle_roll; }
-    AC_P& get_angle_pitch_p() { return _p_angle_pitch; }
+    AC_PD& get_angle_pitch_p() { return _pd_angle_pitch; }
     AC_P& get_angle_yaw_p() { return _p_angle_yaw; }
     virtual AC_PID& get_rate_roll_pid() = 0;
     virtual AC_PID& get_rate_pitch_pid() = 0;
@@ -266,7 +268,7 @@ public:
     float max_angle_step_bf_roll() { return max_rate_step_bf_roll() / _p_angle_roll.kP(); }
 
     // Return pitch step size in radians that results in maximum output after 4 time steps
-    float max_angle_step_bf_pitch() { return max_rate_step_bf_pitch() / _p_angle_pitch.kP(); }
+    float max_angle_step_bf_pitch() { return max_rate_step_bf_pitch() / _pd_angle_pitch.kP(); }
 
     // Return yaw step size in radians that results in maximum output after 4 time steps
     float max_angle_step_bf_yaw() { return max_rate_step_bf_yaw() / _p_angle_yaw.kP(); }
@@ -452,8 +454,10 @@ protected:
 
     // angle controller P objects
     AC_P                _p_angle_roll;
-    AC_P                _p_angle_pitch;
     AC_P                _p_angle_yaw;
+
+    // angle controller PD objects
+    AC_PD                _pd_angle_pitch;
 
     // Angle limit time constant (to maintain altitude)
     AP_Float            _angle_limit_tc;
