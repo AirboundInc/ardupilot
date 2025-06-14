@@ -289,6 +289,7 @@ float AC_PID::update_all(float target, float measurement, float dt, bool limit, 
     _pid_info.D = D_out;
     _pid_info.FF = _target * _kff;
     _pid_info.DFF = _target_derivative * _kdff;
+    _pid_info.output = P_out + D_out + _integrator;
 
     return P_out + D_out + _integrator;
 }
