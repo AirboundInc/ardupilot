@@ -212,6 +212,8 @@ void AC_AttitudeControl_TS::update_wind_boost()
         enable_wind_comp = false;
     }
 
+    enable_wind_comp = enable_boost_pwm >= ENABLE_BOOST_THRESHOLD ? true : false;
+
     if (enable_wind_comp != prev_enable_wind_comp) {
         GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Setting enable wind comp to: %f", (float)enable_wind_comp);
     }
@@ -316,7 +318,7 @@ AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rp
 
     static float throttle_to_thrust = (CRAFT_MASS_KG * GRAVITY_MSS) / hover_throttle;
 
-    AP::logger().Write("THRT", "TimeUS,Throttle,ThrottleHov,ThrstThrotSlope,EnBoost,EnWindC",
+    AP::logger().Write("THRT", "TimeUS,Throt,ThrotHov,ThrstThrotSlope,EnBst,EnWindC,EnThrotThst",
         "s-----", // seconds, unitless
         "F-----", // micro (1e-6), no mult (1e0)
         "Qfffff", // uint64_t, float
@@ -325,15 +327,19 @@ AC_AttitudeControl_TS::thrust_t AC_AttitudeControl_TS::calculate_thrust(float rp
         hover_throttle,
         throttle_to_thrust,
         (float)enable_boost_pwm,
-        (float)enable_wind_comp);
+        (float)enable_wind_comp,
+        (float)use_throttle_thrust_fallback);
 
     if (rpm <= MIN_RPM_FALLBACK_THRESHOLD && _motors.armed()) {
         // Fallback to throttle based thrust estimation if rpm is zero
         result.thrust = current_throttle * throttle_to_thrust + THROTTLE_THRUST_INTERCEPT; // Newtons
         calculate_thrust_components(result, net_tilt_angle, phi_rad);
+        use_throttle_thrust_fallback = true;
 
         return result;
     }
+
+    use_throttle_thrust_fallback = false;
 
 #ifdef SITL_DEBUG
     // https://www.rcgroups.com/forums/showthread.php?288091-How-to-calculate-thrust-given-RPM-prop-pitch-and-prop-diameter
