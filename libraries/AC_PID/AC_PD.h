@@ -5,6 +5,7 @@
 
 #include <AP_Common/AP_Common.h>
 #include <AP_Param/AP_Param.h>
+#include <AP_Math/AP_Math.h>
 #include <stdlib.h>
 #include <cmath>
 
@@ -22,16 +23,16 @@ public:
     void set_and_save_kd(float d);
 
     // kp - return proportional gain
-    float kp() const { return _kp.get(); }
+    float kP() const { return _kp.get(); }
 
     // kd - return derivative gain
-    float kd() const { return _kd.get(); }
+    float kD() const { return _kd.get(); }
 
     // get gains
     const Vector2f& get_gains() const { return Vector2f(_kp.get(), _kd.get()); }
 
     // Return PD term given error and delta time
-    float update_pd(float error, float error_dot, float dt);
+    float update_pd(float error, float error_dot);
 
     static const struct AP_Param::GroupInfo var_info[];
 
