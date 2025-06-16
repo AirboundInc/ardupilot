@@ -1029,13 +1029,15 @@ Vector3f AC_AttitudeControl::update_ang_vel_target_from_att_error(const Vector3f
     }
 
     // Compute the pitch angular velocity demand from the pitch angle error
-    const float angleP_pitch = _pd_angle_pitch.kP() * _angle_P_scale.y;
-    if (_use_sqrt_controller && !is_zero(get_accel_pitch_max_radss())) {
-        rate_target_ang_vel.y = sqrt_controller(attitude_error_rot_vec_rad.y, angleP_pitch, constrain_float(get_accel_pitch_max_radss() / 2.0f, AC_ATTITUDE_ACCEL_RP_CONTROLLER_MIN_RADSS, AC_ATTITUDE_ACCEL_RP_CONTROLLER_MAX_RADSS), _dt);
-    } else {
-        // TODO: Add kD mult here
-        rate_target_ang_vel.y = angleP_pitch * attitude_error_rot_vec_rad.y;
-    }
+    // const float angleP_pitch = _pd_angle_pitch.kP() * _angle_P_scale.y;
+    // if (_use_sqrt_controller && !is_zero(get_accel_pitch_max_radss())) {
+    //     rate_target_ang_vel.y = sqrt_controller(attitude_error_rot_vec_rad.y, angleP_pitch, constrain_float(get_accel_pitch_max_radss() / 2.0f, AC_ATTITUDE_ACCEL_RP_CONTROLLER_MIN_RADSS, AC_ATTITUDE_ACCEL_RP_CONTROLLER_MAX_RADSS), _dt);
+    // } else {
+    //     rate_target_ang_vel.y = angleP_pitch * attitude_error_rot_vec_rad.y;
+    // }
+
+    // Use PD control instead of the default P control with sqrt controller
+    rate_target_ang_vel.y = _pd_angle_pitch.update(attitude_error_rot_vec_rad.y, _dt);
 
     // Compute the yaw angular velocity demand from the yaw angle error
     const float angleP_yaw = _p_angle_yaw.kP() * _angle_P_scale.z;
