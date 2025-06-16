@@ -15,7 +15,7 @@ public:
     CLASS_NO_COPY(AC_PD);
 
     // update controller
-    float update(float measurement, float target, float dt);
+    float update(float error, float dt);
 
     // parameter var table
     static const struct AP_Param::GroupInfo var_info[];

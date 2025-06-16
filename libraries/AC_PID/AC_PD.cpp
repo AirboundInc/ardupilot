@@ -28,9 +28,9 @@ AC_PD::AC_PD(float initial_p, float initial_d) :
     AP_Param::setup_object_defaults(this, var_info);
 }
 
-float AC_PD::update(float measurement, float target, float dt)
+float AC_PD::update(float error, float dt)
 {
-    const float err = target - measurement;
+    const float err = error;
     // initialize with error for first loop
     static float err_last = err;
 
