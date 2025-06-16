@@ -1,56 +1,59 @@
+/*
+  Generic PD algorithm for controllers
+*/
+
+#include <AP_Math/AP_Math.h>
 #include "AC_PD.h"
 
 const AP_Param::GroupInfo AC_PD::var_info[] = {
     // @Param: P
-    // @DisplayName: PD Proportional Gain
-    // @Description: PD controller proportional gain
-    // @Range: 0.0 2.0
-    // @Increment: 0.1
-    // @User: Standard
-    AP_GROUPINFO("P",    0, AC_PD, _kp, 0.0f),
+    // @DisplayName: PID Proportional Gain
+    // @Description: P Gain which produces an output value that is proportional to the current error value
+    AP_GROUPINFO_FLAGS_DEFAULT_POINTER("P",    1, AC_PD, _kp, default_kp),
 
     // @Param: D
-    // @DisplayName: PD Derivative Gain
-    // @Description: PD controller derivative gain
-    // @Range: 0.0 0.4
-    // @Increment: 0.001
-    // @User: Standard
-    AP_GROUPINFO("D",    1, AC_PD, _kd, 0.0f),
+    // @DisplayName: PID Differential Gain
+    // @Description: D Gain which produces an output that is proportional to the rate of the error value
+    AP_GROUPINFO_FLAGS_DEFAULT_POINTER("D",    2, AC_PD, _kd, default_kd),
 
     AP_GROUPEND
 };
 
 // Constructor
 AC_PD::AC_PD(float initial_p, float initial_d) :
-    _kp(initial_p),
-    _kd(initial_d)
+    default_kp(initial_p),
+    default_kd(initial_d)
 {
+    // load parameter values from eeprom
     AP_Param::setup_object_defaults(this, var_info);
 }
 
-// set_and_save_kp - set and save the proportional gain
-void AC_PD::set_and_save_kp(float p)
+float AC_PD::update(float measurement, float target, float dt)
 {
-    _kp.set_and_save(p);
-}
+    const float err = target - measurement;
+    // initialize with error for first loop
+    static float err_last = err;
 
-// set_and_save_kd - set and save the derivative gain
-void AC_PD::set_and_save_kd(float d)
-{
-    _kd.set_and_save(d);
-}
-
-// Update for one step
-float AC_PD::update_pd(float error, float error_delta, float dt)
-{
-    // Calculate P and D terms
-    float p_term = error * _kp;
-    float d_term = 0;
-
-    if (!is_zero(dt)) {
-        d_term = (error_delta * _kd) / dt;
+    // TODO: Add moving avg filter similar to AC_PID
+    if (!is_zero(dt)){
+        derivative = (err - err_last) / dt;
     }
+    output_D = _kd * derivative;
+    output_P = _kp * err;
 
-    // Return combined PD term
-    return p_term + d_term;
+    err_last = err;
+
+    return output_P + output_D;
+}
+
+void AC_PD::load_gains()
+{
+    _kp.load();
+    _kd.load();
+}
+
+void AC_PD::save_gains()
+{
+    _kp.save();
+    _kd.save();
 }

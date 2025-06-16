@@ -1187,6 +1187,9 @@ bool AC_AttitudeControl::pre_arm_checks(const char *param_prefix,
             return false;
         }
     }
+
+    // TODO: Add PD validation
+
     return true;
 }
 

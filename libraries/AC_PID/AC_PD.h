@@ -1,43 +1,55 @@
 #pragma once
 
-/// @file    AC_PD.h
-/// @brief   Proportional Derivative (PD) controller
+/*
+ Generic PD controller
+*/
 
 #include <AP_Common/AP_Common.h>
 #include <AP_Param/AP_Param.h>
-#include <AP_Math/AP_Math.h>
-#include <stdlib.h>
-#include <cmath>
 
-/// @class   AC_PD
-/// @brief   Class for PD control
 class AC_PD {
 public:
     // Constructor
     AC_PD(float initial_p, float initial_d);
 
-    // set_and_save_kp - set and save the proportional gain
-    void set_and_save_kp(float p);
+    CLASS_NO_COPY(AC_PD);
 
-    // set_and_save_kd - set and save the derivative gain 
-    void set_and_save_kd(float d);
+    // update controller
+    float update(float measurement, float target, float dt);
 
-    // kp - return proportional gain
-    float kP() const { return _kp.get(); }
-
-    // kd - return derivative gain
-    float kD() const { return _kd.get(); }
-
-    // get gains
-    const Vector2f& get_gains() const { return Vector2f(_kp.get(), _kd.get()); }
-
-    // Return PD term given error and delta time
-    float update_pd(float error, float error_dot);
-
+    // parameter var table
     static const struct AP_Param::GroupInfo var_info[];
 
+    float get_P() const {
+        return output_P;
+    }
+    float get_D() const {
+        return output_D;
+    }
+
+    // Load gain properties
+    void        load_gains();
+
+    // Save gain properties
+    void        save_gains();
+
+    // Accessors
+    AP_Float    &kP() { return _kp; }
+    const AP_Float &kP() const { return _kp; }
+    void        kP(const float v) { _kp.set(v); }
+
+    AP_Float    &kD() { return _kd; }
+    const AP_Float &kD() const { return _kd; }
+    void        kD(const float v) { _kd.set(v); }
+
 protected:
-    // Parameters
-    AP_Float _kp;     // proportional gain
-    AP_Float _kd;     // derivative gain
+    AP_Float        _kp;
+    AP_Float        _kd;
+    float           output_P;
+    float           output_D;
+    float           derivative;
+
+private:
+    const float default_kp;
+    const float default_kd;
 };
