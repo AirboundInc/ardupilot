@@ -1148,6 +1148,26 @@ bool AC_AttitudeControl::pre_arm_checks(const char *param_prefix,
         }
     }
 
+    // validate AC_PD members:
+    const struct {
+        const char *pid_name;
+        AC_PD &pd;
+    } pds[] = {
+        { "ANG_PIT", get_angle_pitch_pd() }
+    };
+    for (uint8_t i=0; i<ARRAY_SIZE(pds); i++) {
+        // all AC_PD's must have a positive P values:
+        if (!is_positive(pds[i].pd.kP())) {
+            hal.util->snprintf(failure_msg, failure_msg_len, "%s_%s_P must be > 0", param_prefix, pds[i].pid_name);
+            return false;
+        }
+        // never allow a negative D term (but zero is allowed)
+        if (is_negative(pds[i].pd.kD())) {
+            hal.util->snprintf(failure_msg, failure_msg_len, "%s_%s_D must be >= 0", param_prefix, pds[i].pid_name);
+            return false;
+        }
+    }
+
     // validate AC_PID members:
     const struct {
         const char *pid_name;
@@ -1189,8 +1209,6 @@ bool AC_AttitudeControl::pre_arm_checks(const char *param_prefix,
             return false;
         }
     }
-
-    // TODO: Add PD validation
 
     return true;
 }
