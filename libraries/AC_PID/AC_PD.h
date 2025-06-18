@@ -6,6 +6,7 @@
 
 #include <AP_Common/AP_Common.h>
 #include <AP_Param/AP_Param.h>
+#include <AP_Logger/AP_Logger.h>
 
 class AC_PD {
 public:
@@ -41,6 +42,8 @@ public:
     AP_Float    &kD() { return _kd; }
     const AP_Float &kD() const { return _kd; }
     void        kD(const float v) { _kd.set(v); }
+
+    void log_Write_PD_details(float error);
 
 protected:
     AP_Float        _kp;

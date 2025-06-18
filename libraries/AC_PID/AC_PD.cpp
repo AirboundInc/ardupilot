@@ -42,6 +42,7 @@ float AC_PD::update(float error, float dt)
     output_P = _kp * err;
 
     err_last = err;
+    log_Write_PD_details(error);
 
     return output_P + output_D;
 }
@@ -56,4 +57,25 @@ void AC_PD::save_gains()
 {
     _kp.save();
     _kd.save();
+}
+
+
+void AC_PD::log_Write_PD_details(float error)
+{
+    // @LoggerMessage: ATPD
+    // @Description: Attitude angle controller PD loop data packet
+    // @Vehicles: Copter
+    // @Field: TimeUS: Time since system startup
+    // @Field: Error: Error in angle
+    // @Field: Derivative: Derivative of error
+    // @Field: P: Proportional term output
+    // @Field: D: Derivative term output
+    // @Field: Output: Total output
+
+    AP::logger().WriteStreaming("ATPD", "TimeUS,Error,Derivative,P,D,Output",
+        "sd----", // seconds, degrees
+        "F00000", // micro (1e-6), no mult (1e0)
+        "Qfffff", // uint64_t, float
+        AP_HAL::micros64(),
+        error, derivative, output_P, output_D, output_P+output_D);
 }
