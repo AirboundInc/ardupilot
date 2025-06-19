@@ -145,6 +145,14 @@ public:
         return ahrs.get_accel_ef();
     }
 
+    const Vector3f &get_accel(void) const {
+        return ahrs.get_accel();
+    }
+
+    const Vector3f &get_accel_bias(void) const {
+        return ahrs.get_accel_bias();
+    }
+
     uint32_t getLastPosNorthEastReset(Vector2f &pos) WARN_IF_UNUSED {
         return ahrs.getLastPosNorthEastReset(pos);
     }
@@ -160,6 +168,14 @@ public:
     // rotate a 2D vector from earth frame to body frame
     // in input, x is forward, y is right
     Vector2f body_to_earth2D(const Vector2f &bf) const;
+
+    // rotate a 2D vector from body frame to earth frame
+    // in input, z is right, x is up
+    Vector2f body_to_earth2D_pitch(const Vector2f& bf) const;
+
+    // rotate a 2D vector from body frame to earth frame
+    // in input, z is right, x is up
+    Vector2f earth_to_body2D_pitch(const Vector2f& elf) const;
 
     // return the average size of the roll/pitch error estimate
     // since last call
