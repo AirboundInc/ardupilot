@@ -2508,11 +2508,13 @@ void QuadPlane::vtol_position_controller(void)
         if (poscontrol.get_state() == QPOS_APPROACH && distance < stop_distance) {
             if (tailsitter.enabled() || motors->get_desired_spool_state() == AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED) {
                 // tailsitters don't use airbrake stage for landing
-                gcs().send_text(MAV_SEVERITY_INFO,"VTOL position1 v=%.1f d=%.0f sd=%.0f h=%.1f",
+                gcs().send_text(MAV_SEVERITY_INFO,"VTOL position1 v=%.1f d=%.0f sd=%.0f h=%.1f cs=%.1f td=%.1f",
                                 groundspeed,
                                 plane.auto_state.wp_distance,
                                 stop_distance,
-                                plane.relative_ground_altitude(plane.g.rangefinder_landing));
+                                plane.relative_ground_altitude(plane.g.rangefinder_landing),
+                                closing_speed,
+                                transition_decel);
                 poscontrol.set_state(QPOS_POSITION1);
                 transition->set_last_fw_pitch();
             } else {
