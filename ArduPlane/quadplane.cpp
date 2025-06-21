@@ -2514,7 +2514,7 @@ void QuadPlane::vtol_position_controller(void)
                                 stop_distance,
                                 plane.relative_ground_altitude(plane.g.rangefinder_landing),
                                 closing_speed,
-                                transition_decel);
+                                (float)transition_decel);
                 poscontrol.set_state(QPOS_POSITION1);
                 transition->set_last_fw_pitch();
             } else {
