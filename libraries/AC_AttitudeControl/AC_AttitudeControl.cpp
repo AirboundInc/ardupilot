@@ -93,14 +93,7 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @Range: 3.000 12.000
     // @Range{Sub}: 0.0 12.000
     // @User: Standard
-
-    // @Param: ANG_PIT_D
-    // @DisplayName: Pitch axis angle controller D gain
-    // @Description: Pitch axis angle controller D gain.  Converts the error between the desired pitch angle and actual angle to a desired pitch rate
-    // @Range: 3.000 12.000
-    // @Range{Sub}: 0.0 12.000
-    // @User: Standard
-    AP_SUBGROUPINFO(_pd_angle_pitch, "ANG_PIT_", 14, AC_AttitudeControl, AC_PD),
+    AP_SUBGROUPINFO(_p_angle_pitch, "ANG_PIT_", 14, AC_AttitudeControl, AC_P),
 
     // @Param: ANG_YAW_P
     // @DisplayName: Yaw axis angle controller P gain
@@ -156,6 +149,21 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @Values: 0.5:Very Soft, 0.2:Soft, 0.15:Medium, 0.1:Crisp, 0.05:Very Crisp
     // @User: Standard
     AP_GROUPINFO("INPUT_TC", 20, AC_AttitudeControl, _input_tc, AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT),
+
+    // @Param: ANG_PITPD_P
+    // @DisplayName: Pitch axis angle controller P gain
+    // @Description: Pitch axis angle controller P gain.  Converts the error between the desired pitch angle and actual angle to a desired pitch rate
+    // @Range: 3.000 12.000
+    // @Range{Sub}: 0.0 12.000
+    // @User: Standard
+
+    // @Param: ANG_PITPD_D
+    // @DisplayName: Pitch axis angle controller D gain
+    // @Description: Pitch axis angle controller D gain.  Converts the error between the desired pitch angle and actual angle to a desired pitch rate
+    // @Range: 3.000 12.000
+    // @Range{Sub}: 0.0 12.000
+    // @User: Standard
+    AP_SUBGROUPINFO(_pd_angle_pitch, "ANG_PITPD_", 21, AC_AttitudeControl, AC_PD),
 
     AP_GROUPEND
 };
@@ -1153,7 +1161,7 @@ bool AC_AttitudeControl::pre_arm_checks(const char *param_prefix,
         const char *pid_name;
         AC_PD &pd;
     } pds[] = {
-        { "ANG_PIT", get_angle_pitch_pd() }
+        { "ANG_PITPD", get_angle_pitch_pd() }
     };
     for (uint8_t i=0; i<ARRAY_SIZE(pds); i++) {
         // all AC_PD's must have a positive P values:
