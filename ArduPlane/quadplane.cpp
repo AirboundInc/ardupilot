@@ -2604,7 +2604,10 @@ void QuadPlane::vtol_position_controller(void)
     case QPOS_POSITION1: {
         setup_target_position();
 
+        static uint32_t last_trans_time_ms = 0;
+
         if (tailsitter.enabled() && tailsitter.in_vtol_transition(now_ms)) {
+            last_trans_time_ms = now_ms;
             break;
         }
 
@@ -2715,21 +2718,18 @@ void QuadPlane::vtol_position_controller(void)
         uint32_t now = AP_HAL::millis();
 
         if (tailsitter.enabled()) {
-            // TODO: check for exact weathervaning direction
-            float updated_target_yaw_deg = wrap_180(target_yaw_deg + 90); // side into wind
+            // for tailsitters at pos1, prioritize weathervaning over pointing nose to next waypoint
+            have_target_yaw = false;
 
-            const float yaw_err_deg = wrap_180(target_yaw_deg - degrees(plane.ahrs.get_yaw()));
-            if (yaw_err_deg >= 10) {
-                // if yaw error remains, don't start moving yet
+            if (now - last_trans_time_ms <= 5000) {
+                // Just after backtransition, don't start moving yet
                 target_speed_xy_cms.zero();
                 target_accel_cms.zero();
+                if (now - last_log_ms >= 1000) {
+                    last_log_ms = now;
+                    gcs().send_text(MAV_SEVERITY_INFO,"Position controller halted...");
+                }
             }
-            if (now - last_log_ms >= 1000) {
-                last_log_ms = now;
-                gcs().send_text(MAV_SEVERITY_INFO,"Distance=%.1f, Tgt yaw=%.1f, updated tgt yaw=%.1f, yerr=%.1f",
-                distance, target_yaw_deg, updated_target_yaw_deg, yaw_err_deg);
-            }
-            target_yaw_deg = updated_target_yaw_deg;
         }
 
         // use input shaping and abide by accel and jerk limits
