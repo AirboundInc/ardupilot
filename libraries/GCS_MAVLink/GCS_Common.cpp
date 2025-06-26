@@ -74,6 +74,8 @@
 #include <AP_Notify/AP_Notify.h>
 #include <AP_Vehicle/AP_Vehicle_config.h>
 
+#include <AP_CustomMavlinkHandler/AP_CustomMavlinkHandler.h>
+
 #include <stdio.h>
 
 #if HAL_RCINPUT_WITH_AP_RADIO
@@ -3939,6 +3941,9 @@ void GCS_MAVLINK::handle_heartbeat(const mavlink_message_t &msg) const
 void GCS_MAVLINK::handle_message(const mavlink_message_t &msg)
 {
     switch (msg.msgid) {
+    case MAVLINK_MSG_ID_AIRBOUND_PARAMETER_GETSET:
+        AP_CustomMavlinkHandler::handle_custom_message(chan,msg);
+        break;
 
     case MAVLINK_MSG_ID_HEARTBEAT: {
         handle_heartbeat(msg);
