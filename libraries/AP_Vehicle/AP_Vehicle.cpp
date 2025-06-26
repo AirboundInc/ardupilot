@@ -27,7 +27,7 @@
 extern AP_IOMCU iomcu;
 #endif
 #include <AP_Scripting/AP_Scripting.h>
-
+#include <AP_CustomStorage/AP_CustomStorage.h>
 #define SCHED_TASK(func, rate_hz, max_time_micros, prio) SCHED_TASK_CLASS(AP_Vehicle, &vehicle, func, rate_hz, max_time_micros, prio)
 
 /*
@@ -509,6 +509,7 @@ SCHED_TASK_CLASS arguments:
 
  */
 const AP_Scheduler::Task AP_Vehicle::scheduler_tasks[] = {
+    SCHED_TASK_CLASS(AP_CustomStorage,      &g_custom_storage,        init,     1, 1000, 100),
 #if HAL_GYROFFT_ENABLED
     FAST_TASK_CLASS(AP_GyroFFT,    &vehicle.gyro_fft,       sample_gyros),
 #endif
