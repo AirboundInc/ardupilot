@@ -2712,6 +2712,7 @@ void QuadPlane::vtol_position_controller(void)
         }
 
         static uint32_t last_log_ms = 0;
+        static bool halt_pos_control = false;
 
         if (tailsitter.enabled()) {
             // for tailsitters at pos1, prioritize weathervaning over pointing nose to next waypoint
@@ -2724,10 +2725,13 @@ void QuadPlane::vtol_position_controller(void)
                 // 10 seconds after backtransition, don't start moving yet
                 target_speed_xy_cms.zero();
                 target_accel_cms.zero();
+                halt_pos_control = true;
                 if (now_ms - last_log_ms >= 2000) {
                     last_log_ms = now_ms;
                     gcs().send_text(MAV_SEVERITY_INFO,"Position controller halted...");
                 }
+            } else {
+                halt_pos_control = false;
             }
         }
 
@@ -2762,6 +2766,12 @@ void QuadPlane::vtol_position_controller(void)
 
         // setup scaling of roll and pitch angle P gains to match fixed wing gains
         setup_rp_fw_angle_gains();
+
+        if (halt_pos_control) {
+            // override nav roll and pitch
+            plane.nav_roll_cd = 0;
+            plane.nav_pitch_cd = 0;
+        }
 
         if (have_target_yaw) {
             attitude_control->input_euler_angle_roll_pitch_yaw(plane.nav_roll_cd,
