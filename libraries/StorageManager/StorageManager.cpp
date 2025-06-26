@@ -87,11 +87,12 @@ const StorageManager::StorageArea StorageManager::layout[STORAGE_NUM_AREAS] = {
     { StorageParam,    8192,  6144},
     { StorageCANDNA,   14336, 1024},
 #endif
-#if STORAGE_NUM_AREAS >= 15
+#if STORAGE_NUM_AREAS >= 16
     { StorageParam,    8192,  1280},
     { StorageRally,    9472,   300},
     { StorageFence,    9772,   256},
-    { StorageMission,  10028,  5204}, // leave 128 byte gap for expansion
+    {StorageMission, 10028, 4948}, // leave 128 byte gap for expansion
+    {StorageCustom, 15104, 128},
     { StorageCANDNA,   15232,  1024},
     // 128 byte gap at end of first 16k
 #endif
@@ -119,6 +120,11 @@ void StorageManager::erase(void)
 StorageAccess::StorageAccess(StorageManager::StorageType _type) : 
     type(_type) 
 {
+    printf("StorageType: %lu\n", (unsigned long)_type);
+    printf("STORAGE_NUM_AREAS: %lu\n", (unsigned long)STORAGE_NUM_AREAS);
+    // for (uint8_t i = 0; i < STORAGE_NUM_AREAS; i++)
+    //     printf("Area %d: Type=%d Offset=%u Length=%u\n", i, StorageManager::layout[i].type, StorageManager::layout[i].offset, StorageManager::layout[i].length);
+    
     // calculate available bytes
     total_size = 0;
 #if AP_SDCARD_STORAGE_ENABLED
