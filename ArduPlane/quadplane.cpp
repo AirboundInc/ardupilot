@@ -2653,7 +2653,7 @@ void QuadPlane::vtol_position_controller(void)
         Vector2f target_speed_xy_cms;
         Vector2f target_accel_cms;
         bool have_target_yaw = false;
-        float target_yaw_deg;
+        float target_yaw_deg = 0;
         const float target_accel = MIN(accel_needed(distance, sq(closing_groundspeed)), transition_decel*2);
         if (distance > 0.1) {
             Vector2f diff_wp_norm = diff_wp.normalized();
@@ -2684,11 +2684,7 @@ void QuadPlane::vtol_position_controller(void)
                                                   2*position2_dist_threshold + stopping_distance(rel_groundspeed_sq));
 
                 target_speed_xy_cms = diff_wp_norm * target_speed * 100;
-                if (!tailsitter.enabled()) {
-                  // for tailsitters we want to weathervane as soon as we are in
-                  // vtol mode in position 1
-                  have_target_yaw = true;
-                }
+                have_target_yaw = true;
 
                 // adjust target yaw angle for wind. We calculate yaw based on the target speed
                 // we want assuming no speed scaling due to direction
@@ -2713,6 +2709,27 @@ void QuadPlane::vtol_position_controller(void)
             // down as a result. We want to accept the slowdown and
             // re-calculate the target speed profile
             poscontrol.pos1_speed_limit = sqrtf(rel_groundspeed_sq);
+        }
+
+        static uint32_t last_log_ms = 0;
+        uint32_t now = AP_HAL::millis();
+
+        if (tailsitter.enabled()) {
+            // TODO: check for exact weathervaning direction
+            float updated_target_yaw_deg = wrap_180(target_yaw_deg + 90); // side into wind
+
+            const float yaw_err_deg = wrap_180(target_yaw_deg - degrees(plane.ahrs.get_yaw()));
+            if (yaw_err_deg >= 10) {
+                // if yaw error remains, don't start moving yet
+                target_speed_xy_cms.zero();
+                target_accel_cms.zero();
+            }
+            if (now - last_log_ms >= 1000) {
+                last_log_ms = now;
+                gcs().send_text(MAV_SEVERITY_INFO,"Distance=%.1f, Tgt yaw=%.1f, updated tgt yaw=%.1f, yerr=%.1f",
+                distance, target_yaw_deg, updated_target_yaw_deg, yaw_err_deg);
+            }
+            target_yaw_deg = updated_target_yaw_deg;
         }
 
         // use input shaping and abide by accel and jerk limits
