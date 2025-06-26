@@ -189,6 +189,8 @@ public:
 
     bool allow_weathervane() override;
 
+    uint32_t get_vtol_transition_start_ms() { return vtol_transition_start_ms; }
+
 private:
 
     enum {

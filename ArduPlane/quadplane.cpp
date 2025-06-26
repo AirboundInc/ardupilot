@@ -2604,10 +2604,7 @@ void QuadPlane::vtol_position_controller(void)
     case QPOS_POSITION1: {
         setup_target_position();
 
-        static uint32_t last_trans_time_ms = 0;
-
         if (tailsitter.enabled() && tailsitter.in_vtol_transition(now_ms)) {
-            last_trans_time_ms = now_ms;
             break;
         }
 
@@ -2715,18 +2712,20 @@ void QuadPlane::vtol_position_controller(void)
         }
 
         static uint32_t last_log_ms = 0;
-        uint32_t now = AP_HAL::millis();
 
         if (tailsitter.enabled()) {
             // for tailsitters at pos1, prioritize weathervaning over pointing nose to next waypoint
             have_target_yaw = false;
 
-            if (now - last_trans_time_ms <= 5000) {
-                // Just after backtransition, don't start moving yet
+            // last back transition start timestamp
+            const uint32_t last_trans_time_ms = tailsitter.transition->get_vtol_transition_start_ms();
+
+            if (now_ms - last_trans_time_ms <= 10000) {
+                // 10 seconds after backtransition, don't start moving yet
                 target_speed_xy_cms.zero();
                 target_accel_cms.zero();
-                if (now - last_log_ms >= 1000) {
-                    last_log_ms = now;
+                if (now_ms - last_log_ms >= 2000) {
+                    last_log_ms = now_ms;
                     gcs().send_text(MAV_SEVERITY_INFO,"Position controller halted...");
                 }
             }
