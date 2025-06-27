@@ -21,7 +21,7 @@
  */
 
 #include "Plane.h"
-
+#include <AP_CustomStorage/AP_CustomStorage.h>
 #define SCHED_TASK(func, rate_hz, max_time_micros, priority) SCHED_TASK_CLASS(Plane, &plane, func, rate_hz, max_time_micros, priority)
 #define FAST_TASK(func) FAST_TASK_CLASS(Plane, &plane, func)
 
@@ -379,6 +379,9 @@ void Plane::one_second_loop()
     rollController.set_notch_sample_rate(loop_rate);
     pitchController.set_notch_sample_rate(loop_rate);
     yawController.set_notch_sample_rate(loop_rate);
+#if APM_BUILD_TYPE(APM_BUILD_ArduPlane)
+    g_custom_storage.init();
+#endif
 }
 
 void Plane::three_hz_loop()
