@@ -27,7 +27,9 @@
 extern AP_IOMCU iomcu;
 #endif
 #include <AP_Scripting/AP_Scripting.h>
+#if APM_BUILD_TYPE(APM_BUILD_ArduPlane)
 #include <AP_CustomStorage/AP_CustomStorage.h>
+#endif
 #define SCHED_TASK(func, rate_hz, max_time_micros, prio) SCHED_TASK_CLASS(AP_Vehicle, &vehicle, func, rate_hz, max_time_micros, prio)
 
 /*
@@ -509,7 +511,10 @@ SCHED_TASK_CLASS arguments:
 
  */
 const AP_Scheduler::Task AP_Vehicle::scheduler_tasks[] = {
+#if APM_BUILD_TYPE(APM_BUILD_ArduPlane)
     SCHED_TASK_CLASS(AP_CustomStorage,      &g_custom_storage,        init,     1, 1000, 100),
+#endif
+    
 #if HAL_GYROFFT_ENABLED
     FAST_TASK_CLASS(AP_GyroFFT,    &vehicle.gyro_fft,       sample_gyros),
 #endif

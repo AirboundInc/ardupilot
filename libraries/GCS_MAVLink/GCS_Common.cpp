@@ -73,11 +73,10 @@
 
 #include <AP_Notify/AP_Notify.h>
 #include <AP_Vehicle/AP_Vehicle_config.h>
-
-#include <AP_CustomMavlinkHandler/AP_CustomMavlinkHandler.h>
-
 #include <stdio.h>
-
+#if APM_BUILD_TYPE(APM_BUILD_ArduPlane)
+#include <AP_CustomMavlinkHandler/AP_CustomMavlinkHandler.h>
+#endif
 #if HAL_RCINPUT_WITH_AP_RADIO
 #include <AP_Radio/AP_Radio.h>
 #include <AP_BoardConfig/AP_BoardConfig.h>
@@ -3941,9 +3940,12 @@ void GCS_MAVLINK::handle_heartbeat(const mavlink_message_t &msg) const
 void GCS_MAVLINK::handle_message(const mavlink_message_t &msg)
 {
     switch (msg.msgid) {
-    case MAVLINK_MSG_ID_AIRBOUND_PARAMETER_GETSET:
+#if APM_BUILD_TYPE(APM_BUILD_ArduPlane)
+    case MAVLINK_MSG_ID_AIRBOUND_PARAMETER_GETSET: {
         AP_CustomMavlinkHandler::handle_custom_message(chan,msg);
         break;
+    }
+#endif
 
     case MAVLINK_MSG_ID_HEARTBEAT: {
         handle_heartbeat(msg);
