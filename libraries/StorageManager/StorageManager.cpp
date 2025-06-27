@@ -91,9 +91,9 @@ const StorageManager::StorageArea StorageManager::layout[STORAGE_NUM_AREAS] = {
     { StorageParam,    8192,  1280},
     { StorageRally,    9472,   300},
     { StorageFence,    9772,   256},
-    {StorageMission, 10028, 4948}, // leave 128 byte gap for expansion
-    {StorageCustom, 15104, 128},
-    { StorageCANDNA,   15232,  1024},
+    {StorageMission, 10028, 5076}, // leave 128 byte gap for expansion
+    {StorageCANDNA, 15232, 1024},
+    {StorageCustom, 16256, 128},
     // 128 byte gap at end of first 16k
 #endif
 #if STORAGE_NUM_AREAS >= 18
