@@ -2711,29 +2711,52 @@ void QuadPlane::vtol_position_controller(void)
             poscontrol.pos1_speed_limit = sqrtf(rel_groundspeed_sq);
         }
 
+
+
+
+
+
         static uint32_t last_log_ms = 0;
         static bool halt_pos_control = false;
+        static uint32_t fade_start_time_ms = 0;
 
         if (tailsitter.enabled()) {
-            // for tailsitters at pos1, prioritize weathervaning over pointing nose to next waypoint
             have_target_yaw = false;
 
-            // last back transition start timestamp
             const uint32_t last_trans_time_ms = tailsitter.transition->get_vtol_transition_start_ms();
+            const uint32_t time_since_trans_ms = now_ms - last_trans_time_ms;
 
-            if (now_ms - last_trans_time_ms <= 10000) {
-                // 10 seconds after backtransition, don't start moving yet
+            if (time_since_trans_ms <= 10000) {
+                // During the first 10 seconds, halt motion
                 target_speed_xy_cms.zero();
                 target_accel_cms.zero();
                 halt_pos_control = true;
+                fade_start_time_ms = 0; // Reset fade timer
+
                 if (now_ms - last_log_ms >= 2000) {
                     last_log_ms = now_ms;
-                    gcs().send_text(MAV_SEVERITY_INFO,"Position controller halted...");
+                    gcs().send_text(MAV_SEVERITY_INFO, "Position controller halted...");
                 }
             } else {
                 halt_pos_control = false;
+
+                if (fade_start_time_ms == 0) {
+                    // Mark the start of the fade-in period
+                    fade_start_time_ms = now_ms;
+                }
+
+                // Calculate fade-in factor over 2 seconds
+                float fade_progress = constrain_float((now_ms - fade_start_time_ms) / 2000.0f, 0.0f, 1.0f);
+
+                // Scale the target velocity and acceleration for smooth fade-in
+                target_speed_xy_cms *= fade_progress;
+                target_accel_cms *= fade_progress;
             }
         }
+
+
+
+
 
         // use input shaping and abide by accel and jerk limits
         pos_control->input_vel_accel_xy(target_speed_xy_cms, target_accel_cms);
@@ -2772,6 +2795,15 @@ void QuadPlane::vtol_position_controller(void)
             plane.nav_roll_cd = 0;
             plane.nav_pitch_cd = 0;
         }
+
+
+
+
+
+
+
+
+
 
         if (have_target_yaw) {
             attitude_control->input_euler_angle_roll_pitch_yaw(plane.nav_roll_cd,
