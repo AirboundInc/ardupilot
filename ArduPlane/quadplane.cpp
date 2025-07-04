@@ -2711,11 +2711,7 @@ void QuadPlane::vtol_position_controller(void)
             poscontrol.pos1_speed_limit = sqrtf(rel_groundspeed_sq);
         }
 
-
-
-
-
-
+        
         static uint32_t last_log_ms = 0;
         static bool halt_pos_control = false;
         static uint32_t fade_start_time_ms = 0;
@@ -2754,29 +2750,33 @@ void QuadPlane::vtol_position_controller(void)
             }
         }
 
-
-
-
-
         // use input shaping and abide by accel and jerk limits
         pos_control->input_vel_accel_xy(target_speed_xy_cms, target_accel_cms);
 
         // run horizontal velocity controller
-        run_xy_controller(MAX(target_accel, transition_decel)*1.5);
+        run_xy_controller(MAX(target_accel, transition_decel) * 1.5);
 
         if (!poscontrol.done_accel_init) {
-            /*
-              the pos controller init assumes zero accel, we need to
-              override that so that we can start decelerating more
-              quickly at the start of POSITION1
-             */
             poscontrol.done_accel_init = true;
             pos_control->set_accel_desired_xy_cmss(target_accel_cms);
         }
-        
-        // nav roll and pitch are controller by position controller
-        plane.nav_roll_cd = pos_control->get_roll_cd();
-        plane.nav_pitch_cd = pos_control->get_pitch_cd();
+
+        float desired_roll_deg  = pos_control->get_roll_cd() * 0.01f;   // convert from centideg to deg
+        float desired_pitch_deg = pos_control->get_pitch_cd() * 0.01f;
+
+        if (tailsitter.enabled()) {
+            const uint32_t last_trans_time_ms = tailsitter.transition->get_vtol_transition_start_ms();
+            const uint32_t time_since_trans_ms = now_ms - last_trans_time_ms;
+
+            if (time_since_trans_ms > 10000) {
+                // Clamp pitch and roll to ±10 degrees
+                desired_roll_deg = constrain_float(desired_roll_deg, -30.0f, 30.0f);
+                desired_pitch_deg = constrain_float(desired_pitch_deg, -20.0f, 20.0f);
+            }
+        }
+
+        plane.nav_roll_cd  = (int16_t)(desired_roll_deg * 100.0f);    // back to centidegrees
+        plane.nav_pitch_cd = (int16_t)(desired_pitch_deg * 100.0f);
 
         assign_tilt_to_fwd_thr();
 
@@ -2786,22 +2786,13 @@ void QuadPlane::vtol_position_controller(void)
 
         // call attitude controller
         disable_yaw_rate_time_constant();
-
-        // setup scaling of roll and pitch angle P gains to match fixed wing gains
         setup_rp_fw_angle_gains();
 
         if (halt_pos_control) {
-            // override nav roll and pitch
+            // override nav pitch and roll if halted
             plane.nav_roll_cd = 0;
             plane.nav_pitch_cd = 0;
         }
-
-
-
-
-
-
-
 
 
 
