@@ -1881,6 +1881,39 @@ void QuadPlane::update(void)
 
     tiltrotor.update();
 
+    static uint32_t last_imu_log_ms = 0;
+    const uint32_t imu_now_ms = AP_HAL::millis();
+
+    if (imu_now_ms - last_imu_log_ms >= 50) { 
+        last_imu_log_ms = imu_now_ms;
+
+        const uint64_t timestamp_us = AP_HAL::micros64();
+
+        const Vector3f accel_ef = ahrs.get_accel_ef();                         
+        const Vector3f accel_bf = ahrs.get_accel() - ahrs.get_accel_bias();   
+        const Vector3f gyro_ef  = ahrs.get_gyro();                             
+        const Vector3f gyro_in  = ahrs.get_gyro_latest();                      
+        
+        AP::logger().Write("IMX1",
+                        "TimeUS,Accl_efX,Accl_efY,Accl_efZ,Accl_bfX,Accl_bfY,Accl_bfZ",
+                        "soooooo",    // units: seconds, m/s²
+                        "F000000",    // multipliers: F=1e-6, C=1
+                        "Qffffff",
+                        timestamp_us,
+                        accel_ef.x, accel_ef.y, accel_ef.z,
+                        accel_bf.x, accel_bf.y, accel_bf.z);
+
+        AP::logger().Write("IMX2",
+                        "TimeUS,Gyr_efX,Gyr_efY,Gyr_efZ,Gyr_bfX,Gyr_bfY,Gyr_bfZ",
+                        "sEEEEEE",    // units: seconds, rad/s
+                        "F000000",    // multipliers: F=1e-6, C=1
+                        "Qffffff",
+                        timestamp_us,
+                        gyro_ef.x, gyro_ef.y, gyro_ef.z,
+                        gyro_in.x, gyro_in.y, gyro_in.z);
+
+    }
+
 #if HAL_LOGGING_ENABLED
     // motors logging
     if (motors->armed()) {
@@ -1902,6 +1935,8 @@ void QuadPlane::update(void)
             Log_Write_QControl_Tuning();
         }
     }
+
+
 #else
     (void)now;
 #endif  // HAL_LOGGING_ENABLED
