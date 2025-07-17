@@ -384,15 +384,18 @@ void NavEKF3_core::CorrectGPSForAntennaOffset(gps_elements &gps_data) const
     Location::offset_latlng(gps_data.lat, gps_data.lng, -posOffsetEarth.x, -posOffsetEarth.y);
     gps_data.hgt += posOffsetEarth.z;
 
-    AP::logger().Write("GPSO", "TimeUS,VelOx,VelOy,VelOz,PosOx,PosOy,PosOz",
-                        "snnnmmm", "F------", "Qffffff",
+    AP::logger().Write("GPSO", "TimeUS,VelOx,VelOy,VelOz,PosOx,PosOy,PosOz,OmegX,OmegY,OmegZ",
+                        "snnnmmm---", "F---------", "Qfffffffff",
                             AP_HAL::micros64(),
                             velOffsetEarth.x,
                             velOffsetEarth.y,
                             velOffsetEarth.z,
                             posOffsetEarth.x,
                             posOffsetEarth.y,
-                            posOffsetEarth.z);
+                            posOffsetEarth.z,
+                            angRate.x,
+                            angRate.y,
+                            angRate.z);
 }
 
 // correct external navigation earth-frame position using sensor body-frame offset
