@@ -120,11 +120,6 @@ void StorageManager::erase(void)
 StorageAccess::StorageAccess(StorageManager::StorageType _type) : 
     type(_type) 
 {
-    printf("StorageType: %lu\n", (unsigned long)_type);
-    printf("STORAGE_NUM_AREAS: %lu\n", (unsigned long)STORAGE_NUM_AREAS);
-    // for (uint8_t i = 0; i < STORAGE_NUM_AREAS; i++)
-    //     printf("Area %d: Type=%d Offset=%u Length=%u\n", i, StorageManager::layout[i].type, StorageManager::layout[i].offset, StorageManager::layout[i].length);
-    
     // calculate available bytes
     total_size = 0;
 #if AP_SDCARD_STORAGE_ENABLED
