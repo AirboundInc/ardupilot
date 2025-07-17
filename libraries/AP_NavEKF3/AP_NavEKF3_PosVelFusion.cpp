@@ -4,6 +4,7 @@
 #include "AP_NavEKF3_core.h"
 #include <GCS_MAVLink/GCS.h>
 #include <AP_DAL/AP_DAL.h>
+#include <AP_Logger/AP_Logger.h>
 
 /********************************************************
 *                   RESET FUNCTIONS                     *
@@ -382,6 +383,16 @@ void NavEKF3_core::CorrectGPSForAntennaOffset(gps_elements &gps_data) const
     Vector3F posOffsetEarth = prevTnb.mul_transpose(posOffsetBody);
     Location::offset_latlng(gps_data.lat, gps_data.lng, -posOffsetEarth.x, -posOffsetEarth.y);
     gps_data.hgt += posOffsetEarth.z;
+
+    AP::logger().Write("GPSO", "TimeUS,VelOx,VelOy,VelOz,PosOx,PosOy,PosOz",
+                        "snnnmmm", "F------", "Qffffff",
+                            AP_HAL::micros64(),
+                            velOffsetEarth.x,
+                            velOffsetEarth.y,
+                            velOffsetEarth.z,
+                            posOffsetEarth.x,
+                            posOffsetEarth.y,
+                            posOffsetEarth.z);
 }
 
 // correct external navigation earth-frame position using sensor body-frame offset
