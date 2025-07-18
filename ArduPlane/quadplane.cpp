@@ -2456,6 +2456,29 @@ void QuadPlane::vtol_position_controller(void)
         landing_velocity = poscontrol.velocity_match;
     }
 
+
+
+
+
+    char param_name[20];
+    hal.util->snprintf(param_name, sizeof(param_name), "Q_TAILSIT_RLL_MX");
+    float rll_mx = 30.0f;
+    AC_AttitudeControl_TS* ts_att = (AC_AttitudeControl_TS*)attitude_control;
+    if (ts_att != nullptr) {
+        rll_mx = ts_att->get_param_value_by_name(param_name, 30.0f);
+    }
+
+    char angle_param[20];
+    hal.util->snprintf(angle_param, sizeof(angle_param), "Q_P_ANGLE_MAX");
+    float q_p_angle_max = 20.0f;
+    AC_AttitudeControl_TS* ts_att2 = (AC_AttitudeControl_TS*)attitude_control;
+    if (ts_att2 != nullptr) {
+        q_p_angle_max = ts_att2->get_param_value_by_name(angle_param, 20.0f);
+    }
+
+
+
+
     // horizontal position control
     switch (poscontrol.get_state()) {
 
@@ -2758,22 +2781,6 @@ void QuadPlane::vtol_position_controller(void)
         static uint32_t fade_start_time_ms = 0;
         const float halt_duration_ms = q_trans_timeout.get() * 1000U;
 
-        char param_name[20];
-        hal.util->snprintf(param_name, sizeof(param_name), "Q_TAILSIT_RLL_MX");
-        float rll_mx = 30.0f;
-        AC_AttitudeControl_TS* ts_att = (AC_AttitudeControl_TS*)attitude_control;
-        if (ts_att != nullptr) {
-            rll_mx = ts_att->get_param_value_by_name(param_name, 30.0f);
-        }
-
-        char angle_param[20];
-        hal.util->snprintf(angle_param, sizeof(angle_param), "Q_P_ANGLE_MAX");
-        float q_p_angle_max = 20.0f;
-        AC_AttitudeControl_TS* ts_att2 = (AC_AttitudeControl_TS*)attitude_control;
-        if (ts_att2 != nullptr) {
-            q_p_angle_max = ts_att2->get_param_value_by_name(angle_param, 20.0f);
-        }
-
         if (tailsitter.enabled()) {
             have_target_yaw = false;
 
@@ -2902,6 +2909,26 @@ void QuadPlane::vtol_position_controller(void)
         if (transition->set_VTOL_roll_pitch_limit(plane.nav_roll_cd, plane.nav_pitch_cd)) {
             pos_control->set_externally_limited_xy();
         }
+
+        const float halt_duration_ms = q_trans_timeout.get() * 1000U;
+
+        if (tailsitter.enabled()) {
+            const uint32_t last_trans_time_ms = tailsitter.transition->get_vtol_transition_start_ms();
+            const uint32_t time_since_trans_ms = now_ms - last_trans_time_ms;
+
+            if (time_since_trans_ms > halt_duration_ms) {
+                float desired_roll_deg  = plane.nav_roll_cd * 0.01f;
+                float desired_pitch_deg = plane.nav_pitch_cd * 0.01f;
+                desired_roll_deg = constrain_float(desired_roll_deg, -rll_mx, rll_mx);
+                desired_pitch_deg = constrain_float(desired_pitch_deg, -q_p_angle_max, q_p_angle_max);
+                plane.nav_roll_cd  = (int16_t)(desired_roll_deg * 100.0f);
+                plane.nav_pitch_cd = (int16_t)(desired_pitch_deg * 100.0f);
+            }
+        }
+
+
+
+
 
         // call attitude controller
         set_pilot_yaw_rate_time_constant();
