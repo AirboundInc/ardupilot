@@ -330,7 +330,7 @@ const AP_Param::Info Plane::var_info[] = {
 	// @Increment: 0.1
     // @User: Standard
     GSCALAR(flybywire_climb_rate, "FBWB_CLIMB_RATE",  2.0f),
-
+    
     // @Param: THR_MIN
     // @DisplayName: Minimum Throttle
     // @Description: Minimum throttle percentage used in all modes except manual, provided THR_PASS_STAB is not set. Negative values allow reverse thrust if hardware supports it.
@@ -444,7 +444,7 @@ const AP_Param::Info Plane::var_info[] = {
     // @Values: 0:Continue,1:ReturnToLaunch,2:Glide,3:Deploy Parachute,4:Auto
     // @User: Standard
     GSCALAR(fs_action_long,         "FS_LONG_ACTN",   FS_ACTION_LONG_CONTINUE),
-
+    
     // @Param: FS_LONG_TIMEOUT
     // @DisplayName: Long failsafe timeout
     // @Description: The time in seconds that a failsafe condition has to persist before a long failsafe event will occur. This defaults to 5 seconds.

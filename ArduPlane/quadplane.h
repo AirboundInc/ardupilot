@@ -405,6 +405,8 @@ private:
 
     // limit applied to back pitch to prevent wing producing excessive lift
     AP_Float q_bck_pitch_lim;
+    
+    AP_Float q_trans_timeout;
 
     // which fwd throttle handling method is active
     enum class ActiveFwdThr : uint8_t {

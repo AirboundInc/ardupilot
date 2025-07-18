@@ -538,6 +538,14 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Standard
     AP_GROUPINFO("BCK_PIT_LIM", 38, QuadPlane, q_bck_pitch_lim, 10.0f),
 
+    // @Param: TRANS_HALT
+    // @DisplayName: q_trans_timeout
+    // @Description: A description of my new parameter goes here
+    // @Range: -32768 32767
+    // @User: Standard
+    AP_GROUPINFO("TRANS_HALT", 39, QuadPlane, q_trans_timeout, 10.0f),
+
+
     AP_GROUPEND
 };
 
@@ -2426,7 +2434,6 @@ void QuadPlane::vtol_position_controller(void)
     if (!setup()) {
         return;
     }
-
     const Location &loc = plane.next_WP_loc;
     uint32_t now_ms = AP_HAL::millis();
 
@@ -2750,6 +2757,8 @@ void QuadPlane::vtol_position_controller(void)
         static uint32_t last_log_ms = 0;
         static bool halt_pos_control = false;
         static uint32_t fade_start_time_ms = 0;
+        const float halt_duration_ms = q_trans_timeout.get() * 1000U;
+
 
         if (tailsitter.enabled()) {
             have_target_yaw = false;
@@ -2757,7 +2766,8 @@ void QuadPlane::vtol_position_controller(void)
             const uint32_t last_trans_time_ms = tailsitter.transition->get_vtol_transition_start_ms();
             const uint32_t time_since_trans_ms = now_ms - last_trans_time_ms;
 
-            if (time_since_trans_ms <= 10000) {
+
+            if (time_since_trans_ms <= halt_duration_ms) {
                 // During the first 10 seconds, halt motion
                 target_speed_xy_cms.zero();
                 target_accel_cms.zero();
@@ -2798,12 +2808,12 @@ void QuadPlane::vtol_position_controller(void)
 
         float desired_roll_deg  = pos_control->get_roll_cd() * 0.01f;   // convert from centideg to deg
         float desired_pitch_deg = pos_control->get_pitch_cd() * 0.01f;
-
+        
         if (tailsitter.enabled()) {
             const uint32_t last_trans_time_ms = tailsitter.transition->get_vtol_transition_start_ms();
             const uint32_t time_since_trans_ms = now_ms - last_trans_time_ms;
-
-            if (time_since_trans_ms > 10000) {
+                    
+            if (time_since_trans_ms > halt_duration_ms) {
                 // Clamp pitch and roll to ±10 degrees
                 desired_roll_deg = constrain_float(desired_roll_deg, -30.0f, 30.0f);
                 desired_pitch_deg = constrain_float(desired_pitch_deg, -20.0f, 20.0f);
