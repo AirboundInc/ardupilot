@@ -124,3 +124,15 @@ void AC_AttitudeControl_TS::input_euler_rate_yaw_euler_angle_pitch_bf_roll(bool 
     // Compute the angular velocity target from the attitude error
     _ang_vel_body = update_ang_vel_target_from_att_error(att_error);
 }
+
+
+// ...existing code...
+float AC_AttitudeControl_TS::get_param_value_by_name(const char* param_name, float default_value)
+{
+    float value;
+    if (!AP_Param::get(param_name, value)) {
+        value = default_value;
+    }
+    return value;
+}
+// ...existing code...

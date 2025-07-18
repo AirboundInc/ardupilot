@@ -390,6 +390,7 @@ float AC_AttitudeControl_Multi::get_throttle_boosted(float throttle_in)
     return throttle_out;
 }
 
+
 // returns a throttle including compensation for roll/pitch angle
 // throttle value should be 0 ~ 1
 float AC_AttitudeControl_Multi::get_throttle_avg_max(float throttle_in)
