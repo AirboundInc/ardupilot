@@ -28,9 +28,17 @@
   storage. Use larger areas for other boards
  */
 #if HAL_STORAGE_SIZE >= 32768
+#ifdef AP_ENABLE_CUSTOM_STORAGE
 #define STORAGE_NUM_AREAS 18+1 // 1 added for our custom storage
+#else
+#define STORAGE_NUM_AREAS 18
+#endif
 #elif HAL_STORAGE_SIZE >= 16384
+#ifdef AP_ENABLE_CUSTOM_STORAGE
 #define STORAGE_NUM_AREAS 15+1 // 1 added for our custom storage
+#else
+#define STORAGE_NUM_AREAS 15
+#endif
 #elif HAL_STORAGE_SIZE >= 15360 && defined(HAL_NUM_CAN_IFACES)
 #define STORAGE_NUM_AREAS 12
 #elif HAL_STORAGE_SIZE >= 15360
@@ -59,8 +67,10 @@ public:
         StorageKeys    = 4,
         StorageBindInfo= 5,
         StorageCANDNA  = 6,
-        StorageParamBak = 7,
-        StorageCustom   = 8
+        StorageParamBak = 7
+#ifdef AP_ENABLE_CUSTOM_STORAGE
+        ,StorageCustom   = 8
+#endif
     };
 
     // erase whole of storage

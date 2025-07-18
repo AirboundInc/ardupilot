@@ -31,9 +31,7 @@ def build(bld):
             'AP_Follow',
             'AC_PrecLand',
             'AP_IRLock',
-            'AP_CustomStorage',
-            'AP_CustomMavlinkHandler',
-        ],
+        ] + is_custom_storage_enabled(bld.env['CXXFLAGS']), #checks for customStorage build flag (--enable-custom-storage)
     )
 
     bld.ap_program(
@@ -41,3 +39,11 @@ def build(bld):
         program_groups=['bin', 'plane'],
         use=vehicle + '_libs',
     )
+
+
+def is_custom_storage_enabled(cli_flags):
+    if '-DAP_ENABLE_CUSTOM_STORAGE=1' in cli_flags:
+        return ['AP_CustomStorage',
+        'AP_CustomMavlinkHandler',]
+    else:
+        return []

@@ -157,6 +157,9 @@ class Board:
         if cfg.options.enable_networking_tests:
             env.CXXFLAGS += ['-DAP_NETWORKING_TESTS_ENABLED=1']
             
+        if cfg.options.enable_custom_storage:
+            env.CXXFLAGS += ['-DAP_ENABLE_CUSTOM_STORAGE=1']
+            
         d = env.get_merged_dict()
         # Always prepend so that arguments passed in the command line get
         # the priority.

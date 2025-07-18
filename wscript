@@ -306,6 +306,12 @@ submodules at specific revisions.
     g.add_option('--enable-dronecan-tests', action='store_true',
                  default=False,
                  help="Enables DroneCAN tests in sitl")
+
+    g.add_option('--enable-custom-storage',
+        action='store_true',
+        default=False,
+        help='enable custom storage for uuid and password along with custom mavlink message handler.')
+
     g = opt.ap_groups['linux']
 
     linux_options = ('--prefix', '--destdir', '--bindir', '--libdir')

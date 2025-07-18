@@ -379,8 +379,10 @@ void Plane::one_second_loop()
     rollController.set_notch_sample_rate(loop_rate);
     pitchController.set_notch_sample_rate(loop_rate);
     yawController.set_notch_sample_rate(loop_rate);
+#ifdef AP_ENABLE_CUSTOM_STORAGE
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)
     g_custom_storage.init();
+#endif
 #endif
 }
 
