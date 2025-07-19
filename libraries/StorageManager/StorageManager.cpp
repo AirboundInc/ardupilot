@@ -87,39 +87,39 @@ const StorageManager::StorageArea StorageManager::layout[STORAGE_NUM_AREAS] = {
     { StorageParam,    8192,  6144},
     { StorageCANDNA,   14336, 1024},
 #endif
-#ifdef AP_ENABLE_CUSTOM_STORAGE
-#if STORAGE_NUM_AREAS >= 16
-    { StorageParam,    8192,  1280},
-    { StorageRally,    9472,   300},
-    { StorageFence,    9772,   256},
-    {StorageMission, 10028, 5076}, // leave 128 byte gap for expansion
-    {StorageCANDNA, 15232, 1024},
-    {StorageCustom, 16256, 128},
-    // 128 byte gap at end of first 16k
-#endif
-#else
-#if STORAGE_NUM_AREAS >= 15
-    { StorageParam,    8192,  1280},
-    { StorageRally,    9472,   300},
-    { StorageFence,    9772,   256},
-    {StorageMission, 10028, 5076}, // leave 128 byte gap for expansion
-    {StorageCANDNA, 15232, 1024},
-    // 128 byte gap at end of first 16k
-#endif
-#endif
-#ifdef AP_ENABLE_CUSTOM_STORAGE
-#if STORAGE_NUM_AREAS >= 19
-    { StorageParam,    16384, 1280},
-    { StorageMission,  17664, 9842},
-    { StorageParamBak, 27506, 5262},
-#endif
-#else
-#if STORAGE_NUM_AREAS >= 18
-    { StorageParam,    16384, 1280},
-    { StorageMission,  17664, 9842},
-    { StorageParamBak, 27506, 5262},
-#endif
-#endif
+#ifdef AP_ENABLE_CUSTOM_STORAGE // 1
+    #if STORAGE_NUM_AREAS >= 16 // 2
+        { StorageParam,    8192,  1280},
+        { StorageRally,    9472,   300},
+        { StorageFence,    9772,   256},
+        {StorageMission, 10028, 5076}, // leave 128 byte gap for expansion
+        {StorageCANDNA, 15232, 1024},
+        {StorageCustom, 16256, 128},
+        // 128 byte gap at end of first 16k
+    #endif // 2
+#else // 1
+    #if STORAGE_NUM_AREAS >= 15 // 3
+        { StorageParam,    8192,  1280},
+        { StorageRally,    9472,   300},
+        { StorageFence,    9772,   256},
+        {StorageMission, 10028, 5076}, // leave 128 byte gap for expansion
+        {StorageCANDNA, 15232, 1024},
+        // 128 byte gap at end of first 16k
+    #endif // 3
+#endif // 1
+#ifdef AP_ENABLE_CUSTOM_STORAGE // 1
+    #if STORAGE_NUM_AREAS >= 19 // 2
+        { StorageParam,    16384, 1280},
+        { StorageMission,  17664, 9842},
+        { StorageParamBak, 27506, 5262},
+    #endif // 2
+#else // 1
+    #if STORAGE_NUM_AREAS >= 18 // 3
+        { StorageParam,    16384, 1280},
+        { StorageMission,  17664, 9842},
+        { StorageParamBak, 27506, 5262},
+    #endif // 3
+#endif // 1
 };
 #endif // STORAGE_NUM_AREAS == 1
 

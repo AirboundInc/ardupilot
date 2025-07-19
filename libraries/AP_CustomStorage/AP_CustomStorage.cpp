@@ -3,7 +3,9 @@
 #include <string.h>
 
 // Note: StorageManager handles flash memory access
+#ifdef AP_ENABLE_CUSTOM_STORAGE
 StorageAccess AP_CustomStorage::_storage(StorageManager::StorageCustom);
+#endif
 AP_CustomStorage g_custom_storage;  // Global singleton instance
 
 AP_CustomStorage::AP_CustomStorage()
@@ -123,12 +125,17 @@ bool AP_CustomStorage::get_password(char *buf, uint8_t len) const
 
 bool AP_CustomStorage::load_from_flash()
 {
+#ifdef AP_ENABLE_CUSTOM_STORAGE
     // Note: Atomic read prevents partial state loading
     return _storage.read_block(_data, 0, sizeof(_data));
+#else
+    return false;
+#endif
 }
 
 bool AP_CustomStorage::save_to_flash()
 {
+#ifdef AP_ENABLE_CUSTOM_STORAGE
     if (_storage.write_block(0, _data, sizeof(_data)))
     {
         printf("CustomStorage: Storage saved successfully.\n");  // Debug confirmation
@@ -139,6 +146,9 @@ bool AP_CustomStorage::save_to_flash()
         printf("CustomStorage ERROR: Failed to save Storage to flash!\n");  // Critical error
         return false;
     }
+#else
+    return false;
+#endif
 }
 
 //--------------------------------------------------
