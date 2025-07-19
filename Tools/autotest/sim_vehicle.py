@@ -420,6 +420,9 @@ def do_build(opts, frame_options):
     if opts.enable_networking_tests:
         cmd_configure.append("--enable-networking-tests")
 
+    if opts.enable_custom_storage:
+        cmd_configure.append("--enable-custom-storage")
+
     pieces = [shlex.split(x) for x in opts.waf_configure_args]
     for piece in pieces:
         cmd_configure.extend(piece)
