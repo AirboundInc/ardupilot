@@ -1,3 +1,5 @@
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+
 #pragma once
 #include <GCS_MAVLink/GCS.h>
 #include "AP_CustomStorage/AP_CustomStorage.h"
@@ -18,3 +20,5 @@ public:
 #pragma pack(pop)
     static const uint16_t CUSTOM_MSG_ID = 15222;
 };
+
+#endif

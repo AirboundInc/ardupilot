@@ -1,5 +1,6 @@
-#pragma once
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
 
+#pragma once
 #include <AP_HAL/AP_HAL.h>
 #include <StorageManager/StorageManager.h>
 
@@ -134,3 +135,5 @@ private:
 
 // Global instance declaration
 extern AP_CustomStorage g_custom_storage;
+
+#endif

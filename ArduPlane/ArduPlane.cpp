@@ -21,7 +21,9 @@
  */
 
 #include "Plane.h"
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1 && APM_BUILD_TYPE(APM_BUILD_ArduPlane)
 #include <AP_CustomStorage/AP_CustomStorage.h>
+#endif
 #define SCHED_TASK(func, rate_hz, max_time_micros, priority) SCHED_TASK_CLASS(Plane, &plane, func, rate_hz, max_time_micros, priority)
 #define FAST_TASK(func) FAST_TASK_CLASS(Plane, &plane, func)
 
@@ -379,10 +381,10 @@ void Plane::one_second_loop()
     rollController.set_notch_sample_rate(loop_rate);
     pitchController.set_notch_sample_rate(loop_rate);
     yawController.set_notch_sample_rate(loop_rate);
-#ifdef AP_ENABLE_CUSTOM_STORAGE
-#if APM_BUILD_TYPE(APM_BUILD_ArduPlane)
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1 && APM_BUILD_TYPE(APM_BUILD_ArduPlane)
+// #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)
     g_custom_storage.init();
-#endif
+// #endif
 #endif
 }
 

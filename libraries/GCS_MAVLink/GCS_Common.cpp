@@ -74,10 +74,8 @@
 #include <AP_Notify/AP_Notify.h>
 #include <AP_Vehicle/AP_Vehicle_config.h>
 #include <stdio.h>
-#ifdef AP_ENABLE_CUSTOM_STORAGE
-#if APM_BUILD_TYPE(APM_BUILD_ArduPlane)
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1 && APM_BUILD_TYPE(APM_BUILD_ArduPlane)
 #include <AP_CustomMavlinkHandler/AP_CustomMavlinkHandler.h>
-#endif
 #endif
 #if HAL_RCINPUT_WITH_AP_RADIO
 #include <AP_Radio/AP_Radio.h>
@@ -3942,13 +3940,11 @@ void GCS_MAVLINK::handle_heartbeat(const mavlink_message_t &msg) const
 void GCS_MAVLINK::handle_message(const mavlink_message_t &msg)
 {
     switch (msg.msgid) {
-#ifdef AP_ENABLE_CUSTOM_STORAGE
-#if APM_BUILD_TYPE(APM_BUILD_ArduPlane)
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1 && APM_BUILD_TYPE(APM_BUILD_ArduPlane)
     case MAVLINK_MSG_ID_AIRBOUND_PARAMETER_GETSET: {
         AP_CustomMavlinkHandler::handle_custom_message(chan,msg);
         break;
     }
-#endif
 #endif
 
     case MAVLINK_MSG_ID_HEARTBEAT: {

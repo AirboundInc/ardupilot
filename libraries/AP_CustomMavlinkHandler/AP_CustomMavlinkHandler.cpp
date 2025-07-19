@@ -1,3 +1,5 @@
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+
 #include "AP_CustomMavlinkHandler.h"
 #include <string.h>
 #include <stdio.h>
@@ -79,3 +81,4 @@ void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, cons
     }
     }
 }
+#endif
