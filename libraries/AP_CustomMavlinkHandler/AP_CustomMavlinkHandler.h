@@ -8,7 +8,7 @@ class AP_CustomMavlinkHandler
 {
 public:
     static void handle_custom_message(mavlink_channel_t chan, const mavlink_message_t &msg);
-
+    static void init(void);
 // Manually define our message structure
 #pragma pack(push, 1)
     typedef struct

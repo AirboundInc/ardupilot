@@ -4,6 +4,9 @@
 #include <string.h>
 #include <stdio.h>
 
+void AP_CustomMavlinkHandler::init(void){
+    g_custom_storage.init();
+}
 void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, const mavlink_message_t &msg)
 {
     printf("AP_CustomMavlinkHandler: %s\n", "got message");
