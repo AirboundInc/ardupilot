@@ -33,11 +33,8 @@ void AP_CustomStorage::init()
 
     if (load_from_flash())
     {
-        printf("CustomStorage: Loaded: '%s'\n", _data);  // Show loaded data
         StorageHeader header;
         memcpy(&header, _data, sizeof(header));
-
-        printf("magic : %d\n", header.magic == HEADER_MAGIC);  // Header validation debug
 
         // Initialize header if missing/corrupt (first boot)
         if (header.magic != HEADER_MAGIC)
@@ -47,11 +44,15 @@ void AP_CustomStorage::init()
             memset(_data, 0, CUSTOM_PARAM_DATA_SIZE);
             memcpy(_data, &header.magic, sizeof(header.magic));
             save_to_flash();
+            load_from_flash();
+            memcpy(&header, _data, sizeof(header));
         }
+        printf("CustomStorage: Loaded: '%s'\n", _data);  // Show loaded data
+        printf("magic : %d\n", header.magic == HEADER_MAGIC);  // Header validation debug
     }
     else
     {
-        printf("CustomStorage: No string found, initializing default.\n");  // First-run case
+        printf("CustomStorage: No Storage found, initializing default.\n");  // First-run case
         memset(_data, 0, sizeof(_data));
         save_to_flash();
     }
