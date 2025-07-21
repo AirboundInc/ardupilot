@@ -42,8 +42,8 @@ def build(bld):
 
 
 def is_custom_storage_enabled(cli_flags):
-    if '-DAP_ENABLE_CUSTOM_STORAGE=1' in cli_flags:
-        return ['AP_CustomStorage',
-        'AP_CustomMavlinkHandler',]
-    else:
-        return []
+    # if '-DAP_ENABLE_CUSTOM_STORAGE=1' in cli_flags:
+    #     return ['AP_CustomStorage',
+    #     'AP_CustomMavlinkHandler',]
+    # else:
+    return []

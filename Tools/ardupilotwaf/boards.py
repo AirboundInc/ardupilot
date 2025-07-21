@@ -157,8 +157,18 @@ class Board:
         if cfg.options.enable_networking_tests:
             env.CXXFLAGS += ['-DAP_NETWORKING_TESTS_ENABLED=1']
             
+        # if cfg.options.enable_custom_storage:
+        #     env.CXXFLAGS += ['-DAP_ENABLE_CUSTOM_STORAGE=1']
         if cfg.options.enable_custom_storage:
-            env.CXXFLAGS += ['-DAP_ENABLE_CUSTOM_STORAGE=1']
+            env.ENABLE_CUSTOM_STORAGE = True
+            env.AP_LIBRARIES += [
+                'AP_CustomStorage',
+                'AP_CustomMavlinkHandler'
+            ]
+            env.DEFINES.update(AP_ENABLE_CUSTOM_STORAGE = 1)
+        else:
+            env.ENABLE_CUSTOM_STORAGE = False
+            env.DEFINES.update(AP_ENABLE_CUSTOM_STORAGE = 0)
             
         d = env.get_merged_dict()
         # Always prepend so that arguments passed in the command line get

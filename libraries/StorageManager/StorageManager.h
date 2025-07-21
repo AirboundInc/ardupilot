@@ -59,6 +59,19 @@
 class StorageManager {
     friend class StorageAccess;
 public:
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+    enum StorageType {
+        StorageParam   = 0,
+        StorageFence   = 1,
+        StorageRally   = 2,
+        StorageMission = 3,
+        StorageKeys    = 4,
+        StorageBindInfo= 5,
+        StorageCANDNA  = 6,
+        StorageParamBak = 7,
+        StorageCustom   = 8
+    };
+#else
     enum StorageType {
         StorageParam   = 0,
         StorageFence   = 1,
@@ -68,12 +81,8 @@ public:
         StorageBindInfo= 5,
         StorageCANDNA  = 6,
         StorageParamBak = 7
-#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
-        ,
-        StorageCustom   = 8
-#endif
     };
-
+#endif
     // erase whole of storage
     static void erase(void);
 
