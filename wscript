@@ -310,7 +310,7 @@ submodules at specific revisions.
     g.add_option('--enable-custom-storage',
         action='store_true',
         default=False,
-        help='enable custom storage for uuid and password along with custom mavlink message handler.')
+        help='Enable custom storage for uuid and password along with custom mavlink message handler.')
 
     g = opt.ap_groups['linux']
 

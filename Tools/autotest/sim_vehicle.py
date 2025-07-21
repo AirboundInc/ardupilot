@@ -1343,6 +1343,8 @@ group_sim.add_option("--enable-ppp", action='store_true',
                      help="Enable PPP networking")
 group_sim.add_option("--enable-networking-tests", action='store_true',
                      help="Enable networking tests")
+group_sim.add_option("--enable-custom-storage", action='store_true',
+                     help="Enable custom storage for uuid and password along with custom mavlink message handler.")
 
 parser.add_option_group(group_sim)
 

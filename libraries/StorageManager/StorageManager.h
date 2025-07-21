@@ -68,8 +68,9 @@ public:
         StorageBindInfo= 5,
         StorageCANDNA  = 6,
         StorageParamBak = 7
-#if defined(AP_ENABLE_CUSTOM_STORAGE)
-        ,StorageCustom   = 8
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+        ,
+        StorageCustom   = 8
 #endif
     };
 
