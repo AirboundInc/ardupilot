@@ -95,7 +95,7 @@ const StorageManager::StorageArea StorageManager::layout[STORAGE_NUM_AREAS] = {
     {StorageCANDNA, 15232, 1024},
     // 128 byte gap at end of first 16k
 #endif
-#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1  && STORAGE_NUM_AREAS == 16 || STORAGE_NUM_AREAS == 19
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1  && (STORAGE_NUM_AREAS == 16 || STORAGE_NUM_AREAS == 19)
         {StorageCustom, 16256, 128},
 #endif
 
