@@ -442,6 +442,7 @@ void Tailsitter::output(void)
         // thrust vectoring VTOL modes
         tilt_left = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
         tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
+
         /*
           apply extra elevator when at high pitch errors, using a
           power law. This allows the motors to point straight up for
@@ -455,6 +456,14 @@ void Tailsitter::output(void)
         if (!is_zero(extra_pitch) && quadplane.in_vtol_mode()) {
             extra_elevator = extra_sign * powf(fabsf(extra_pitch), vectored_hover_power) * SERVO_MAX;
         }
+
+        // TODO: Move to main log function in this file with private variables
+        // AP::logger().Write("TSIT", "TimeUS,TiltLPID,TiltRPID,ExtraElev",
+        //     "sddd", // seconds, degrees
+        //     "F000", // micro (1e-6), no mult (1e0)
+        //     "Qfff", // uint64_t, float
+        //     AP_HAL::micros64(),(float)tilt_left, (float)tilt_right, (float)extra_elevator);
+
         tilt_left  = extra_elevator + tilt_left * vectored_hover_gain;
         tilt_right = extra_elevator + tilt_right * vectored_hover_gain;
     }
