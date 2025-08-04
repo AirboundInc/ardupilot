@@ -196,7 +196,6 @@ public:
         //
         k_param_fs_ekf_action = 220,
         k_param_arming,
-
         k_param_logger = 253, // 253 - Logging Group
 
         k_param_vehicle = 257, // vehicle common block of parameters
@@ -251,7 +250,6 @@ public:
     AP_Float        max_pos_xy;
     AP_Float        max_pos_z;
     AP_Float        max_pos_yaw;
-
     AP_Int8         simple_mode;
     AP_Int16        dis_mask;
     AP_Float        pid_dz;

@@ -36,6 +36,7 @@ AC_PD::AC_PD(float initial_p, float initial_d, float initial_alpha) :
 
 float AC_PD::update(float err, float dt)
 {
+    if (dt <= 0.0f || !isfinite(err)) return 0.0f; 
     static float error_last = 0.0f,derivative_last = 0.0f;
     derivative = (err - error_last) / dt;
     error_last = err;

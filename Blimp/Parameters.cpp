@@ -30,6 +30,13 @@ const AP_Param::Info Blimp::var_info[] = {
     // @ReadOnly: True
     GSCALAR(format_version, "FORMAT_VERSION",   0),
 
+    // @Param: ANGLE_PITCH_D
+    // @DisplayName: Pitch Angle D Gain
+    // @Description: Derivative gain for pitch angle controller
+    // @Range: 0.0 1.0
+    // @User: Advanced
+    GSCALAR(angle_pitch_d, "ANGLE_PITCH_D", ANGLE_PITCH_D_DEFAULT),
+
     // @Param: SYSID_THISMAV
     // @DisplayName: MAVLink system ID of this vehicle
     // @Description: Allows setting an individual MAVLink system id for this vehicle to distinguish it from others on the same network

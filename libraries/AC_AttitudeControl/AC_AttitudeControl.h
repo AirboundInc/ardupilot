@@ -89,6 +89,7 @@ public:
 
     // pid accessors
     AC_P& get_angle_roll_p() { return _p_angle_roll; }
+    AC_P& get_angle_pitch_p() { return _p_angle_pitch; }
     AC_PD& get_angle_pitch_pd() { return _pd_angle_pitch; }   
     AC_P& get_angle_yaw_p() { return _p_angle_yaw; }
     virtual AC_PID& get_rate_roll_pid() = 0;
@@ -463,6 +464,7 @@ protected:
     // angle controller P objects
     AC_P                _p_angle_roll;
     AC_P                _p_angle_yaw;
+    AC_P                _p_angle_pitch;
 //     // angle controller PD objects only for pitch
     // AC_PD                _pd_angle_pitch;
 //         AC_PD::Defaults{

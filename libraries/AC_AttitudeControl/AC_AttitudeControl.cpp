@@ -89,26 +89,11 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
 
     // @Param: ANG_PIT_P
     // @DisplayName: Pitch axis angle controller P gain
-    // @Description: Pitch axis angle controller P gain.  Converts the error between the desired pitch angle and actual angle to a desired pitch rate
+    // @Description: Pitch axis angle controller P gain.  Converts the error between the desired roll angle and actual angle to a desired roll rate
     // @Range: 3.000 12.000
     // @Range{Sub}: 0.0 12.000
     // @User: Standard
-    
-    // @Param: ANG_PIT_D
-    // @DisplayName: Pitch axis angle controller D gain
-    // @Description: Pitch axis angle controller D gain.  Converts desired picth error rate to a desired pitch rate
-    // @Range: 0.1000 10.000
-    // @Range{Sub}: 0.01 10.000
-    // @User: Standard
-
-    // @Param: ANG_PIT_ALPHA
-    // @DisplayName: Pitch axis angle controller D alpha
-    // @Description: Pitch axis angle controller D alpha.  Low-pass filter applied to the derivative term
-    // @Range: 0.0001 0.9999
-    // @Range{Sub}: 0.0001 0.9999
-    // @User: Standard
-    // @Range: 0.0001 0.9999
-    AP_SUBGROUPINFO(_pd_angle_pitch, "ANG_PIT_",14,AC_AttitudeControl, AC_PD),
+    AP_SUBGROUPINFO(_p_angle_pitch, "ANG_PIT_", 14, AC_AttitudeControl, AC_P),
 
     // @Param: ANG_YAW_P
     // @DisplayName: Yaw axis angle controller P gain
@@ -164,6 +149,27 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @Values: 0.5:Very Soft, 0.2:Soft, 0.15:Medium, 0.1:Crisp, 0.05:Very Crisp
     // @User: Standard
     AP_GROUPINFO("INPUT_TC", 20, AC_AttitudeControl, _input_tc, AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT),
+    // @Param: ANG_PITPD_P
+    // @DisplayName: Pitch axis angle controller P gain
+    // @Description: Pitch axis angle controller P gain.  Converts the error between the desired pitch angle and actual angle to a desired pitch rate
+    // @Range: 3.000 12.000
+    // @Range{Sub}: 0.0 12.000
+    // @User: Standard
+    
+    // @Param: ANG_PITPD_D
+    // @DisplayName: Pitch axis angle controller D gain
+    // @Description: Pitch axis angle controller D gain.  Converts desired picth error rate to a desired pitch rate
+    // @Range: 0.1000 12.000
+    // @Range{Sub}: 0.0 20.000
+    // @User: Standard
+
+    // @Param: ANG_PITPD_A
+    // @DisplayName: Pitch axis angle controller D alpha
+    // @Description: Pitch axis angle controller D alpha.  Low-pass filter applied to the derivative term
+    // @Range: 0.1 0.9999
+    // @Range{Sub}: 0.000 1.0
+    // @User: Standard
+    AP_SUBGROUPINFO(_pd_angle_pitch, "ANG_PITPD_", 21,AC_AttitudeControl, AC_PD),
 
     AP_GROUPEND
 };
@@ -1035,7 +1041,9 @@ Vector3f AC_AttitudeControl::update_ang_vel_target_from_att_error(const Vector3f
     } else {
         rate_target_ang_vel.x = angleP_roll * attitude_error_rot_vec_rad.x;
     }
-
+    if (!is_positive(get_angle_pitch_pd().get_kP())) {
+        get_angle_pitch_pd().set_kP(4.5f);
+    }
     // Compute the pitch angular velocity demand from the pitch angle error
     const float angleP_pitch = get_angle_pitch_pd().get_kP() * _angle_P_scale.y;
     if (_use_sqrt_controller && !is_zero(get_accel_pitch_max_radss())) {
