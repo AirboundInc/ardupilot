@@ -4032,6 +4032,18 @@ float QuadPlane::get_weathervane_yaw_rate_cds(void)
                                      pos_control->get_pitch_cd(),
                                      is_takeoff,
                                      in_vtol_land_sequence())) {
+        
+                                        
+        AP::logger().WriteStreaming("WVAN", "TimeUS,PitchIn,RollIn,YawOut,YawRateOut",
+            "sdddd", // seconds, degrees
+            "F0000", // micro (1e-6), no mult (1e0)
+            "Qffff", // uint64_t, float
+            AP_HAL::micros64(), 
+            pos_control->get_pitch_cd()/100, 
+            pos_control->get_roll_cd()/100, 
+            wv_output,
+            constrain_float(wv_output * (1/45.0), -100.0, 100.0) * command_model_pilot.get_rate() * 0.5);
+
         return constrain_float(wv_output * (1/45.0), -100.0, 100.0) * command_model_pilot.get_rate() * 0.5;
     }
 
