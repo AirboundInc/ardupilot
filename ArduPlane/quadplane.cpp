@@ -539,9 +539,9 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     AP_GROUPINFO("BCK_PIT_LIM", 38, QuadPlane, q_bck_pitch_lim, 10.0f),
 
     // @Param: TRANS_HALT
-    // @DisplayName: q_trans_timeout
-    // @Description: A description of my new parameter goes here
-    // @Range: -32768 32767
+    // @DisplayName: Q mode post back transition halting time
+    // @Description: in QRTL, after back transition into VTOL mode at pos1, how long to wait for craft to stabilize before moving to pos2
+    // @Range: 0.0 20.0
     // @User: Standard
     AP_GROUPINFO("TRANS_HALT", 39, QuadPlane, q_trans_timeout, 10.0f),
 
@@ -4044,14 +4044,14 @@ float QuadPlane::get_weathervane_yaw_rate_cds(void)
         
                                         
         AP::logger().WriteStreaming("WVAN", "TimeUS,PitchIn,RollIn,YawOut,YawRateOut",
-            "sdddd", // seconds, degrees
+            "sdddk", // seconds, degrees, deg/s
             "F0000", // micro (1e-6), no mult (1e0)
             "Qffff", // uint64_t, float
             AP_HAL::micros64(), 
             pos_control->get_pitch_cd()/100, 
             pos_control->get_roll_cd()/100, 
-            wv_output,
-            constrain_float(wv_output * (1/45.0), -100.0, 100.0) * command_model_pilot.get_rate() * 0.5);
+            wv_output/100,
+            constrain_float(wv_output * (1/45.0), -100.0, 100.0) * command_model_pilot.get_rate() * 0.5 * 0.01);
 
         return constrain_float(wv_output * (1/45.0), -100.0, 100.0) * command_model_pilot.get_rate() * 0.5;
     }
