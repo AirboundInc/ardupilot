@@ -2782,13 +2782,14 @@ void QuadPlane::vtol_position_controller(void)
         const float halt_duration_ms = q_trans_timeout.get() * 1000U;
 
         if (tailsitter.enabled()) {
-            have_target_yaw = false;
 
             const uint32_t last_trans_time_ms = tailsitter.transition->get_vtol_transition_start_ms();
             const uint32_t time_since_trans_ms = now_ms - last_trans_time_ms;
 
 
             if (time_since_trans_ms <= halt_duration_ms) {
+                // use weathervaning
+                have_target_yaw = false;
                 // During the halt duration, don't move in xy
                 target_speed_xy_cms.zero();
                 target_accel_cms.zero();
@@ -2801,6 +2802,8 @@ void QuadPlane::vtol_position_controller(void)
                 }
             } else {
                 halt_pos_control = false;
+                // disable weathervaning
+                have_target_yaw = true;
 
                 if (fade_start_time_ms == 0) {
                     // Mark the start of the fade-in period
