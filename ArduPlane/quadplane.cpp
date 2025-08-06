@@ -2789,7 +2789,7 @@ void QuadPlane::vtol_position_controller(void)
 
 
             if (time_since_trans_ms <= halt_duration_ms) {
-                // During the first 10 seconds, halt motion
+                // During the halt duration, don't move in xy
                 target_speed_xy_cms.zero();
                 target_accel_cms.zero();
                 halt_pos_control = true;
@@ -3066,7 +3066,7 @@ void QuadPlane::vtol_position_controller(void)
     case QPOS_LAND_DESCEND:
     case QPOS_LAND_ABORT:
     case QPOS_LAND_FINAL: {
-        if (tailsitter.enabled() && now_ms - last_pos2_ms< 7000) {
+        if (tailsitter.enabled() && now_ms - last_pos2_ms < q_trans_timeout * 1000) {
             set_climb_rate_cms(0);
             break;
         }
