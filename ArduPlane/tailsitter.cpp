@@ -165,6 +165,54 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     // @Range: 0 15
     AP_GROUPINFO("MIN_VO", 22, Tailsitter, disk_loading_min_outflow, 0),
 
+    // @Param: ENC1_PINA
+    // @DisplayName: Encoder 1 Pin A
+    // @Description: GPIO pin number for encoder 1 channel A input
+    // @Range: -1 255
+    // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
+    // @User: Standard
+    AP_GROUPINFO("ENC1_PINA", 23, Tailsitter, encoder1_pin_a, -1),
+
+    // @Param: ENC1_PINB
+    // @DisplayName: Encoder 1 Pin B
+    // @Description: GPIO pin number for encoder 1 channel B input
+    // @Range: -1 255
+    // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
+    // @User: Standard
+    AP_GROUPINFO("ENC1_PINB", 24, Tailsitter, encoder1_pin_b, -1),
+
+    // @Param: ENC1_CPR
+    // @DisplayName: Encoder 1 Counts Per Revolution
+    // @Description: Number of encoder counts per full 360 degree revolution for encoder 1
+    // @Range: 1 10000
+    // @Increment: 1
+    // @User: Standard
+    AP_GROUPINFO("ENC1_CPR", 25, Tailsitter, encoder1_cpr, 4096),
+
+    // @Param: ENC2_PINA
+    // @DisplayName: Encoder 2 Pin A
+    // @Description: GPIO pin number for encoder 2 channel A input
+    // @Range: -1 255
+    // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
+    // @User: Standard
+    AP_GROUPINFO("ENC2_PINA", 26, Tailsitter, encoder2_pin_a, -1),
+
+    // @Param: ENC2_PINB
+    // @DisplayName: Encoder 2 Pin B
+    // @Description: GPIO pin number for encoder 2 channel B input
+    // @Range: -1 255
+    // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
+    // @User: Standard
+    AP_GROUPINFO("ENC2_PINB", 27, Tailsitter, encoder2_pin_b, -1),
+
+    // @Param: ENC2_CPR
+    // @DisplayName: Encoder 2 Counts Per Revolution
+    // @Description: Number of encoder counts per full 360 degree revolution for encoder 2
+    // @Range: 1 10000
+    // @Increment: 1
+    // @User: Standard
+    AP_GROUPINFO("ENC2_CPR", 28, Tailsitter, encoder2_cpr, 4096),
+
     AP_GROUPEND
 };
 
@@ -192,9 +240,17 @@ static const struct AP_Param::defaults_table_struct defaults_table_tailsitter[] 
     
 };
 
-Tailsitter::Tailsitter(QuadPlane& _quadplane, AP_MotorsMulticopter*& _motors):quadplane(_quadplane),motors(_motors)
+Tailsitter::Tailsitter(QuadPlane& _quadplane, AP_MotorsMulticopter*& _motors):quadplane(_quadplane),motors(_motors),
+    left_encoder(nullptr),
+    right_encoder(nullptr)
 {
     AP_Param::setup_object_defaults(this, var_info);
+}
+
+Tailsitter::~Tailsitter()
+{
+    delete left_encoder;
+    delete right_encoder;
 }
 
 void Tailsitter::setup()
@@ -225,6 +281,7 @@ void Tailsitter::setup()
     _have_rudder = SRV_Channels::function_assigned(SRV_Channel::k_rudder);
     _have_elevon = SRV_Channels::function_assigned(SRV_Channel::k_elevon_left) || SRV_Channels::function_assigned(SRV_Channel::k_elevon_right);
     _have_v_tail = SRV_Channels::function_assigned(SRV_Channel::k_vtail_left) || SRV_Channels::function_assigned(SRV_Channel::k_vtail_right);
+    _have_encoders = (encoder1_pin_a >= 0 && encoder1_pin_b >= 0) || (encoder2_pin_a >= 0 && encoder2_pin_b >= 0);
 
     // set defaults for dual/single motor tailsitter
     if (quadplane.frame_class == AP_Motors::MOTOR_FRAME_TAILSITTER) {
@@ -246,6 +303,20 @@ void Tailsitter::setup()
         AP_BoardConfig::allocation_error("tailsitter transition");
     }
     quadplane.transition = transition;
+
+    // Initialize encoders if pins are configured
+    if (encoder1_pin_a >= 0 && encoder1_pin_b >= 0) {
+        left_encoder = new AP_QuadEncoder(encoder1_pin_a, encoder1_pin_b, encoder1_cpr, AP_QuadEncoder::LEFT);
+        if (left_encoder != nullptr) {
+            left_encoder->init();
+        }
+    }
+    if (encoder2_pin_a >= 0 && encoder2_pin_b >= 0) {
+        right_encoder = new AP_QuadEncoder(encoder2_pin_a, encoder2_pin_b, encoder2_cpr, AP_QuadEncoder::RIGHT);
+        if (right_encoder != nullptr) {
+            right_encoder->init();
+        }
+    }
 
     setup_complete = true;
 }
@@ -797,6 +868,10 @@ void Tailsitter::speed_scaling(void)
     log_data.throttle_scaler = throttle_scaler;
     log_data.speed_scaler = spd_scaler;
     log_data.min_throttle = disk_loading_min_throttle;
+    
+    // Record encoder data
+    log_data.left_encoder_angle = get_left_encoder_angle();
+    log_data.right_encoder_angle = get_right_encoder_angle();
 
 }
 
@@ -814,6 +889,8 @@ void Tailsitter::write_log()
         throttle_scaler     : log_data.throttle_scaler,
         speed_scaler        : log_data.speed_scaler,
         min_throttle        : log_data.min_throttle,
+        left_encoder_angle  : log_data.left_encoder_angle,
+        right_encoder_angle : log_data.right_encoder_angle,
     };
     plane.logger.WriteBlock(&pkt, sizeof(pkt));
 }
@@ -1051,6 +1128,23 @@ MAV_VTOL_STATE Tailsitter_Transition::get_mav_vtol_state() const
 bool Tailsitter_Transition::allow_weathervane()
 {
     return !tailsitter.in_vtol_transition() && (vtol_limit_start_ms == 0);
+}
+
+// encoder access methods
+float Tailsitter::get_left_encoder_angle() const
+{
+    if (left_encoder != nullptr) {
+        return left_encoder->get_angle();
+    }
+    return 0.0f;
+}
+
+float Tailsitter::get_right_encoder_angle() const
+{
+    if (right_encoder != nullptr) {
+        return right_encoder->get_angle();
+    }
+    return 0.0f;
 }
 
 #endif  // HAL_QUADPLANE_ENABLED

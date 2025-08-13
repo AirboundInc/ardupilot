@@ -18,6 +18,7 @@
 #include "transition.h"
 #include <AP_Motors/AP_MotorsTailsitter.h>
 #include <AP_Logger/LogStructure.h>
+#include <AP_QuadEncoder/AP_QuadEncoder.h>
 
 class QuadPlane;
 class AP_MotorsMulticopter;
@@ -29,6 +30,7 @@ friend class Plane;
 public:
 
     Tailsitter(QuadPlane& _quadplane, AP_MotorsMulticopter*& _motors);
+    ~Tailsitter();
 
     bool enabled() const { return (enable > 0) && setup_complete;}
 
@@ -69,6 +71,12 @@ public:
 
     // Write tailsitter specific log
     void write_log();
+
+    // encoder access methods
+    float get_left_encoder_angle() const;
+    float get_right_encoder_angle() const;
+    bool has_left_encoder() const { return left_encoder != nullptr; }
+    bool has_right_encoder() const { return right_encoder != nullptr; }
 
     // tailsitter speed scaler
     float last_spd_scaler = 1.0f; // used to slew rate limiting with TAILSITTER_GSCL_ATT_THR option
@@ -111,6 +119,14 @@ public:
     AP_Float VTOL_yaw_scale;
     AP_Float disk_loading_min_outflow;
 
+    // Encoder parameters
+    AP_Int16 encoder1_pin_a;
+    AP_Int16 encoder1_pin_b;
+    AP_Int16 encoder1_cpr;
+    AP_Int16 encoder2_pin_a;
+    AP_Int16 encoder2_pin_b;
+    AP_Int16 encoder2_cpr;
+
     AP_MotorsTailsitter* tailsitter_motors;
 
 private:
@@ -122,6 +138,8 @@ private:
         float throttle_scaler;
         float speed_scaler;
         float min_throttle;
+        float left_encoder_angle;
+        float right_encoder_angle;
     };
 
     // Data to be logged
@@ -129,6 +147,8 @@ private:
         float throttle_scaler;
         float speed_scaler;
         float min_throttle;
+        float left_encoder_angle;
+        float right_encoder_angle;
     } log_data;
 
 
@@ -143,6 +163,7 @@ private:
     bool _have_rudder;
     bool _have_elevon;
     bool _have_v_tail;
+    bool _have_encoders;
 
     // refences for convenience
     QuadPlane& quadplane;
@@ -150,6 +171,10 @@ private:
 
     // transition logic
     Tailsitter_Transition* transition;
+
+    // encoder objects
+    class AP_QuadEncoder* left_encoder;
+    class AP_QuadEncoder* right_encoder;
 
 };
 
