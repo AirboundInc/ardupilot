@@ -351,6 +351,11 @@ void Tailsitter::output(void)
             }
             SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
             SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
+            AP::logger().WriteStreaming("PHI", "TimeUS,Desired_Left_Tilt, Desired_Right_Tilt",
+            "-d----", // seconds, degrees
+            "F00000", // micro (1e-6), no mult (1e0)
+            "Qfffff", // uint64_t, float
+            AP_HAL::micros64(), tilt_left*4500, tilt_right*4500);
             return;
         }
     }
@@ -411,7 +416,6 @@ void Tailsitter::output(void)
             SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
             SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
 
-
             // skip remainder of the function that overwrites plane control surface outputs with copter
             return;
         }
@@ -460,6 +464,11 @@ void Tailsitter::output(void)
     }
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
+    AP::logger().WriteStreaming("PHI", "TimeUS,Desired_Left_Tilt, Desired_Right_Tilt",
+            "-d----", // seconds, degrees
+            "F00000", // micro (1e-6), no mult (1e0)
+            "Qfffff", // uint64_t, float
+            AP_HAL::micros64(), tilt_left*4500, tilt_right*4500);
 
     // Check for saturated limits
     bool tilt_lim = _is_vectored && ((fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorLeft)) >= SERVO_MAX) || (fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorRight)) >= SERVO_MAX));
