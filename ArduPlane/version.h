@@ -6,7 +6,7 @@
 
 #include "ap_version.h"
 
-#define THISFIRMWARE "ArduPlane V4.5.7 - freeze crt vtol pos ctrl"
+#define THISFIRMWARE "ArduPlane V4.5.7 - Added logging for desired Phi_L and Phi_R"
 
 // the following line is parsed by the autotest scripts
 #define FIRMWARE_VERSION 4,5,7,FIRMWARE_VERSION_TYPE_DEV
