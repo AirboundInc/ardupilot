@@ -351,6 +351,9 @@ void Tailsitter::output(void)
             }
             SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
             SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
+
+            return;
+        
         }
     }
 
