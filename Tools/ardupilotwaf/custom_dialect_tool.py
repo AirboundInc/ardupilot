@@ -2,7 +2,6 @@ import os
 
 # All Waf tools must have a 'configure' function that Waf can call.
 def configure(conf):
-    print('running my custom tool')
     """
     This function is automatically run by Waf when 'cfg.load("custom_dialect_tool")'
     is called in the main wscript.
@@ -47,6 +46,7 @@ def configure(conf):
             original_lines.insert(insert_index, include_line_to_add)
             needs_write = True
             conf.to_log(f"-> Adding custom dialect to {all_xml_path}")
+        print('Custom Storage Setting                         : Enabled')
     
     else:
         # Flag is OFF: We want the line to be REMOVED
@@ -54,6 +54,7 @@ def configure(conf):
             original_lines = [line for line in original_lines if custom_dialect_path not in line]
             needs_write = True
             conf.to_log(f"-> Removing custom dialect from {all_xml_path}")
+        print('Custom Storage Setting                         : Disabled')
 
     # If a change was made, write the new content back to the file
     if needs_write:
