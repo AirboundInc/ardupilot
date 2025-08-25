@@ -534,6 +534,11 @@ def configure(cfg):
     cfg.msg('Setting board to', cfg.options.board)
     cfg.get_board().configure(cfg)
 
+    # Manages the inclusion of the custom MAVLink dialect in the build.
+    # This logic adds the dialect if --enable-custom-storage is passed during configuration,
+    # and ensures it is removed otherwise.    
+    cfg.load('custom_dialect_tool')
+
     cfg.load('waf_unit_test')
     cfg.load('mavgen')
     cfg.load('dronecangen')
