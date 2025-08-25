@@ -295,6 +295,11 @@ void Plane::update_logging25(void)
     if (should_log(MASK_LOG_RC))
         Log_Write_RC();
 
+#if HAL_QUADPLANE_ENABLED
+    // Write tailsitter specific log at same rate as RCOU (25Hz)
+    quadplane.tailsitter.write_log();
+#endif
+
     if (should_log(MASK_LOG_IMU))
         AP::ins().Write_Vibration();
 }

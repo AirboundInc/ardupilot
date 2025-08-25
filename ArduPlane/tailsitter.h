@@ -122,6 +122,8 @@ private:
         float throttle_scaler;
         float speed_scaler;
         float min_throttle;
+        float tilt_left;
+        float tilt_right;
     };
 
     // Data to be logged
@@ -129,6 +131,8 @@ private:
         float throttle_scaler;
         float speed_scaler;
         float min_throttle;
+        float tilt_left;
+        float tilt_right;
     } log_data;
 
 

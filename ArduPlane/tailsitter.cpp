@@ -352,6 +352,10 @@ void Tailsitter::output(void)
             SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
             SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
 
+            // Store tilt data for logging at 25Hz
+            log_data.tilt_left = tilt_left;
+            log_data.tilt_right = tilt_right;
+
             return;
         
         }
@@ -413,6 +417,10 @@ void Tailsitter::output(void)
             SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
             SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
 
+            // Store tilt data for logging at 25Hz
+            log_data.tilt_left = tilt_left;
+            log_data.tilt_right = tilt_right;
+
             // skip remainder of the function that overwrites plane control surface outputs with copter
             return;
         }
@@ -461,11 +469,10 @@ void Tailsitter::output(void)
     }
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
-    AP::logger().WriteStreaming("PHIS", "TimeUS,DesL,DesR",
-            "sdd", // seconds, degrees
-            "F00", // micro (1e-6), no mult (1e0)
-            "Qff", // uint64_t, float
-            AP_HAL::micros64(), tilt_left/100, tilt_right/100);
+    
+    // Store tilt data for logging at 25Hz
+    log_data.tilt_left = tilt_left;
+    log_data.tilt_right = tilt_right;
 
     // Check for saturated limits
     bool tilt_lim = _is_vectored && ((fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorLeft)) >= SERVO_MAX) || (fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorRight)) >= SERVO_MAX));
@@ -803,6 +810,8 @@ void Tailsitter::write_log()
         throttle_scaler     : log_data.throttle_scaler,
         speed_scaler        : log_data.speed_scaler,
         min_throttle        : log_data.min_throttle,
+        tilt_left           : log_data.tilt_left,
+        tilt_right          : log_data.tilt_right,
     };
     plane.logger.WriteBlock(&pkt, sizeof(pkt));
 }

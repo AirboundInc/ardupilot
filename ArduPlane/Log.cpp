@@ -34,8 +34,8 @@ void Plane::Log_Write_Attitude(void)
         logger.Write_PID(LOG_PIQY_MSG, quadplane.attitude_control->get_rate_yaw_pid().get_pid_info());
         logger.Write_PID(LOG_PIQA_MSG, quadplane.pos_control->get_accel_z_pid().get_pid_info() );
 
-        // Write tailsitter specific log at same rate as PIDs
-        quadplane.tailsitter.write_log();
+        // // Write tailsitter specific log at same rate as PIDs
+        // quadplane.tailsitter.write_log();
     }
     if (quadplane.in_vtol_mode() && quadplane.pos_control->is_active_xy()) {
         logger.Write_PID(LOG_PIDN_MSG, quadplane.pos_control->get_vel_xy_pid().get_pid_info_x());
@@ -433,7 +433,7 @@ const struct LogStructure Plane::log_structure[] = {
 // @Field: Tmin: minimum output throttle caculated from disk thoery gain scale with Q_TAILSIT_MIN_VO
 #if HAL_QUADPLANE_ENABLED
     { LOG_TSIT_MSG, sizeof(Tailsitter::log_tailsitter),
-      "TSIT", "Qfff",  "TimeUS,Ts,Ss,Tmin", "s---", "F---" , true },
+      "TSIT", "Qfffff",  "TimeUS,Ts,Ss,Tmin,TiltL,TiltR", "s---dd", "F---00" , true },
 #endif
 
 // @LoggerMessage: PIDG
