@@ -455,8 +455,13 @@ void Tailsitter::output(void)
         if (!is_zero(extra_pitch) && quadplane.in_vtol_mode()) {
             extra_elevator = extra_sign * powf(fabsf(extra_pitch), vectored_hover_power) * SERVO_MAX;
         }
-        tilt_left  = extra_elevator + tilt_left * vectored_hover_gain;
-        tilt_right = extra_elevator + tilt_right * vectored_hover_gain;
+        if (!is_negative(vectored_hover_power)) {
+            tilt_left  = extra_elevator + tilt_left * vectored_hover_gain;
+            tilt_right = extra_elevator + tilt_right * vectored_hover_gain;
+        } else {
+            tilt_left  = tilt_left * vectored_hover_gain;
+            tilt_right = tilt_right * vectored_hover_gain;
+        }
     }
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
