@@ -13,7 +13,7 @@ def configure(conf):
     ardupilot_root = conf.srcnode.abspath()
     
     # Construct the full path to your custom dialect file
-    custom_dialect_path = os.path.join(ardupilot_root, 'my_dilects/custom_mavlink.xml')
+    custom_dialect_path = os.path.join(ardupilot_root, 'libraries/AP_CustomMavlinkHandler/custom_mavlink.xml')
     
     # The path to the all.xml file within the ArduPilot source tree
     all_xml_path = os.path.join(ardupilot_root, 'modules/mavlink/message_definitions/v1.0/all.xml')
