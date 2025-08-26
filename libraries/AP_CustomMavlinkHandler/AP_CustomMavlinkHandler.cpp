@@ -9,7 +9,7 @@ void AP_CustomMavlinkHandler::init(void){
 }
 void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, const mavlink_message_t &msg)
 {
-    printf("AP_CustomMavlinkHandler: %s\n", "got message");
+    // printf("AP_CustomMavlinkHandler: %s\n", "got message");
     if (msg.msgid != CUSTOM_MSG_ID)
         return;
 
@@ -17,7 +17,7 @@ void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, cons
     uuid_update_t packet;
     memcpy(&packet, msg.payload64, sizeof(packet));
     packet.value[36] = '\0'; // Ensure null termination
-    printf("payload64: %s\n", packet.value);
+    // printf("payload64: %s\n", packet.value);
 
     switch (packet.param)
     {
