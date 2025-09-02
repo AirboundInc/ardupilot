@@ -550,6 +550,8 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     AP_GROUPEND
 };
 
+const uint32_t FW_TRANS_GUARD_TIME_MS = 500;
+
 /*
   defaults for all quadplanes
  */
@@ -1867,7 +1869,14 @@ void QuadPlane::update(void)
             transition->force_transition_complete();
             assisted_flight = false;
         } else {
-            transition->update();
+            // Transition from VTOL to FW
+            if (tailsitter.enabled()) {
+                if ((now - tailsitter.transition->get_last_vtol_mode_ms()) > FW_TRANS_GUARD_TIME_MS) {
+                    transition->update();
+                }
+            } else {
+                transition->update();
+            }
         }
 
     } else {
@@ -1877,6 +1886,7 @@ void QuadPlane::update(void)
         // output to motors
         motors_output();
 
+        // Transition from FW to VTOL
         transition->VTOL_update();
 
     }
