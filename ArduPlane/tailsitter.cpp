@@ -191,52 +191,53 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     AP_GROUPINFO("WV_MI", 26, Tailsitter, wvane_pitch_mid, 45),
 
     // @Param: ENC1_PINA
+    // @Param: E1A
     // @DisplayName: Encoder 1 Pin A
     // @Description: GPIO pin number for encoder 1 channel A input
     // @Range: -1 255
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
-    AP_GROUPINFO("ENC1_PINA", 27, Tailsitter, encoder1_pin_a, -1),
+    AP_GROUPINFO("E1A", 23, Tailsitter, encoder1_pin_a, -1),
 
-    // @Param: ENC1_PINB
+    // @Param: E1B
     // @DisplayName: Encoder 1 Pin B
     // @Description: GPIO pin number for encoder 1 channel B input
     // @Range: -1 255
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
-    AP_GROUPINFO("ENC1_PINB", 28, Tailsitter, encoder1_pin_b, -1),
+    AP_GROUPINFO("E1B", 24, Tailsitter, encoder1_pin_b, -1),
 
-    // @Param: ENC1_CPR
+    // @Param: E1CPR
     // @DisplayName: Encoder 1 Counts Per Revolution
     // @Description: Number of encoder counts per full 360 degree revolution for encoder 1
     // @Range: 1 10000
     // @Increment: 1
     // @User: Standard
-    AP_GROUPINFO("ENC1_CPR", 29, Tailsitter, encoder1_cpr, 4096),
+    AP_GROUPINFO("E1CPR", 25, Tailsitter, encoder1_cpr, 4096),
 
-    // @Param: ENC2_PINA
+    // @Param: E2A
     // @DisplayName: Encoder 2 Pin A
     // @Description: GPIO pin number for encoder 2 channel A input
     // @Range: -1 255
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
-    AP_GROUPINFO("ENC2_PINA", 30, Tailsitter, encoder2_pin_a, -1),
+    AP_GROUPINFO("E2A", 26, Tailsitter, encoder2_pin_a, -1),
 
-    // @Param: ENC2_PINB
+    // @Param: E2B
     // @DisplayName: Encoder 2 Pin B
     // @Description: GPIO pin number for encoder 2 channel B input
     // @Range: -1 255
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
-    AP_GROUPINFO("ENC2_PINB", 31, Tailsitter, encoder2_pin_b, -1),
+    AP_GROUPINFO("E2B", 27, Tailsitter, encoder2_pin_b, -1),
 
-    // @Param: ENC2_CPR
+    // @Param: E2CPR
     // @DisplayName: Encoder 2 Counts Per Revolution
     // @Description: Number of encoder counts per full 360 degree revolution for encoder 2
     // @Range: 1 10000
     // @Increment: 1
     // @User: Standard
-    AP_GROUPINFO("ENC2_CPR", 32, Tailsitter, encoder2_cpr, 4096),
+    AP_GROUPINFO("E2CPR", 28, Tailsitter, encoder2_cpr, 4096),
 
     AP_GROUPEND
 };
