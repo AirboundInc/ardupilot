@@ -409,6 +409,8 @@ private:
     // Time to wait at pos2 before starting final descent to allow for weathervaning
     AP_Float q_land_freeze_time;
 
+    // Time for FW transistion delay
+    AP_Float fw_trans_guard_time_ms;
     // which fwd throttle handling method is active
     enum class ActiveFwdThr : uint8_t {
         NONE = 0,

@@ -547,10 +547,19 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("LND_FRZ_TIM", 39, QuadPlane, q_land_freeze_time, 7.0f),
 
+    // @Param: FW_GURD_TIM
+    // @DisplayName: Time delay in ms for the transition from VTOL to FW.
+    // @Description: Time in ms to hold in tranform from VTOL to FW during landing phase and stopping distance is too high.
+    // @Units: milliseconds
+    // @Range: 0.0 800
+    // @Increment: 10
+    // @User: Advanced
+    AP_GROUPINFO("FW_GURD_TIM", 40, QuadPlane, fw_trans_guard_time_ms, 500),
+
     AP_GROUPEND
 };
 
-const uint32_t FW_TRANS_GUARD_TIME_MS = 500;
+// const uint32_t fw_trans_guard_time_ms = 500;
 
 /*
   defaults for all quadplanes
@@ -1869,14 +1878,15 @@ void QuadPlane::update(void)
             transition->force_transition_complete();
             assisted_flight = false;
         } else {
-            // Transition from VTOL to FW
-            if (tailsitter.enabled()) {
-                if ((now - tailsitter.transition->get_last_vtol_mode_ms()) > FW_TRANS_GUARD_TIME_MS) {
-                    transition->update();
-                }
-            } else {
-                transition->update();
-            }
+            // // Transition from VTOL to FW
+            // if (tailsitter.enabled()) {
+            //     if ((now - tailsitter.transition->get_last_vtol_mode_ms()) > fw_trans_guard_time_ms) {
+            //         transition->update();
+            //     }
+            // } else {
+            //     transition->update();
+            // }
+            transition->update();
         }
 
     } else {

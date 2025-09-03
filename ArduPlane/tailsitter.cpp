@@ -19,6 +19,7 @@
  */
 #include "tailsitter.h"
 #include "Plane.h"
+#include <AP_Logger/AP_Logger.h>
 
 #if HAL_QUADPLANE_ENABLED
 
@@ -455,23 +456,11 @@ void Tailsitter::output(void)
         if (!is_zero(extra_pitch) && quadplane.in_vtol_mode()) {
             extra_elevator = extra_sign * powf(fabsf(extra_pitch), vectored_hover_power) * SERVO_MAX;
         }
-        if (!is_negative(vectored_hover_power)) {
-            tilt_left  = extra_elevator + tilt_left * vectored_hover_gain;
-            tilt_right = extra_elevator + tilt_right * vectored_hover_gain;
-        } else {
-            tilt_left  = tilt_left * vectored_hover_gain;
-            tilt_right = tilt_right * vectored_hover_gain;
-        }
+        tilt_left  = extra_elevator + tilt_left * vectored_hover_gain;
+        tilt_right = extra_elevator + tilt_right * vectored_hover_gain;
     }
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
-
-    // Add logging for desired thrust vectoring angles
-    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR",
-            "sdd", // seconds, degrees
-            "F00", // micro (1e-6), no mult (1e0)
-            "Qff", // uint64_t, float
-            AP_HAL::micros64(), tilt_left/100, tilt_right/100);
 
     // Check for saturated limits
     bool tilt_lim = _is_vectored && ((fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorLeft)) >= SERVO_MAX) || (fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorRight)) >= SERVO_MAX));
@@ -524,6 +513,12 @@ void Tailsitter::output(void)
  */
 bool Tailsitter::transition_fw_complete(void)
 {
+    float dpitch = (transition->prev_fw_initial_pitch - transition->fw_transition_initial_pitch)*0.01f;
+    AP::logger().WriteStreaming("ATTC","TimeUS,pitchSp,dpitch,value",
+        "sddd", // seconds, degrees,degrees
+        "F000", // micro (1e-6), no mult (1e0)
+        "Qfff", // uint64_t, float
+        AP_HAL::micros64(),(float)quadplane.attitude_control->get_attitude_target_quat().get_euler_pitch(),dpitch,transition->fw_transition_initial_pitch*0.01f);
     if (!plane.arming.is_armed_and_safety_off()) {
         // instant transition when disarmed, no message
         return true;
@@ -537,7 +532,10 @@ bool Tailsitter::transition_fw_complete(void)
         return true;
     }
     uint32_t now = AP_HAL::millis();
-
+    if(dpitch>abs(3.0f)){
+        transition->restart();
+        transition->fw_transition_initial_pitch = constrain_float(quadplane.attitude_control->get_attitude_target_quat().get_euler_pitch() * degrees(100.0),-8500,8500);
+    }
     if (now - transition->fw_transition_start_ms > ((transition_angle_fw+(transition->fw_transition_initial_pitch*0.01f))/transition_rate_fw)*1500) {
         gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW done, timeout");
         gcs().send_text(MAV_SEVERITY_WARNING, "FW transition_initial_pitch: %f",(float)transition->fw_transition_initial_pitch*0.01f);
@@ -1013,6 +1011,7 @@ bool Tailsitter_Transition::set_VTOL_roll_pitch_limit(int32_t& nav_roll_cd, int3
 // setup for the transition back to fixed wing
 void Tailsitter_Transition::restart()
 {
+    prev_fw_initial_pitch = fw_transition_initial_pitch;
     transition_state = TRANSITION_ANGLE_WAIT_FW;
     fw_transition_start_ms = AP_HAL::millis();
     fw_transition_initial_pitch = constrain_float(quadplane.attitude_control->get_attitude_target_quat().get_euler_pitch() * degrees(100.0),-8500,8500);
@@ -1040,7 +1039,8 @@ MAV_VTOL_STATE Tailsitter_Transition::get_mav_vtol_state() const
             if (quadplane.in_vtol_mode()) {
                 return MAV_VTOL_STATE_MC;
             }
-            return MAV_VTOL_STATE_TRANSITION_TO_FW;
+            gcs().send_text(MAV_SEVERITY_WARNING, "Reset method invoked and mavlink set");
+            return MAV_VTOL_STATE_TRANSITION_TO_FW;   
         }
     }
 
