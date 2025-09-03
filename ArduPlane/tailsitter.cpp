@@ -438,6 +438,7 @@ void Tailsitter::output(void)
 
     tilt_left = 0.0f;
     tilt_right = 0.0f;
+    float pitch_cd = 0.0f;
     if (vectored_hover_gain > 0) {
         // thrust vectoring VTOL modes
         tilt_left = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
@@ -448,7 +449,8 @@ void Tailsitter::output(void)
           takeoff without integrator windup
          */
         float des_pitch_cd = quadplane.attitude_control->get_att_target_euler_cd().y;
-        int32_t pitch_error_cd = (des_pitch_cd - quadplane.ahrs_view->pitch_sensor) * 0.5;
+        pitch_cd = quadplane.ahrs_view->pitch_sensor;
+        int32_t pitch_error_cd = (des_pitch_cd - pitch_cd) * 0.5;
         float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
         float extra_sign = extra_pitch > 0?1:-1;
         float extra_elevator = 0;
@@ -462,16 +464,18 @@ void Tailsitter::output(void)
             tilt_left  = tilt_left * vectored_hover_gain;
             tilt_right = tilt_right * vectored_hover_gain;
         }
+
+        // TODO: Put limits on weathervaning basis pitch_cd
     }
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
 
     // Add logging for desired thrust vectoring angles
-    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR",
-            "sdd", // seconds, degrees
-            "F00", // micro (1e-6), no mult (1e0)
-            "Qff", // uint64_t, float
-            AP_HAL::micros64(), tilt_left/100, tilt_right/100);
+    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,aPitch",
+            "sddd", // seconds, degrees
+            "F000", // micro (1e-6), no mult (1e0)
+            "Qfff", // uint64_t, float
+            AP_HAL::micros64(), tilt_left/100, tilt_right/100,pitch_cd/100);
 
     // Check for saturated limits
     bool tilt_lim = _is_vectored && ((fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorLeft)) >= SERVO_MAX) || (fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorRight)) >= SERVO_MAX));
