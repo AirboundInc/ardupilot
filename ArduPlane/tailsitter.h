@@ -189,8 +189,6 @@ public:
 
     bool allow_weathervane() override;
 
-    uint32_t get_last_vtol_mode_ms() { return last_vtol_mode_ms; }
-
 private:
 
     enum {

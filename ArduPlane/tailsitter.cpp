@@ -19,7 +19,6 @@
  */
 #include "tailsitter.h"
 #include "Plane.h"
-#include <AP_Logger/AP_Logger.h>
 
 #if HAL_QUADPLANE_ENABLED
 
@@ -513,12 +512,8 @@ void Tailsitter::output(void)
  */
 bool Tailsitter::transition_fw_complete(void)
 {
-    float dpitch = (transition->prev_fw_initial_pitch - transition->fw_transition_initial_pitch)*0.01f;
-    AP::logger().WriteStreaming("ATTC","TimeUS,pitchSp,dpitch,value",
-        "sddd", // seconds, degrees,degrees
-        "F000", // micro (1e-6), no mult (1e0)
-        "Qfff", // uint64_t, float
-        AP_HAL::micros64(),(float)quadplane.attitude_control->get_attitude_target_quat().get_euler_pitch(),dpitch,transition->fw_transition_initial_pitch*0.01f);
+    // Get the difference in the pitch initial value to the current pitch setpoint to track the discontinuity
+    float fw_initial_pitch_diff = (transition->prev_fw_initial_pitch - transition->fw_transition_initial_pitch)*0.01f;
     if (!plane.arming.is_armed_and_safety_off()) {
         // instant transition when disarmed, no message
         return true;
@@ -532,7 +527,9 @@ bool Tailsitter::transition_fw_complete(void)
         return true;
     }
     uint32_t now = AP_HAL::millis();
-    if(dpitch>abs(3.0f)){
+    // Guard for large initial pitch value, if there need to reset the initial pitch again
+    if(fw_initial_pitch_diff>abs(3.0f)){
+        gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW angle discontinuity, resting the initial pitch");
         transition->restart();
         transition->fw_transition_initial_pitch = constrain_float(quadplane.attitude_control->get_attitude_target_quat().get_euler_pitch() * degrees(100.0),-8500,8500);
     }
@@ -1039,7 +1036,6 @@ MAV_VTOL_STATE Tailsitter_Transition::get_mav_vtol_state() const
             if (quadplane.in_vtol_mode()) {
                 return MAV_VTOL_STATE_MC;
             }
-            gcs().send_text(MAV_SEVERITY_WARNING, "Reset method invoked and mavlink set");
             return MAV_VTOL_STATE_TRANSITION_TO_FW;   
         }
     }
