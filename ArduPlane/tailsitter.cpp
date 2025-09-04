@@ -384,6 +384,14 @@ void Tailsitter::output(void)
         return;
     }
 
+    static uint32_t last_log_ms = 0;
+    uint32_t ab = AP_HAL::millis();
+
+    if (ab - last_log_ms >= 10000) {
+        last_log_ms = ab;
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>>TV_L and TV_R : %f %f", get_left_encoder_angle(), get_right_encoder_angle());
+    }
+
     float tilt_left = 0.0f;
     float tilt_right = 0.0f;
 
@@ -1192,7 +1200,9 @@ float Tailsitter::get_left_encoder_angle() const
 {
     if (left_encoder != nullptr) {
         return left_encoder->get_angle();
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "left_encoder = nullptr");
     }
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "left_encoder != nullptr");
     return 0.0f;
 }
 
@@ -1200,7 +1210,9 @@ float Tailsitter::get_right_encoder_angle() const
 {
     if (right_encoder != nullptr) {
         return right_encoder->get_angle();
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "right_encoder != nullptr");
     }
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "right_encoder != nullptr");
     return 0.0f;
 }
 

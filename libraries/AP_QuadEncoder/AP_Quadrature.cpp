@@ -1,6 +1,6 @@
 #include <AP_HAL/AP_HAL.h>
 
-#include "AP_QuadEncoder.h"
+#include "AP_Quadrature.h"
 
 #include <GCS_MAVLink/GCS.h>
 
