@@ -541,7 +541,7 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Param: LND_FRZ_TIM
     // @DisplayName: Q mode landing freeze time before final descent
     // @Description: Time in seconds to hold position at pos2 before starting final descent
-    // @Units: seconds
+    // @Units: s
     // @Range: 0.0 15.0
     // @Increment: 0.1
     // @User: Advanced
