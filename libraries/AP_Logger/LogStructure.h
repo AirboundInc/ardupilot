@@ -423,10 +423,10 @@ struct PACKED log_WheelEncoder {
 struct PACKED log_RotaryEncoder {
     LOG_PACKET_HEADER;
     uint64_t time_us;
-    float pos_left;
-    float vel_left;
-    float pos_right;
-    float vel_right;
+    float angular_position_0;
+    float angular_velocity_0;
+    float angular_position_1;
+    float angular_velocity_1;
 };
 
 struct PACKED log_ADSB {

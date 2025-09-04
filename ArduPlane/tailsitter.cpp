@@ -361,6 +361,14 @@ void Tailsitter::output(void)
         return;
     }
 
+    static uint32_t last_log_ms = 0;
+    uint32_t ab = AP_HAL::millis();
+
+    if (ab - last_log_ms >= 10000) {
+        last_log_ms = ab;
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>>TV_L and TV_R : %f %f", get_left_encoder_angle(), get_right_encoder_angle());
+    }
+
     float tilt_left = 0.0f;
     float tilt_right = 0.0f;
 
@@ -1162,43 +1170,21 @@ bool Tailsitter_Transition::allow_weathervane()
     return !tailsitter.in_vtol_transition() && (vtol_limit_start_ms == 0);
 }
 
-/*
-  Encoder methods for tailsitter thrust vector control
-*/
-
-// Update local encoder state from global plane encoder data
-void Tailsitter::update_encoder_state()
+// encoder access methods
+float Tailsitter::get_left_encoder_angle() const
 {
-    // Access global encoder data from plane
-    encoder_control.left_thrust_vector_angle = radians(plane.encoder_state.left_encoder_angle);
-    encoder_control.right_thrust_vector_angle = radians(plane.encoder_state.right_encoder_angle);
-    encoder_control.encoders_healthy = (AP_HAL::millis() - plane.encoder_state.last_encoder_update_ms) < 200;
-    
-    // Update global encoder state from rotary encoder library
-    if (plane.rotary_encoder.enabled(0) || plane.rotary_encoder.enabled(1)) {
-        plane.encoder_state.left_encoder_angle = plane.rotary_encoder.get_angular_position(0,true);
-        plane.encoder_state.right_encoder_angle = plane.rotary_encoder.get_angular_position(1, true);
-        plane.encoder_state.last_encoder_update_ms = AP_HAL::millis();
+    if (left_encoder != nullptr) {
+        return left_encoder->get_angle();
     }
+    return 0.0f;
 }
 
-// Get left thrust vector angle in radians
-float Tailsitter::get_left_thrust_vector_angle()
+float Tailsitter::get_right_encoder_angle() const
 {
-    return encoder_control.left_thrust_vector_angle;
-}
-
-// Get right thrust vector angle in radians  
-float Tailsitter::get_right_thrust_vector_angle()
-{
-    return encoder_control.right_thrust_vector_angle;
-}
-
-// Check encoder health status
-bool Tailsitter::encoders_healthy()
-{
-    return encoder_control.encoders_healthy && 
-           (plane.rotary_encoder.enabled(0) || plane.rotary_encoder.enabled(1));
+    if (right_encoder != nullptr) {
+        return right_encoder->get_angle();
+    }
+    return 0.0f;
 }
 
 

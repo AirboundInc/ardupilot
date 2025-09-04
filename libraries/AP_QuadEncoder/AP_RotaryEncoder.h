@@ -4,47 +4,43 @@
 #include <AP_Param/AP_Param.h>
 #include <AP_Math/AP_Math.h>
 
-// Maximum number of WheelEncoder measurement instances available on this platform
-#define WHEELENCODER_MAX_INSTANCES      2
-#define WHEELENCODER_CPR_DEFAULT        3200    // default encoder counts per full revolution of the wheel
-#define WHEELENCODER_RADIUS_DEFAULT     0.05f   // default wheel radius of 5cm (0.05m)
+// Maximum number of RotaryEncoder measurement instances available on this platform
+#define ROTARY_ENCODER_MAX_INSTANCES      2
+#define ROTARY_ENCODER_CPR_DEFAULT        4096    // default encoder counts per full revolution of the rotary encoder
 
-class AP_WheelEncoder_Backend; 
+
+class AP_RotaryEncoder_Backend; 
  
-class AP_WheelEncoder
+class AP_RotaryEncoder
 {
 public:
-    friend class AP_WheelEncoder_Backend;
-    friend class AP_WheelEncoder_Quadrature;
-    friend class AP_WheelEncoder_SITL_Quadrature;
+    friend class AP_RotaryEncoder_Backend;
+    friend class AP_RotaryEncoder_Quadrature;
 
-    AP_WheelEncoder(void);
+    AP_RotaryEncoder(void);
 
     /* Do not allow copies */
-    CLASS_NO_COPY(AP_WheelEncoder);
+    CLASS_NO_COPY(AP_RotaryEncoder );
 
     // get singleton instance
-    static AP_WheelEncoder *get_singleton() {
+    static AP_RotaryEncoder *get_singleton() {
         return _singleton;
     }
 
-    // WheelEncoder driver types
-    enum WheelEncoder_Type : uint8_t {
-        WheelEncoder_TYPE_NONE             =   0,
-        WheelEncoder_TYPE_QUADRATURE       =   1,
-        WheelEncoder_TYPE_SITL_QUADRATURE  =  10,
+    // RotaryEncoder driver types
+    enum RotaryEncoder_Type : uint8_t {
+        RotaryEncoder_TYPE_NONE             =   0,
+        RotaryEncoder_TYPE_QUADRATURE       =   1,
     };
 
-    // The WheelEncoder_State structure is filled in by the backend driver
-    struct WheelEncoder_State {
-        uint8_t                instance;        // the instance number of this WheelEncoder
-        int32_t                distance_count;  // cumulative number of forward + backwards events received from wheel encoder
-        float                  distance;        // total distance measured in meters
-        uint32_t               total_count;     // total number of successful readings from sensor (used for sensor quality calcs)
-        uint32_t               error_count;     // total number of errors reading from sensor (used for sensor quality calcs)
-        uint32_t               last_reading_ms; // time of last reading
-        int32_t                dist_count_change; // distance count change during the last update (used to calculating rate)
-        uint32_t               dt_ms;             // time change (in milliseconds) for the previous period (used to calculating rate)
+    // The RotaryEncoder_State structure is filled in by the backend driver
+    struct RotaryEncoder_State {
+        uint8_t                instance;                        // the instance number of this RotaryEncoder
+        int32_t                count;                           // encoder position in counts 0 to CPR
+        float                  angular_position;                // total angle measured in radians
+        uint32_t               last_reading_ms;                 // time of last reading
+        int32_t                angular_position_count_change;   // angle position count change during the last update (used to calculating rate)
+        uint32_t               dt_ms;                           // time change (in milliseconds) for the previous period (used to calculating rate)
     };
 
     // detect and initialise any available rpm sensors
@@ -56,7 +52,7 @@ public:
     // log data to logger
     void Log_Write() const;
 
-    // return the number of wheel encoder sensor instances
+    // return the number of rotary encoder sensor instances
     uint8_t num_sensors(void) const { return num_instances; }
 
     // return true if healthy
@@ -68,29 +64,14 @@ public:
     // get the counts per revolution of the encoder
     uint16_t get_counts_per_revolution(uint8_t instance) const;
 
-    // get the wheel radius in meters
-    float get_wheel_radius(uint8_t instance) const;
-
-    // return a 3D vector defining the position offset of the center of the wheel in meters relative to the body frame origin
-    const Vector3f &get_pos_offset(uint8_t instance) const;
-
-    // get total delta angle (in radians) measured by the wheel encoder
+    // get total delta angle (in radians) measured by the rotary encoder
     float get_delta_angle(uint8_t instance) const;
 
-    // get the total distance traveled in meters
-    float get_distance(uint8_t instance) const;
+    // get the total angle position (in radians) measured by the rotary encoder
+    float get_angular_position(uint8_t instance) const;
 
     // get the instantaneous rate in radians/second
     float get_rate(uint8_t instance) const;
-
-    // get the total number of sensor reading from the encoder
-    uint32_t get_total_count(uint8_t instance) const;
-
-    // get the total number of errors reading from the encoder
-    uint32_t get_error_count(uint8_t instance) const;
-
-    // get the signal quality for a sensor (0 = extremely poor quality, 100 = extremely good quality)
-    float get_signal_quality(uint8_t instance) const;
 
     // get the system time (in milliseconds) of the last update
     uint32_t get_last_reading_ms(uint8_t instance) const;
@@ -99,23 +80,21 @@ public:
 
 protected:
     // parameters for each instance
-    AP_Int8  _type[WHEELENCODER_MAX_INSTANCES];
-    AP_Int16 _counts_per_revolution[WHEELENCODER_MAX_INSTANCES];
-    AP_Float _wheel_radius[WHEELENCODER_MAX_INSTANCES];
-    AP_Vector3f _pos_offset[WHEELENCODER_MAX_INSTANCES];
-    AP_Int8  _pina[WHEELENCODER_MAX_INSTANCES];
-    AP_Int8  _pinb[WHEELENCODER_MAX_INSTANCES];
+    AP_Int8  _type[ROTARY_ENCODER_MAX_INSTANCES];
+    AP_Int16 _counts_per_revolution[ROTARY_ENCODER_MAX_INSTANCES];
+    AP_Int8  _pina[ROTARY_ENCODER_MAX_INSTANCES];
+    AP_Int8  _pinb[ROTARY_ENCODER_MAX_INSTANCES];
+    AP_Float pos_offset_zero[ROTARY_ENCODER_MAX_INSTANCES];
 
-    WheelEncoder_State state[WHEELENCODER_MAX_INSTANCES];
-    AP_WheelEncoder_Backend *drivers[WHEELENCODER_MAX_INSTANCES];
+    RotaryEncoder_State state[ROTARY_ENCODER_MAX_INSTANCES];
+    AP_RotaryEncoder_Backend *drivers[ROTARY_ENCODER_MAX_INSTANCES];
     uint8_t num_instances;
-    Vector3f pos_offset_zero;   // allows returning position offsets of zero for invalid requests
 
 private:
 
-    static AP_WheelEncoder *_singleton;
+    static AP_RotaryEncoder *_singleton;
 };
 
 namespace AP {
-    AP_WheelEncoder *wheelencoder();
+    AP_RotaryEncoder *rotaryencoder();
 }

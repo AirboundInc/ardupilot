@@ -15,17 +15,17 @@
 #pragma once
 
 #include <AP_Common/AP_Common.h>
-#include "AP_WheelEncoder.h"
+#include "AP_RotaryEncoder.h"
 
-class AP_WheelEncoder_Backend
+class AP_RotaryEncoder_Backend
 {
 public:
     // constructor. This incorporates initialisation as well.
-    AP_WheelEncoder_Backend(AP_WheelEncoder &frontend, uint8_t instance, AP_WheelEncoder::WheelEncoder_State &state);
+    AP_RotaryEncoder_Backend(AP_RotaryEncoder &frontend, uint8_t instance, AP_RotaryEncoder::RotaryEncoder_State &state);
 
-    // we declare a virtual destructor so that WheelEncoder drivers can
+    // we declare a virtual destructor so that RotaryEncoder drivers can
     // override with a custom destructor if need be
-    virtual ~AP_WheelEncoder_Backend(void) {}
+    virtual ~AP_RotaryEncoder_Backend(void) {}
 
     // update the state structure. All backends must implement this.
     virtual void update() = 0;
@@ -37,8 +37,8 @@ protected:
     int8_t get_pin_b() const;
 
     // copy state to front end helper function
-    void copy_state_to_frontend(int32_t distance_count, uint32_t total_count, uint32_t error_count, uint32_t last_reading_ms);
+    void copy_state_to_frontend(int32_t count, uint32_t angle, uint32_t last_reading_ms);
 
-    AP_WheelEncoder &_frontend;
-    AP_WheelEncoder::WheelEncoder_State &_state;
+    AP_RotaryEncoder &_frontend;
+    AP_RotaryEncoder::RotaryEncoder_State &_state;
 };
