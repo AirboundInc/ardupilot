@@ -14,11 +14,11 @@
  */
 
 #include <AP_Common/AP_Common.h>
-#include "AP_WheelEncoder.h"
-#include "WheelEncoder_Backend.h"
+#include "AP_RotaryEncoder.h"
+#include "AP_RotaryEncoder_Backend.h"
 
 // base class constructor.
-AP_WheelEncoder_Backend::AP_WheelEncoder_Backend(AP_WheelEncoder &frontend, uint8_t instance, AP_WheelEncoder::WheelEncoder_State &state) :
+AP_RotaryEncoder_Backend::AP_RotaryEncoder_Backend(AP_RotaryEncoder &frontend, uint8_t instance, AP_RotaryEncoder::RotaryEncoder_State &state) :
         _frontend(frontend),
         _state(state) 
 {
@@ -26,33 +26,32 @@ AP_WheelEncoder_Backend::AP_WheelEncoder_Backend(AP_WheelEncoder &frontend, uint
 }
 
 // return pin.  returns -1 if pin is not defined for this instance
-int8_t AP_WheelEncoder_Backend::get_pin_a() const
+int8_t AP_RotaryEncoder_Backend::get_pin_a() const
 {
-    if (_state.instance >= WHEELENCODER_MAX_INSTANCES) {
+    if (_state.instance >= ROTARY_ENCODER_MAX_INSTANCES) {
         return -1;
     }
     return _frontend._pina[_state.instance].get();
 }
 
 // return pin.  returns -1 if pin is not defined for this instance
-int8_t AP_WheelEncoder_Backend::get_pin_b() const
+int8_t AP_RotaryEncoder_Backend::get_pin_b() const
 {
-    if (_state.instance >= WHEELENCODER_MAX_INSTANCES) {
+    if (_state.instance >= ROTARY_ENCODER_MAX_INSTANCES) {
         return -1;
     }
     return _frontend._pinb[_state.instance].get();
 }
 
 // copy state to front end helper function
-void AP_WheelEncoder_Backend::copy_state_to_frontend(int32_t distance_count, uint32_t total_count, uint32_t error_count, uint32_t last_reading_ms)
+void AP_RotaryEncoder_Backend::copy_state_to_frontend(int32_t count, uint32_t angular_position, uint32_t last_reading_ms)
 {
-    // record distance and time change for calculating rate before previous state is overwritten
+    // record rotation and time change for calculating rate before previous state is overwritten
     _state.dt_ms = last_reading_ms - _state.last_reading_ms;
-    _state.dist_count_change = distance_count - _state.distance_count;
+    _state.angular_position_count_change = angular_position - _state.angular_position;
 
-    // copy distance and error count so it is accessible to front end
-    _state.distance_count = distance_count;
-    _state.total_count = total_count;
-    _state.error_count = error_count;
+    // copy rotation and error count so it is accessible to front end
+    _state.count = count;
+    _state.angular_position = angular_position;
     _state.last_reading_ms = last_reading_ms;
 }
