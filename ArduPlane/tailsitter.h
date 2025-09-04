@@ -216,6 +216,8 @@ private:
     // time when we were last in a vtol control mode
     uint32_t last_vtol_mode_ms;
 
+    float prev_fw_initial_pitch;
+
     Tailsitter& tailsitter;
 
 };
