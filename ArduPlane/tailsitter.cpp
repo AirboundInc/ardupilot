@@ -240,17 +240,9 @@ static const struct AP_Param::defaults_table_struct defaults_table_tailsitter[] 
     
 };
 
-Tailsitter::Tailsitter(QuadPlane& _quadplane, AP_MotorsMulticopter*& _motors):quadplane(_quadplane),motors(_motors),
-    left_encoder(nullptr),
-    right_encoder(nullptr)
+Tailsitter::Tailsitter(QuadPlane& _quadplane, AP_MotorsMulticopter*& _motors):quadplane(_quadplane),motors(_motors)
 {
     AP_Param::setup_object_defaults(this, var_info);
-}
-
-Tailsitter::~Tailsitter()
-{
-    delete left_encoder;
-    delete right_encoder;
 }
 
 void Tailsitter::setup()
@@ -304,20 +296,6 @@ void Tailsitter::setup()
     }
     quadplane.transition = transition;
 
-    // Initialize encoders if pins are configured
-    if (encoder1_pin_a >= 0 && encoder1_pin_b >= 0) {
-        left_encoder = new AP_QuadEncoder(encoder1_pin_a, encoder1_pin_b, encoder1_cpr, AP_QuadEncoder::LEFT);
-        if (left_encoder != nullptr) {
-            left_encoder->init();
-        }
-    }
-    if (encoder2_pin_a >= 0 && encoder2_pin_b >= 0) {
-        right_encoder = new AP_QuadEncoder(encoder2_pin_a, encoder2_pin_b, encoder2_cpr, AP_QuadEncoder::RIGHT);
-        if (right_encoder != nullptr) {
-            right_encoder->init();
-        }
-    }
-
     setup_complete = true;
 }
 
@@ -356,14 +334,6 @@ void Tailsitter::output(void)
     if (!enabled() || quadplane.motor_test.running || !quadplane.initialised) {
         // if motor test is running we don't want to overwrite it with output_motor_mask or motors_output
         return;
-    }
-
-    static uint32_t last_log_ms = 0;
-    uint32_t ab = AP_HAL::millis();
-
-    if (ab - last_log_ms >= 10000) {
-        last_log_ms = ab;
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>>TV_L and TV_R : %f %f", get_left_encoder_angle(), get_right_encoder_angle());
     }
 
     float tilt_left = 0.0f;
@@ -876,10 +846,6 @@ void Tailsitter::speed_scaling(void)
     log_data.throttle_scaler = throttle_scaler;
     log_data.speed_scaler = spd_scaler;
     log_data.min_throttle = disk_loading_min_throttle;
-    
-    // Record encoder data
-    log_data.left_encoder_angle = get_left_encoder_angle();
-    log_data.right_encoder_angle = get_right_encoder_angle();
 
 }
 
@@ -897,8 +863,6 @@ void Tailsitter::write_log()
         throttle_scaler     : log_data.throttle_scaler,
         speed_scaler        : log_data.speed_scaler,
         min_throttle        : log_data.min_throttle,
-        left_encoder_angle  : log_data.left_encoder_angle,
-        right_encoder_angle : log_data.right_encoder_angle,
     };
     plane.logger.WriteBlock(&pkt, sizeof(pkt));
 }
@@ -1136,27 +1100,6 @@ MAV_VTOL_STATE Tailsitter_Transition::get_mav_vtol_state() const
 bool Tailsitter_Transition::allow_weathervane()
 {
     return !tailsitter.in_vtol_transition() && (vtol_limit_start_ms == 0);
-}
-
-// encoder access methods
-float Tailsitter::get_left_encoder_angle() const
-{
-    if (left_encoder != nullptr) {
-        return left_encoder->get_angle();
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "left_encoder = nullptr");
-    }
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "left_encoder != nullptr");
-    return 0.0f;
-}
-
-float Tailsitter::get_right_encoder_angle() const
-{
-    if (right_encoder != nullptr) {
-        return right_encoder->get_angle();
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "right_encoder != nullptr");
-    }
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "right_encoder != nullptr");
-    return 0.0f;
 }
 
 #endif  // HAL_QUADPLANE_ENABLED
