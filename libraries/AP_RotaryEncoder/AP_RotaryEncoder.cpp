@@ -120,7 +120,7 @@ void AP_RotaryEncoder::init(void)
 
         case RotaryEncoder_TYPE_QUADRATURE:
 #if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
-            drivers[i] = new AP_RotaryEncoder_Quadrature(*this, i, state[i]);
+            drivers[i] = new AP_Quadrature(*this, i, state[i]);
 #endif
             break;
         case RotaryEncoder_TYPE_NONE:
@@ -210,7 +210,7 @@ float AP_RotaryEncoder::get_angular_position(uint8_t instance) const
 float AP_RotaryEncoder::get_rate(uint8_t instance) const
 {
     // for invalid instances return zero
-    if (instance >= ROTARY_ENCODER_CPR_DEFAULT) {
+    if (instance >= ROTARY_ENCODER_MAX_INSTANCES) {
         return 0.0f;
     }
 

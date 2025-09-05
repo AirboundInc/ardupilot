@@ -1,7 +1,7 @@
 #pragma once
 
-#include <AP_QuadEncoder/AP_RotaryEncoder.h>
-#include <AP_QuadEncoder/AP_RotaryEncoder_Backend.h>
+#include <AP_RotaryEncoder/AP_RotaryEncoder.h>
+#include <AP_RotaryEncoder/AP_RotaryEncoder_Backend.h>
 #include <Filter/Filter.h>
 #include <AP_Math/AP_Math.h>
 
