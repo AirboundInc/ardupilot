@@ -558,7 +558,7 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Path: ../libraries/AP_RotaryEncoder/AP_RotaryEncoder.cpp
     AP_SUBGROUPINFO(rotary_encoder, "RE_", 40, QuadPlane, AP_RotaryEncoder), 
 #endif
-
+v
     AP_GROUPEND
 };
 
