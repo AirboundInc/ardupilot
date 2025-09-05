@@ -544,6 +544,15 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Standard
     AP_GROUPINFO("BCK_PIT_LIM", 38, QuadPlane, q_bck_pitch_lim, 10.0f),
 
+    // @Param: LND_FRZ_TIM
+    // @DisplayName: Q mode landing freeze time before final descent
+    // @Description: Time in seconds to hold position at pos2 before starting final descent
+    // @Units: s
+    // @Range: 0.0 15.0
+    // @Increment: 0.1
+    // @User: Advanced
+    AP_GROUPINFO("LND_FRZ_TIM", 39, QuadPlane, q_land_freeze_time, 7.0f),
+
     AP_GROUPEND
 };
 
