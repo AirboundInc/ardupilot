@@ -11,7 +11,31 @@ void Plane::Log_Write_Attitude(void)
     targets.z = 0; //Plane does not have the concept of navyaw. This is a placeholder.
 
 #if HAL_QUADPLANE_ENABLED
-    if (quadplane.show_vtol_view()) {
+    if (quadplane.// @LoggerMessage: TSIT
+// @Description: Tailsitter
+// @Field: TimeUS: Time since system startup
+// @Field: Ts: throttle scailing used for tilt motors
+// @Field: Ss: speed scailing used for control surfaces method from Q_TAILSIT_GSCMSK
+// @Field: Tmin: minimum output throttle caculated from disk thoery gain scale with Q_TAILSIT_MIN_VO
+// #if HAL_QUADPLANE_ENABLED
+    { LOG_TSIT_MSG, sizeof(Tailsitter::log_tailsitter),
+      "TSIT", "Qfffff",  "TimeUS,Ts,Ss,Tmin,TV_L,TV_R", "s---dd", "F-----" , true },
+// #endif
+
+// @LoggerMessage: RENC
+// @Description: Rotary Encoder data for tailsitter thrust vector control
+// @Field: TimeUS: Time since system startup  
+// @Field: LA: Left encoder angle in degrees
+// @Field: RA: Right encoder angle in degrees
+// @Field: TL: Target left angle in degrees
+// @Field: TR: Target right angle in degrees
+// @Field: H: Encoder health status (1=healthy, 0=unhealthy)
+#if HAL_QUADPLANE_ENABLED
+    { LOG_RENC_MSG, sizeof(Tailsitter::log_RotaryEncoder),
+      "RENC", "QffffB", "TimeUS,LA,RA,TL,TR,H", "sdddd-", "F-----" , true },
+#endif
+
+// @LoggerMessage: PIDGew()) {
         // we need the attitude targets from the AC_AttitudeControl controller, as they
         // account for the acceleration limits.
         // Also, for bodyframe roll input types, _attitude_target_euler_angle is not maintained

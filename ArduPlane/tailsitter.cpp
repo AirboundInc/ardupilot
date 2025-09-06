@@ -165,54 +165,6 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     // @Range: 0 15
     AP_GROUPINFO("MIN_VO", 22, Tailsitter, disk_loading_min_outflow, 0),
 
-    // @Param: E1A
-    // @DisplayName: Encoder 1 Pin A
-    // @Description: GPIO pin number for encoder 1 channel A input
-    // @Range: -1 255
-    // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
-    // @User: Standard
-    AP_GROUPINFO("E1A", 23, Tailsitter, encoder1_pin_a, -1),
-
-    // @Param: E1B
-    // @DisplayName: Encoder 1 Pin B
-    // @Description: GPIO pin number for encoder 1 channel B input
-    // @Range: -1 255
-    // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
-    // @User: Standard
-    AP_GROUPINFO("E1B", 24, Tailsitter, encoder1_pin_b, -1),
-
-    // @Param: E1CPR
-    // @DisplayName: Encoder 1 Counts Per Revolution
-    // @Description: Number of encoder counts per full 360 degree revolution for encoder 1
-    // @Range: 1 10000
-    // @Increment: 1
-    // @User: Standard
-    AP_GROUPINFO("E1CPR", 25, Tailsitter, encoder1_cpr, 4096),
-
-    // @Param: E2A
-    // @DisplayName: Encoder 2 Pin A
-    // @Description: GPIO pin number for encoder 2 channel A input
-    // @Range: -1 255
-    // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
-    // @User: Standard
-    AP_GROUPINFO("E2A", 26, Tailsitter, encoder2_pin_a, -1),
-
-    // @Param: E2B
-    // @DisplayName: Encoder 2 Pin B
-    // @Description: GPIO pin number for encoder 2 channel B input
-    // @Range: -1 255
-    // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
-    // @User: Standard
-    AP_GROUPINFO("E2B", 27, Tailsitter, encoder2_pin_b, -1),
-
-    // @Param: E2CPR
-    // @DisplayName: Encoder 2 Counts Per Revolution
-    // @Description: Number of encoder counts per full 360 degree revolution for encoder 2
-    // @Range: 1 10000
-    // @Increment: 1
-    // @User: Standard
-    AP_GROUPINFO("E2CPR", 28, Tailsitter, encoder2_cpr, 4096),
-
     AP_GROUPEND
 };
 
@@ -273,7 +225,6 @@ void Tailsitter::setup()
     _have_rudder = SRV_Channels::function_assigned(SRV_Channel::k_rudder);
     _have_elevon = SRV_Channels::function_assigned(SRV_Channel::k_elevon_left) || SRV_Channels::function_assigned(SRV_Channel::k_elevon_right);
     _have_v_tail = SRV_Channels::function_assigned(SRV_Channel::k_vtail_left) || SRV_Channels::function_assigned(SRV_Channel::k_vtail_right);
-    _have_encoders = (encoder1_pin_a >= 0 && encoder1_pin_b >= 0) || (encoder2_pin_a >= 0 && encoder2_pin_b >= 0);
 
     // set defaults for dual/single motor tailsitter
     if (quadplane.frame_class == AP_Motors::MOTOR_FRAME_TAILSITTER) {
@@ -481,6 +432,14 @@ void Tailsitter::output(void)
     if (plane.arming.is_armed_and_safety_off()) {
         // scale surfaces for throttle
         speed_scaling();
+        
+        // update encoder state for thrust vector feedback
+        update_encoder_state();
+        
+        // log encoder data if enabled
+        if (encoders_healthy()) {
+            log_encoder_data();
+        }
     } else if (tailsitter_motors != nullptr) {
         tailsitter_motors->set_min_throttle(0.0);
     }
@@ -1100,6 +1059,73 @@ MAV_VTOL_STATE Tailsitter_Transition::get_mav_vtol_state() const
 bool Tailsitter_Transition::allow_weathervane()
 {
     return !tailsitter.in_vtol_transition() && (vtol_limit_start_ms == 0);
+}
+
+/*
+  Encoder methods for tailsitter thrust vector control
+*/
+
+// Update local encoder state from global plane encoder data
+void Tailsitter::update_encoder_state()
+{
+    // Access global encoder data from plane
+    encoder_control.left_thrust_vector_angle = radians(plane.encoder_state.left_encoder_angle);
+    encoder_control.right_thrust_vector_angle = radians(plane.encoder_state.right_encoder_angle);
+    encoder_control.encoders_healthy = (AP_HAL::millis() - plane.encoder_state.last_encoder_update_ms) < 200;
+    
+    // Update global encoder state from rotary encoder library
+    if (plane.rotary_encoder.enabled(0) || plane.rotary_encoder.enabled(1)) {
+        plane.encoder_state.left_encoder_angle = degrees(plane.rotary_encoder.get_angular_position(0));
+        plane.encoder_state.right_encoder_angle = degrees(plane.rotary_encoder.get_angular_position(1));
+        plane.encoder_state.last_encoder_update_ms = AP_HAL::millis();
+    }
+}
+
+// Get left thrust vector angle in radians
+float Tailsitter::get_left_thrust_vector_angle()
+{
+    return encoder_control.left_thrust_vector_angle;
+}
+
+// Get right thrust vector angle in radians  
+float Tailsitter::get_right_thrust_vector_angle()
+{
+    return encoder_control.right_thrust_vector_angle;
+}
+
+// Check encoder health status
+bool Tailsitter::encoders_healthy()
+{
+    return encoder_control.encoders_healthy && 
+           (plane.rotary_encoder.enabled(0) || plane.rotary_encoder.enabled(1));
+}
+
+// Log encoder data for tailsitter analysis
+void Tailsitter::log_encoder_data()
+{
+    uint32_t now = AP_HAL::millis();
+    
+    // Log encoder data every 100ms (10Hz)
+    if (now - encoder_control.last_log_ms > 100) {
+        encoder_control.last_log_ms = now;
+        
+        // Create encoder log entry
+        struct log_RotaryEncoder {
+            LOG_PACKET_HEADER;
+            uint64_t time_us;
+            float left_angle;
+            float right_angle;
+        } pkt = {
+            LOG_PACKET_HEADER_INIT(LOG_RENC_MSG),
+            time_us : AP_HAL::micros64(),
+            left_angle : degrees(encoder_control.left_thrust_vector_angle),
+            right_angle : degrees(encoder_control.right_thrust_vector_angle)
+        };
+        
+#if HAL_LOGGING_ENABLED
+        plane.logger.WriteBlock(&pkt, sizeof(pkt));
+#endif
+    }
 }
 
 #endif  // HAL_QUADPLANE_ENABLED

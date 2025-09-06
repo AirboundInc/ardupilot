@@ -72,7 +72,7 @@ void AP_Quadrature::update(void)
     // disable interrupts to prevent race with irq_handler
     void *irqstate = hal.scheduler->disable_interrupts_save();
 
-    // copy phase, angle and last timestamp so it is accessible to front end
+    // copy count, angle and last timestamp so it is accessible to front end
     copy_state_to_frontend(irq_state.phase,
                            irq_state.angle,
                            irq_state.last_reading_ms);
