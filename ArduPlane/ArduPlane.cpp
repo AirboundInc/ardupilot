@@ -95,6 +95,9 @@ const AP_Scheduler::Task Plane::scheduler_tasks[] = {
 #if AP_RPM_ENABLED
     SCHED_TASK_CLASS(AP_RPM,           &plane.rpm_sensor,     update,     10, 100,  99),
 #endif
+#if AP_ROTARYENCODER_ENABLED
+    SCHED_TASK_CLASS(AP_RotaryEncoder, &plane.rotary_encoder, update,     50, 100, 100),
+#endif
 #if AP_AIRSPEED_AUTOCAL_ENABLE
     SCHED_TASK(airspeed_ratio_update,   1,    100,  102),
 #endif // AP_AIRSPEED_AUTOCAL_ENABLE

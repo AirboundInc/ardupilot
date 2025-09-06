@@ -26,6 +26,7 @@ const AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Description: What type of RotaryEncoder is connected
     // @Values: 0:None,1:Quadrature,10:SITL Quadrature
     // @User: Standard
+    // @RebootRequired: True
     AP_GROUPINFO_FLAGS("L_TYPE", 0, AP_RotaryEncoder, _type[0], 0, AP_PARAM_FLAG_ENABLE),
 
     // @Param: _CPR
@@ -33,6 +34,7 @@ const AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Description: RotaryEncoder counts per full revolution of the rotary encoder
     // @Increment: 1
     // @User: Standard
+    // @RebootRequired: True
     AP_GROUPINFO("L_CPR",     1, AP_RotaryEncoder, _counts_per_revolution[0], ROTARY_ENCODER_CPR_DEFAULT),
 
     // @Param: _POS_0
@@ -43,21 +45,23 @@ const AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Increment: 0.01
     // @User: Standard
 
-    AP_GROUPINFO("L_POS0",     3, AP_RotaryEncoder, pos_offset_zero[0], 0.0f),
+    AP_GROUPINFO("L_POS0",     2, AP_RotaryEncoder, pos_offset_zero[0], 0.0f),
 
     // @Param: _PINA
     // @DisplayName: Input Pin A
     // @Description: Input Pin A
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
-    AP_GROUPINFO("L_PINA",    4, AP_RotaryEncoder, _pina[0], -1),
+    // @RebootRequired: True
+    AP_GROUPINFO("L_PINA",    3, AP_RotaryEncoder, _pina[0], -1),
 
     // @Param: _PINB
     // @DisplayName: Input Pin B
     // @Description: Input Pin B
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
-    AP_GROUPINFO("L_PINB",    5, AP_RotaryEncoder, _pinb[0], -1),
+    // @RebootRequired: True
+    AP_GROUPINFO("L_PINB",    4, AP_RotaryEncoder, _pinb[0], -1),
 
 #if ROTARY_ENCODER_MAX_INSTANCES > 1
     // @Param: 2_TYPE
@@ -65,14 +69,16 @@ const AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Description: What type of RotaryEncoder sensor is connected
     // @Values: 0:None,1:Quadrature,10:SITL Quadrature
     // @User: Standard
-    AP_GROUPINFO("R_TYPE",   6, AP_RotaryEncoder, _type[1], 0),
+    // @RebootRequired: True
+    AP_GROUPINFO("R_TYPE",   5, AP_RotaryEncoder, _type[1], 0),
 
     // @Param: 2_CPR
     // @DisplayName: RotaryEncoder 2 counts per revolution
     // @Description: RotaryEncoder 2 counts per full revolution of the rotary encoder
     // @Increment: 1
     // @User: Standard
-    AP_GROUPINFO("R_CPR",     7, AP_RotaryEncoder, _counts_per_revolution[1], ROTARY_ENCODER_CPR_DEFAULT),
+    // @RebootRequired: True
+    AP_GROUPINFO("R_CPR",     6, AP_RotaryEncoder, _counts_per_revolution[1], ROTARY_ENCODER_CPR_DEFAULT),
 
     // @Param: 2_POS_X
     // @DisplayName: RotaryEncoder 2's X position offset
@@ -81,21 +87,23 @@ const AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Range: -3.14 3.14
     // @Increment: 0.01
     // @User: Standard
-    AP_GROUPINFO("R_POS0",    9, AP_RotaryEncoder, pos_offset_zero[1], 0.0f),
+    AP_GROUPINFO("R_POS0",    7, AP_RotaryEncoder, pos_offset_zero[1], 0.0f),
 
     // @Param: 2_PINA
     // @DisplayName: Second Encoder Input Pin A
     // @Description: Second Encoder Input Pin A
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
-    AP_GROUPINFO("R_PINA",   10, AP_RotaryEncoder, _pina[1], 53),
+    // @RebootRequired: True
+    AP_GROUPINFO("R_PINA",   8, AP_RotaryEncoder, _pina[1], 53),
 
     // @Param: 2_PINB
     // @DisplayName: Second Encoder Input Pin B
     // @Description: Second Encoder Input Pin B
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
-    AP_GROUPINFO("R_PINB",   11, AP_RotaryEncoder, _pinb[1], 52),
+    // @RebootRequired: True
+    AP_GROUPINFO("R_PINB",   9, AP_RotaryEncoder, _pinb[1], 52),
 #endif
 
     AP_GROUPEND
@@ -119,9 +127,7 @@ void AP_RotaryEncoder::init(void)
         switch ((RotaryEncoder_Type)_type[i].get()) {
 
         case RotaryEncoder_TYPE_QUADRATURE:
-#if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
             drivers[i] = new AP_Quadrature(*this, i, state[i]);
-#endif
             break;
         case RotaryEncoder_TYPE_NONE:
             break;
@@ -139,6 +145,11 @@ void AP_RotaryEncoder::init(void)
 // update RotaryEncoder state for all instances. This should be called by main loop
 void AP_RotaryEncoder::update(void)
 {
+    // Early return if no encoders are configured to save CPU cycles
+    if (!any_enabled()) {
+        return;
+    }
+    
     for (uint8_t i=0; i<num_instances; i++) {
         if (drivers[i] != nullptr && _type[i] != RotaryEncoder_TYPE_NONE) {
             drivers[i]->update();
@@ -187,6 +198,19 @@ bool AP_RotaryEncoder::enabled(uint8_t instance) const
         return false;
     }
     return true;
+}
+
+// check if any encoder instance is configured and enabled
+bool AP_RotaryEncoder::any_enabled(void) const
+{
+    for (uint8_t i = 0; i < ROTARY_ENCODER_MAX_INSTANCES; i++) {
+        if (_type[i] != RotaryEncoder_TYPE_NONE && 
+            _pina[i] != -1 && 
+            _pinb[i] != -1) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // get the counts per revolution of the encoder

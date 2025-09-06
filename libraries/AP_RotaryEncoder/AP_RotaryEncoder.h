@@ -3,6 +3,7 @@
 #include <AP_Common/AP_Common.h>
 #include <AP_Param/AP_Param.h>
 #include <AP_Math/AP_Math.h>
+#include "AP_RotaryEncoder_config.h"
 
 // Maximum number of RotaryEncoder measurement instances available on this platform
 #define ROTARY_ENCODER_MAX_INSTANCES      2
@@ -61,6 +62,12 @@ public:
     // return true if the instance is enabled
     bool enabled(uint8_t instance) const;
 
+    // return true if any encoder instance is configured and enabled
+    bool any_enabled(void) const;
+
+    // check for parameter changes that require reboot
+    void check_parameter_changes(void);
+
     // get the counts per revolution of the encoder
     uint16_t get_counts_per_revolution(uint8_t instance) const;
 
@@ -89,6 +96,16 @@ protected:
     RotaryEncoder_State state[ROTARY_ENCODER_MAX_INSTANCES];
     AP_RotaryEncoder_Backend *drivers[ROTARY_ENCODER_MAX_INSTANCES];
     uint8_t num_instances;
+
+    // parameter change tracking for reboot notification
+    struct {
+        int8_t last_type[ROTARY_ENCODER_MAX_INSTANCES];
+        int8_t last_pina[ROTARY_ENCODER_MAX_INSTANCES];
+        int8_t last_pinb[ROTARY_ENCODER_MAX_INSTANCES];
+        bool reboot_required;
+        uint32_t last_param_check_ms;
+        uint32_t last_reboot_msg_ms;
+    } param_state;
 
 private:
 

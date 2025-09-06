@@ -44,6 +44,7 @@
 #include <AP_Camera/AP_Camera.h>          // Photo or video camera
 #include <AP_Terrain/AP_Terrain.h>
 #include <AP_RPM/AP_RPM.h>
+#include <AP_RotaryEncoder/AP_RotaryEncoder.h>
 #include <AP_Stats/AP_Stats.h>     // statistics library
 #include <AP_Beacon/AP_Beacon.h>
 
@@ -215,6 +216,8 @@ private:
 #if AP_RPM_ENABLED
     AP_RPM rpm_sensor;
 #endif
+
+    AP_RotaryEncoder rotary_encoder;
 
     AP_TECS TECS_controller{ahrs, aparm, landing, MASK_LOG_TECS};
     AP_L1_Control L1_controller{ahrs, &TECS_controller};
@@ -708,6 +711,17 @@ private:
         // current value of loiter radius in metres used by the controller
         float radius;
     } loiter;
+
+    struct {
+        // Angle of the left encoder in degrees
+        float left_encoder_angle;
+
+        // Angle of the right encoder in degrees
+        float right_encoder_angle;
+
+        // Last time the encoder values were updated
+        uint32_t last_encoder_update_ms;
+    } encoder_state;
 
     // Conditional command
     // A value used in condition commands (eg delay, change alt, etc.)
