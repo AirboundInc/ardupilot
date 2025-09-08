@@ -300,6 +300,12 @@ void Plane::update_logging25(void)
 
     if (should_log(MASK_LOG_IMU))
         AP::ins().Write_Vibration();
+
+#if AP_ROTARYENCODER_ENABLED
+    if (should_log(MASK_LOG_IMU)) {  // Reuse IMU logging mask for sensors
+        rotary_encoder.Log_Write();
+    }
+#endif
 }
 #endif  // HAL_LOGGING_ENABLED
 

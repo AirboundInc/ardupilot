@@ -65,9 +65,6 @@ public:
     // return true if any encoder instance is configured and enabled
     bool any_enabled(void) const;
 
-    // check for parameter changes that require reboot
-    void check_parameter_changes(void);
-
     // get the counts per revolution of the encoder
     uint16_t get_counts_per_revolution(uint8_t instance) const;
 
@@ -75,10 +72,10 @@ public:
     float get_delta_angle(uint8_t instance) const;
 
     // get the total angle position (in radians) measured by the rotary encoder
-    float get_angular_position(uint8_t instance) const;
+    float get_angular_position(uint8_t instance, bool degrees) const;
 
     // get the instantaneous rate in radians/second
-    float get_rate(uint8_t instance) const;
+    float get_rate(uint8_t instance, bool degrees) const;
 
     // get the system time (in milliseconds) of the last update
     uint32_t get_last_reading_ms(uint8_t instance) const;
@@ -96,16 +93,6 @@ protected:
     RotaryEncoder_State state[ROTARY_ENCODER_MAX_INSTANCES];
     AP_RotaryEncoder_Backend *drivers[ROTARY_ENCODER_MAX_INSTANCES];
     uint8_t num_instances;
-
-    // parameter change tracking for reboot notification
-    struct {
-        int8_t last_type[ROTARY_ENCODER_MAX_INSTANCES];
-        int8_t last_pina[ROTARY_ENCODER_MAX_INSTANCES];
-        int8_t last_pinb[ROTARY_ENCODER_MAX_INSTANCES];
-        bool reboot_required;
-        uint32_t last_param_check_ms;
-        uint32_t last_reboot_msg_ms;
-    } param_state;
 
 private:
 

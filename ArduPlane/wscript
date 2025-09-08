@@ -15,6 +15,7 @@ def build(bld):
             'AP_L1_Control',
             'AP_Navigation',
             'AP_RCMapper',
+            'AP_RotaryEncoder',
             'AP_TECS',
             'AP_InertialNav',
             'AC_WPNav',

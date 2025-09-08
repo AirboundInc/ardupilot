@@ -79,4 +79,5 @@ void AP_Quadrature::update(void)
 
     // restore interrupts
     hal.scheduler->restore_interrupts(irqstate);
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>>TV Value (t,angle,phase): %lu %f %d", irq_state.last_reading_ms, (float)irq_state.angle, irq_state.phase);
 }

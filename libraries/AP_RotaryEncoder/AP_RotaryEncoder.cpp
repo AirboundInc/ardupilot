@@ -169,10 +169,10 @@ void AP_RotaryEncoder::Log_Write() const
     struct log_RotaryEncoder pkt = {
         LOG_PACKET_HEADER_INIT(LOG_ROTARYENCODER_MSG),
         time_us     : AP_HAL::micros64(),
-        angular_position_0  : get_angular_position(0),
-        angular_velocity_0  : get_rate(0),
-        angular_position_1  : get_angular_position(1),
-        angular_velocity_1  : get_rate(1),
+        pos_left    : get_angular_position(0, true),
+        vel_left    : get_rate(0, true),
+        pos_right   : get_angular_position(1, true),
+        vel_right   : get_rate(1, true),
     };
     AP::logger().WriteBlock(&pkt, sizeof(pkt));
 }
@@ -224,14 +224,19 @@ uint16_t AP_RotaryEncoder::get_counts_per_revolution(uint8_t instance) const
 }
 
 // get the angular position in degrees
-float AP_RotaryEncoder::get_angular_position(uint8_t instance) const
+float AP_RotaryEncoder::get_angular_position(uint8_t instance, bool degrees) const
 {
     // for invalid instances return zero
-    return M_2_PI * state[instance].count / _counts_per_revolution[instance];
+    if (instance >= ROTARY_ENCODER_MAX_INSTANCES) {
+        return 0.0f;
+    }
+
+    float position = M_2_PI * state[instance].count / _counts_per_revolution[instance];
+    return degrees ? position * (180.0f / M_PI) : position;
 }
 
 // get the instantaneous rate in radians/second
-float AP_RotaryEncoder::get_rate(uint8_t instance) const
+float AP_RotaryEncoder::get_rate(uint8_t instance, bool degrees) const
 {
     // for invalid instances return zero
     if (instance >= ROTARY_ENCODER_MAX_INSTANCES) {
@@ -244,7 +249,8 @@ float AP_RotaryEncoder::get_rate(uint8_t instance) const
     }
 
     // calculate delta_angle (in radians) per second
-    return M_2PI * (state[instance].angular_position_count_change / ((float)_counts_per_revolution[instance])) / (state[instance].dt_ms * 1e-3f);
+    float rate = M_2PI * (state[instance].angular_position_count_change / ((float)_counts_per_revolution[instance])) / (state[instance].dt_ms * 1e-3f);
+    return degrees ? rate * (180.0f / M_PI) : rate;
 }
 
 // get the system time (in milliseconds) of the last update
