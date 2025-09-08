@@ -914,6 +914,12 @@ const AP_Param::Info Plane::var_info[] = {
     GOBJECT(logger,           "LOG",  AP_Logger),
 #endif
 
+#if AP_ROTARYENCODER_ENABLED
+    // @Group: RENC_
+    // @Path: ../libraries/AP_RotaryEncoder/AP_RotaryEncoder.cpp
+    GOBJECT(rotary_encoder,   "RENC_", AP_RotaryEncoder),
+#endif
+
     // @Group: BATT
     // @Path: ../libraries/AP_BattMonitor/AP_BattMonitor.cpp
     GOBJECT(battery,                "BATT", AP_BattMonitor),

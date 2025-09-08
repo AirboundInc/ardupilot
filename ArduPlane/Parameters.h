@@ -51,6 +51,7 @@ public:
         k_param_NavEKF3,
         k_param_can_mgr,
         k_param_osd,
+        k_param_rotary_encoder,
 
         // Misc
         //

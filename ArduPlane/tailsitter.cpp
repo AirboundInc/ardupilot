@@ -435,11 +435,6 @@ void Tailsitter::output(void)
         
         // update encoder state for thrust vector feedback
         update_encoder_state();
-        
-        // log encoder data if enabled
-        if (encoders_healthy()) {
-            log_encoder_data();
-        }
     } else if (tailsitter_motors != nullptr) {
         tailsitter_motors->set_min_throttle(0.0);
     }
@@ -822,6 +817,7 @@ void Tailsitter::write_log()
         throttle_scaler     : log_data.throttle_scaler,
         speed_scaler        : log_data.speed_scaler,
         min_throttle        : log_data.min_throttle,
+        
     };
     plane.logger.WriteBlock(&pkt, sizeof(pkt));
 }
@@ -1075,8 +1071,8 @@ void Tailsitter::update_encoder_state()
     
     // Update global encoder state from rotary encoder library
     if (plane.rotary_encoder.enabled(0) || plane.rotary_encoder.enabled(1)) {
-        plane.encoder_state.left_encoder_angle = degrees(plane.rotary_encoder.get_angular_position(0));
-        plane.encoder_state.right_encoder_angle = degrees(plane.rotary_encoder.get_angular_position(1));
+        plane.encoder_state.left_encoder_angle = plane.rotary_encoder.get_angular_position(0,true);
+        plane.encoder_state.right_encoder_angle = plane.rotary_encoder.get_angular_position(1, true);
         plane.encoder_state.last_encoder_update_ms = AP_HAL::millis();
     }
 }
@@ -1100,32 +1096,5 @@ bool Tailsitter::encoders_healthy()
            (plane.rotary_encoder.enabled(0) || plane.rotary_encoder.enabled(1));
 }
 
-// Log encoder data for tailsitter analysis
-void Tailsitter::log_encoder_data()
-{
-    uint32_t now = AP_HAL::millis();
-    
-    // Log encoder data every 100ms (10Hz)
-    if (now - encoder_control.last_log_ms > 100) {
-        encoder_control.last_log_ms = now;
-        
-        // Create encoder log entry
-        struct log_RotaryEncoder {
-            LOG_PACKET_HEADER;
-            uint64_t time_us;
-            float left_angle;
-            float right_angle;
-        } pkt = {
-            LOG_PACKET_HEADER_INIT(LOG_RENC_MSG),
-            time_us : AP_HAL::micros64(),
-            left_angle : degrees(encoder_control.left_thrust_vector_angle),
-            right_angle : degrees(encoder_control.right_thrust_vector_angle)
-        };
-        
-#if HAL_LOGGING_ENABLED
-        plane.logger.WriteBlock(&pkt, sizeof(pkt));
-#endif
-    }
-}
 
 #endif  // HAL_QUADPLANE_ENABLED
