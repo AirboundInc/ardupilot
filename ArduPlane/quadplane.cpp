@@ -2967,7 +2967,7 @@ void QuadPlane::vtol_position_controller(void)
             float des_pitch_cd = attitude_control->get_att_target_euler_cd().y;
             int32_t pitch_error_cd = (des_pitch_cd - ahrs_view->pitch_sensor);
 
-            if(pitch_error_cd >= 2000) {
+            if(fabsf(pitch_error_cd) >= 2000) {
                 set_climb_rate_cms(0);
                 static uint32_t last_log_ms = 0;
                 if (now_ms - last_log_ms >= 2000) {
