@@ -2961,6 +2961,25 @@ void QuadPlane::vtol_position_controller(void)
             break;
         }
         const float descent_rate_cms = landing_descent_rate_cms(height_above_ground);
+
+        // For tailsitters add check for pitch
+        if (tailsitter.enabled()) {
+            float des_pitch_cd = attitude_control->get_att_target_euler_cd().y;
+            int32_t pitch_error_cd = (des_pitch_cd - ahrs_view->pitch_sensor);
+
+            if(pitch_error_cd >= 2000) {
+                set_climb_rate_cms(0);
+                static uint32_t last_log_ms = 0;
+                if (now_ms - last_log_ms >= 2000) {
+                    last_log_ms = now_ms;
+                    gcs().send_text(MAV_SEVERITY_INFO,"Land descent freezing due to pitch error: %f", pitch_error_cd/100.0);
+                }
+            } else {
+                pos_control->land_at_climb_rate_cm(-descent_rate_cms, descent_rate_cms>0);
+            }
+            break;
+        }
+
         pos_control->land_at_climb_rate_cm(-descent_rate_cms, descent_rate_cms>0);
         break;
     }
