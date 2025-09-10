@@ -217,7 +217,9 @@ private:
     AP_RPM rpm_sensor;
 #endif
 
+#if AP_ROTARYENCODER_ENABLED
     AP_RotaryEncoder rotary_encoder;
+#endif
 
     AP_TECS TECS_controller{ahrs, aparm, landing, MASK_LOG_TECS};
     AP_L1_Control L1_controller{ahrs, &TECS_controller};
