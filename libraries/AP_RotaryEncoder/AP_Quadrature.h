@@ -28,7 +28,7 @@ private:
     void update_phase_and_error_count();
 
     struct IrqState {
-        uint8_t  phase;             // current phase of encoder (from 0 to cpr)
+        int32_t  phase;             // current phase of encoder (from 0 to cpr)
         int32_t  angle;             // angle measured by cumulative steps forward or backwards since last update
         uint32_t last_reading_ms;   // system time of last update from encoder
     } irq_state;
@@ -36,7 +36,6 @@ private:
     uint8_t _pinA = -1;
     uint8_t _pinB = -1;
     uint8_t A_value, B_value;
-    int32_t _cpr;
     
     static const int8_t _lookupTable[16];
 
