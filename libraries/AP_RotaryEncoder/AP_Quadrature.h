@@ -8,7 +8,7 @@
 class AP_Quadrature : public AP_RotaryEncoder_Backend
 {   public:
     // constructor
-    using AP_RotaryEncoder_Backend::AP_RotaryEncoder_Backend;
+    AP_Quadrature(AP_RotaryEncoder &frontend, uint8_t instance, AP_RotaryEncoder::RotaryEncoder_State &state);
 
     // update state
     void update(void) override;

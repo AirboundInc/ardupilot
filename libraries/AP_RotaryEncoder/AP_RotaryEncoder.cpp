@@ -16,6 +16,7 @@
 #include "AP_RotaryEncoder.h"
 #include "AP_Quadrature.h"
 #include <AP_Logger/AP_Logger.h>
+#include <GCS_MAVLink/GCS.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -123,13 +124,22 @@ void AP_RotaryEncoder::init(void)
         // init called a 2nd time?
         return;
     }
+    
+    // Add debugging to see if init is called
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "RotaryEncoder init called");
+    
     for (uint8_t i=0; i<ROTARY_ENCODER_MAX_INSTANCES; i++) {
+        uint8_t type_val = _type[i].get();
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "RotaryEncoder[%d] type=%d", i, type_val);
+        
         switch ((RotaryEncoder_Type)_type[i].get()) {
 
         case RotaryEncoder_TYPE_QUADRATURE:
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Creating AP_Quadrature for instance %d", i);
             drivers[i] = new AP_Quadrature(*this, i, state[i]);
             break;
         case RotaryEncoder_TYPE_NONE:
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "No encoder configured for instance %d", i);
             break;
         }
 
@@ -148,6 +158,17 @@ void AP_RotaryEncoder::update(void)
     // Early return if no encoders are configured to save CPU cycles
     if (!any_enabled()) {
         return;
+    }
+    
+    // Debug message to confirm update is running
+    static bool first_run = true;
+    if (first_run) {
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "RotaryEncoder update running, num_instances=%d", num_instances);
+        for (uint8_t i=0; i<num_instances; i++) {
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Instance %d: driver=%s, type=%d", 
+                          i, (drivers[i] != nullptr) ? "EXISTS" : "NULL", (int)_type[i]);
+        }
+        first_run = false;
     }
     
     for (uint8_t i=0; i<num_instances; i++) {

@@ -13,6 +13,13 @@ const int8_t AP_Quadrature::_lookupTable[16] = {
     0,   1,  -1,   0
 };
 
+// Constructor
+AP_Quadrature::AP_Quadrature(AP_RotaryEncoder &frontend, uint8_t instance, AP_RotaryEncoder::RotaryEncoder_State &state) :
+    AP_RotaryEncoder_Backend(frontend, instance, state)
+{
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "AP_Quadrature backend created for instance %d", instance);
+}
+
 void AP_Quadrature::update_pin(uint8_t &pin, uint8_t new_pin, uint8_t &pin_value)
 {
     if (new_pin == pin) {
@@ -21,7 +28,7 @@ void AP_Quadrature::update_pin(uint8_t &pin, uint8_t new_pin, uint8_t &pin_value
     }
 
     // remove old gpio event callback if present
-    if (pin != (uint8_t)-1 &&
+    if (pin != UINT8_MAX &&
         !hal.gpio->detach_interrupt(pin)) {
         GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "QEnc: Failed to detach from pin %u", pin);
         // ignore this failure or the user may be stuck
@@ -30,7 +37,7 @@ void AP_Quadrature::update_pin(uint8_t &pin, uint8_t new_pin, uint8_t &pin_value
     pin = new_pin;
 
     // install interrupt handler on rising or falling edge of gpio for pin a
-    if (new_pin != (uint8_t)-1) {
+    if (new_pin != UINT8_MAX) {
         hal.gpio->pinMode(pin, HAL_GPIO_INPUT);
         if (!hal.gpio->attach_interrupt(
                 pin,
@@ -43,29 +50,46 @@ void AP_Quadrature::update_pin(uint8_t &pin, uint8_t new_pin, uint8_t &pin_value
 
 void AP_Quadrature::irq_handler(uint8_t pin, bool pin_value, uint32_t timestamp)
 {
+    // Add interrupt debug
+    static uint32_t irq_count = 0;
+    irq_count++;
+    
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "IRQ %lu: pin%d=%d, A=%d, B=%d, ts=%lu", 
+                  (unsigned long)irq_count, pin, pin_value, A_value, B_value, (unsigned long)timestamp);
+
     uint8_t index = 0;
     if(pin == _pinA) {
-        index = pin_value << 3 | B_value << 2 | A_value << 1 | B_value;
+        // FIXED: Build index with old_A, old_B, new_A, old_B
+        index = A_value << 3 | B_value << 2 | pin_value << 1 | B_value;
         A_value = pin_value;
     }
-
     else if(pin == _pinB) {
-        index = A_value << 3 | pin_value << 2 | B_value << 1 | A_value;
+        // FIXED: Build index with old_A, old_B, old_A, new_B  
+        index = A_value << 3 | B_value << 2 | A_value << 1 | pin_value;
         B_value = pin_value;
     }
-
     else {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "IRQ on unknown pin %d", pin);
         return;
     }
 
-    irq_state.phase = _lookupTable[index];
-    irq_state.angle = irq_state.phase * (360.0f / _cpr);
-    irq_state.last_reading_ms = timestamp * 1e-3f;
+    int8_t direction = _lookupTable[index];
 
+    // Accumulate phase changes
+    irq_state.phase += direction;
+    irq_state.angle = irq_state.phase * (360.0f / _cpr);
+    irq_state.last_reading_ms = timestamp / 1000;  // Convert microseconds to milliseconds
 }
 
 void AP_Quadrature::update(void)
 {
+    static bool first_run = true;
+    if (first_run) {
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "AP_Quadrature::update() called, pins A=%d B=%d", 
+                      get_pin_a(), get_pin_b());
+        first_run = false;
+    }
+
     update_pin(_pinA, get_pin_a(), A_value);
     update_pin(_pinB, get_pin_b(), B_value);
 
@@ -79,5 +103,5 @@ void AP_Quadrature::update(void)
 
     // restore interrupts
     hal.scheduler->restore_interrupts(irqstate);
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>>TV Value (t,angle,phase): %lu %f %d", irq_state.last_reading_ms, (float)irq_state.angle, irq_state.phase);
+
 }
