@@ -439,7 +439,7 @@ void Tailsitter::output(void)
     tilt_left = 0.0f;
     tilt_right = 0.0f;
     float pitch_cd = 0.0f, weathervane_gain = 0.0f;
-    float WEATHERVANE_GAIN_MAX = 3.0, AHRS_PITCH_LOW_WVANE_DEG = 60.0, AHRS_PITCH_HI_WVANE_DEG = 90.0;
+    float WEATHERVANE_GAIN_MAX = 3.0, AHRS_PITCH_LOW_WVANE_DEG = 60.0, AHRS_PITCH_HI_WVANE_DEG = 91.0;
 
     if (vectored_hover_gain > 0) {
         // thrust vectoring VTOL modes
