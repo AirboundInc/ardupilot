@@ -70,17 +70,8 @@ void Plane::init_ardupilot()
     // setup telem slots with serial ports
     gcs().setup_uarts();
 
-    // Test if GCS messages work at all
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "TEST: GCS is working");
-    
-    // Now GCS is ready, we can send debug messages
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "GCS initialized, checking rotary encoder");
-
 #if AP_ROTARYENCODER_ENABLED
     rotary_encoder.init();
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "AP_ROTARYENCODER_ENABLED is defined");
-#else
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "AP_ROTARYENCODER_ENABLED not defined");
 #endif
 
 

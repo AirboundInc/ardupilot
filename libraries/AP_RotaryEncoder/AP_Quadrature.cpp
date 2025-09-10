@@ -54,9 +54,6 @@ void AP_Quadrature::irq_handler(uint8_t pin, bool pin_value, uint32_t timestamp)
     static uint32_t irq_count = 0;
     irq_count++;
     
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "IRQ %lu: pin%d=%d, A=%d, B=%d, ts=%lu", 
-                  (unsigned long)irq_count, pin, pin_value, A_value, B_value, (unsigned long)timestamp);
-
     uint8_t index = 0;
     if(pin == _pinA) {
         // FIXED: Build index with old_A, old_B, new_A, old_B
@@ -77,19 +74,20 @@ void AP_Quadrature::irq_handler(uint8_t pin, bool pin_value, uint32_t timestamp)
 
     // Accumulate phase changes
     irq_state.phase += direction;
-    irq_state.angle = irq_state.phase * (360.0f / _cpr);
+    
+    // Get CPR from frontend and calculate angle
+    uint16_t cpr = _frontend.get_counts_per_revolution(_state.instance);
+    if (cpr > 0) {
+        irq_state.angle = irq_state.phase * (360.0f / cpr);
+    } else {
+        irq_state.angle = 0.0f; // Avoid division by zero
+    }
+    
     irq_state.last_reading_ms = timestamp / 1000;  // Convert microseconds to milliseconds
 }
 
 void AP_Quadrature::update(void)
 {
-    static bool first_run = true;
-    if (first_run) {
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "AP_Quadrature::update() called, pins A=%d B=%d", 
-                      get_pin_a(), get_pin_b());
-        first_run = false;
-    }
-
     update_pin(_pinA, get_pin_a(), A_value);
     update_pin(_pinB, get_pin_b(), B_value);
 
@@ -104,4 +102,15 @@ void AP_Quadrature::update(void)
     // restore interrupts
     hal.scheduler->restore_interrupts(irqstate);
 
+    // Report encoder status every 2 seconds
+    static uint32_t last_status_report = 0;
+    uint32_t now = AP_HAL::millis();
+    if (now - last_status_report > 2000) {
+        // Get CPR from frontend
+        uint16_t cpr = _frontend.get_counts_per_revolution(_state.instance);
+        
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Encoder: phase=%ld, angle=%.2f°, cpr=%u, ts=%lu", 
+                      (long)irq_state.phase, (double)irq_state.angle, cpr, (unsigned long)irq_state.last_reading_ms);
+        last_status_report = now;
+    }
 }
