@@ -123,7 +123,8 @@ public:
 
     // returns forward head-wind component in m/s. Negative means tail-wind
     float head_wind(void) const;
-
+    // get pitch angle in fixed wing frame to correct the quadplane pitch
+    float get_ahrs_frame_attitude() const { return _ahrs2_pitch;}
     // instruct DCM to update its wind estimate:
     void estimate_wind() {
 #if AP_AHRS_DCM_ENABLED
@@ -750,6 +751,7 @@ private:
     float _sin_roll;
     float _sin_pitch;
     float _sin_yaw;
+    float _ahrs2_pitch;
 
 #if HAL_NAVEKF2_AVAILABLE
     void update_EKF2(void);

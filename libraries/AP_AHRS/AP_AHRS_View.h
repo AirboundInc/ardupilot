@@ -173,6 +173,8 @@ public:
         return ahrs.get_error_yaw();
     }
 
+    float get_ahrs_frame_pitch() const { return ahrs.get_ahrs_frame_attitude();}
+
     // Logging Functions
     void Write_AttitudeView(const Vector3f &targets) const;    
     void Write_Rate( const AP_Motors &motors, const AC_AttitudeControl &attitude_control,

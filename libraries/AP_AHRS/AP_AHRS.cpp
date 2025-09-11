@@ -350,6 +350,10 @@ void AP_AHRS::update_state(void)
     state.airspeed_vec_ok = _airspeed_vector_true(state.airspeed_vec);
     state.quat_ok = _get_quaternion(state.quat);
     state.secondary_attitude_ok = _get_secondary_attitude(state.secondary_attitude);
+    float r_,p_,y_;
+    state.quat.to_euler(r_,p_,y_);
+    _ahrs2_pitch = p_;
+    // gcs().send_text(MAV_SEVERITY_INFO, "Pitch primary: %.2f", degrees(p_));
     state.secondary_quat_ok = _get_secondary_quaternion(state.secondary_quat);
     state.location_ok = _get_location(state.location);
     state.secondary_pos_ok = _get_secondary_position(state.secondary_pos);
@@ -584,7 +588,6 @@ void AP_AHRS::update_EKF2(void)
             roll  = eulers.x;
             pitch = eulers.y;
             yaw   = eulers.z;
-
             update_cd_values();
             update_trig();
 
@@ -652,7 +655,6 @@ void AP_AHRS::update_EKF3(void)
             roll  = eulers.x;
             pitch = eulers.y;
             yaw   = eulers.z;
-
             update_cd_values();
             update_trig();
 
