@@ -543,6 +543,7 @@ bool Tailsitter::transition_fw_complete(void)
     if(abs(fw_initial_pitch_diff)>10.0f){
         gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW angle discontinuity, restting the initial pitch");
         transition->restart();
+        transition->prev_fw_initial_pitch = transition->fw_transition_initial_pitch;
         transition->fw_transition_initial_pitch = constrain_float(quadplane.attitude_control->get_attitude_target_quat().get_euler_pitch() * degrees(100.0),-8500,8500);
     }
     if (now - transition->fw_transition_start_ms > ((transition_angle_fw+(transition->fw_transition_initial_pitch*0.01f))/transition_rate_fw)*1500) {
@@ -1022,6 +1023,7 @@ void Tailsitter_Transition::restart()
 {
     transition_state = TRANSITION_ANGLE_WAIT_FW;
     fw_transition_start_ms = AP_HAL::millis();
+    prev_fw_initial_pitch = fw_transition_initial_pitch;
     fw_transition_initial_pitch = constrain_float(quadplane.attitude_control->get_attitude_target_quat().get_euler_pitch() * degrees(100.0),-8500,8500);
 }
 
