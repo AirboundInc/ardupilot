@@ -18,6 +18,7 @@
    2) a relax_attitude_controller method needed for coping with vectored tailsitters
  */
 #include "AC_AttitudeControl_TS.h"
+#include <AP_Logger/AP_Logger.h>
 
 void AC_AttitudeControl_TS::relax_attitude_controllers(bool exclude_pitch)
 {
@@ -72,6 +73,22 @@ void AC_AttitudeControl_TS::input_euler_rate_yaw_euler_angle_pitch_bf_roll(bool 
     Quaternion attitude_body;
     Quaternion error_quat;
     _ahrs.get_quat_body_to_ned(attitude_body);
+    // Changes for logging pitch discontinuity when AHRS2 pitch goes negative.
+    float r_,p_,y_;
+    attitude_body.to_euler(r_, p_, y_);
+    float prev_p = p_;
+    float ahrs2_pitch = _ahrs.get_ahrs_frame_pitch();
+    if(ahrs2_pitch<=0.0f){
+        if(p_>0.0f) p_ = 3.14f - p_;
+        else p_ = -(p_)- 3.14f;
+        attitude_body.from_euler(r_, p_, y_);
+    }
+    AP::logger().WriteStreaming("ATTC", "TimeUS,PREV_P,neW_P,ahrsa2_p",
+        "sddd", // seconds, degrees
+        "F000", // micro (1e-6), no mult (1e0)
+        "Qfff", // uint64_t, float
+        AP_HAL::micros64(),
+        prev_p, p_, ahrs2_pitch);
     error_quat = attitude_body.inverse() * _attitude_target;
     Vector3f att_error;
     error_quat.to_axis_angle(att_error);
@@ -120,7 +137,6 @@ void AC_AttitudeControl_TS::input_euler_rate_yaw_euler_angle_pitch_bf_roll(bool 
     // Compute attitude error
     error_quat = attitude_body.inverse() * _attitude_target;
     error_quat.to_axis_angle(att_error);
-
     // Compute the angular velocity target from the attitude error
     _ang_vel_body = update_ang_vel_target_from_att_error(att_error);
 }

@@ -710,21 +710,6 @@ void AC_AttitudeControl::attitude_controller_run_quat()
     // This represents a quaternion rotation in NED frame to the body
     Quaternion attitude_body;
     _ahrs.get_quat_body_to_ned(attitude_body);
-    float r_,p_,y_;
-    attitude_body.to_euler(r_, p_, y_);
-    float prev_p = p_;
-    float ahrs2_pitch = _ahrs.get_ahrs_frame_pitch();
-    if(ahrs2_pitch<=0.0f){
-        if(p_>0.0f) p_ = 3.14f - p_;
-        else p_ = -(p_)- 3.14f;
-        attitude_body.from_euler(r_, p_, y_);
-    }
-    AP::logger().WriteStreaming("ATTC", "TimeUS,PREV_P,neW_P,ahrsa2_p",
-        "sddd", // seconds, degrees
-        "F000", // micro (1e-6), no mult (1e0)
-        "Qfff", // uint64_t, float
-        AP_HAL::micros64(),
-        prev_p, p_, ahrs2_pitch);
     // gcs().send_text(MAV_SEVERITY_DEBUG, "Controller pitch, ahrs %.2f,%.2f", degrees(p_),degrees(ahrs2_pitch));
     // This vector represents the angular error to rotate the thrust vector using x and y and heading using z
     Vector3f attitude_error;
