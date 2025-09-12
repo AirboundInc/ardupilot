@@ -104,18 +104,9 @@ void AP_Quadrature::update(void)
 
     // Report encoder status every 2 seconds - use per-instance timer
     uint32_t now = AP_HAL::millis();
-    if (now - last_status_report > 2000) {  // Remove 'static' - now it's per-instance!
+    if (now - last_status_report > 2000) {
         // Get CPR from frontend
         uint16_t cpr = _frontend.get_counts_per_revolution(_state.instance);
-        
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Encoder[%d]: phase=%ld, angle=%.2f°, cpr=%u, pins=%d,%d, ts=%lu", 
-                      _state.instance,
-                      (long)irq_state.phase, 
-                      (double)irq_state.angle, 
-                      cpr,
-                      get_pin_a(),
-                      get_pin_b(),
-                      (unsigned long)irq_state.last_reading_ms);
         last_status_report = now;  // Update the per-instance timer
     }
 }
