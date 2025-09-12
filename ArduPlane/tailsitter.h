@@ -111,6 +111,10 @@ public:
     AP_Float VTOL_yaw_scale;
     AP_Float disk_loading_min_outflow;
 
+    AP_Float wvane_max_gain;
+    AP_Float wvane_pitch_low;
+    AP_Float wvane_pitch_hi;
+
     AP_MotorsTailsitter* tailsitter_motors;
 
 private:

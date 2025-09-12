@@ -165,6 +165,25 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     // @Range: 0 15
     AP_GROUPINFO("MIN_VO", 22, Tailsitter, disk_loading_min_outflow, 0),
 
+    // @Param: WV_MGN
+    // @DisplayName: Tailsitter weathervane max gain
+    // @Description: Max gain to use while weathervaning
+    // @Range: 0 3
+    AP_GROUPINFO("WV_MGN", 23, Tailsitter, wvane_max_gain, 3.0),
+
+    // @Param: WV_HI
+    // @DisplayName: Tailsitter weathervane enable upper limit
+    // @Description: Max AHRS pitch angle to allow weathervaning in degrees (90 is vertical)
+    // @Units: deg
+    // @Range: 90 100
+    AP_GROUPINFO("WV_HI", 24, Tailsitter, wvane_pitch_hi, 92),
+
+    // @Param: WV_LO
+    // @DisplayName: Tailsitter  weathervane enable lower limit
+    // @Description: Min AHRS pitch angle to allow weathervaning in degrees (90 is vertical)
+    // @Range: 45 60
+    AP_GROUPINFO("WV_LO", 25, Tailsitter, wvane_pitch_low, 45),
+
     AP_GROUPEND
 };
 
@@ -439,7 +458,6 @@ void Tailsitter::output(void)
     tilt_left = 0.0f;
     tilt_right = 0.0f;
     float pitch_cd = 0.0f, weathervane_gain = 0.0f;
-    float WEATHERVANE_GAIN_MAX = 3.0, AHRS_PITCH_LOW_WVANE_DEG = 60.0, AHRS_PITCH_HI_WVANE_DEG = 95.0;
 
     if (vectored_hover_gain > 0) {
         // thrust vectoring VTOL modes
@@ -468,8 +486,8 @@ void Tailsitter::output(void)
 
         // Put limits on weathervaning basis pitch_cd, only allow if ahrs pitch between low and hi (vertical)
         pitch_cd = quadplane.ahrs.pitch_sensor;
-        if (pitch_cd <= AHRS_PITCH_HI_WVANE_DEG * 100 && pitch_cd >= AHRS_PITCH_LOW_WVANE_DEG * 100) {
-            weathervane_gain = WEATHERVANE_GAIN_MAX;
+        if (pitch_cd <= wvane_pitch_hi * 100 && pitch_cd >= wvane_pitch_low * 100) {
+            weathervane_gain = wvane_max_gain;
         } else {
             weathervane_gain = 0.0;
             quadplane.weathervane->reset();
