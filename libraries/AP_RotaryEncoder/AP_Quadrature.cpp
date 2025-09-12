@@ -42,7 +42,7 @@ void AP_Quadrature::update_pin(uint8_t &pin, uint8_t new_pin, uint8_t &pin_value
         if (!hal.gpio->attach_interrupt(
                 pin,
                 FUNCTOR_BIND_MEMBER(&AP_Quadrature::irq_handler, void, uint8_t, bool, uint32_t), AP_HAL::GPIO::INTERRUPT_BOTH)) {
-            GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "WEnc: Failed to attach to pin %u", pin);
+            GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "QEnc: Failed to attach to pin %u", pin);
         }
         pin_value = hal.gpio->read(pin);
     }
@@ -102,15 +102,20 @@ void AP_Quadrature::update(void)
     // restore interrupts
     hal.scheduler->restore_interrupts(irqstate);
 
-    // Report encoder status every 2 seconds
-    static uint32_t last_status_report = 0;
+    // Report encoder status every 2 seconds - use per-instance timer
     uint32_t now = AP_HAL::millis();
-    if (now - last_status_report > 2000) {
+    if (now - last_status_report > 2000) {  // Remove 'static' - now it's per-instance!
         // Get CPR from frontend
         uint16_t cpr = _frontend.get_counts_per_revolution(_state.instance);
         
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Encoder: phase=%ld, angle=%.2f°, cpr=%u, ts=%lu", 
-                      (long)irq_state.phase, (double)irq_state.angle, cpr, (unsigned long)irq_state.last_reading_ms);
-        last_status_report = now;
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Encoder[%d]: phase=%ld, angle=%.2f°, cpr=%u, pins=%d,%d, ts=%lu", 
+                      _state.instance,
+                      (long)irq_state.phase, 
+                      (double)irq_state.angle, 
+                      cpr,
+                      get_pin_a(),
+                      get_pin_b(),
+                      (unsigned long)irq_state.last_reading_ms);
+        last_status_report = now;  // Update the per-instance timer
     }
 }

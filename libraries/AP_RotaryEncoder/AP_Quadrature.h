@@ -39,4 +39,6 @@ private:
     
     static const int8_t _lookupTable[16];
 
+    uint32_t last_status_report = 0;  // per-instance timer
+
 };
