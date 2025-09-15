@@ -72,18 +72,48 @@ void AP_Quadrature::irq_handler(uint8_t pin, bool pin_value, uint32_t timestamp)
 
     int8_t direction = _lookupTable[index];
 
-    // Accumulate phase changes
+    // Accumulate phase changes first
     irq_state.phase += direction;
+    
+    // Calculate velocity using a sliding window approach
+    uint32_t current_time_us = timestamp;
+    
+    // Only calculate velocity if we have previous data and enough time has passed
+    if (irq_state.last_timestamp_us != 0) {
+        uint32_t dt_us = current_time_us - irq_state.last_timestamp_us;
+        
+        // Only update velocity if enough time has passed (avoid division by very small numbers)
+        if (dt_us > 1000) {  // At least 1ms between updates
+            float dt_sec = dt_us / 1000000.0f;  // Convert to seconds
+            
+            // Calculate counts per second
+            irq_state.velocity_cps = direction / dt_sec;
+            
+            // Calculate RPM
+            uint16_t cpr = _frontend.get_counts_per_revolution(_state.instance);
+            if (cpr > 0) {
+                irq_state.velocity_rpm = (irq_state.velocity_cps * 60.0f) / cpr;
+            } else {
+                irq_state.velocity_rpm = 0.0f;
+            }
+        }
+        // If dt_us is too small, keep the previous velocity value
+    } else {
+        // First interrupt - no velocity data yet
+        irq_state.velocity_cps = 0.0f;
+        irq_state.velocity_rpm = 0.0f;
+    }
     
     // Get CPR from frontend and calculate angle
     uint16_t cpr = _frontend.get_counts_per_revolution(_state.instance);
     if (cpr > 0) {
         irq_state.angle = irq_state.phase * (360.0f / cpr);
     } else {
-        irq_state.angle = 0.0f; // Avoid division by zero
+        irq_state.angle = 0.0f;
     }
     
-    irq_state.last_reading_ms = timestamp / 1000;  // Convert microseconds to milliseconds
+    irq_state.last_reading_ms = timestamp / 1000;
+    irq_state.last_timestamp_us = current_time_us;
 }
 
 void AP_Quadrature::update(void)
@@ -94,19 +124,12 @@ void AP_Quadrature::update(void)
     // disable interrupts to prevent race with irq_handler
     void *irqstate = hal.scheduler->disable_interrupts_save();
 
-    // copy count, angle and last timestamp so it is accessible to front end
+    // copy count, angle, velocity and last timestamp so it is accessible to front end
     copy_state_to_frontend(irq_state.phase,
                            irq_state.angle,
+                           irq_state.velocity_cps,
                            irq_state.last_reading_ms);
 
     // restore interrupts
     hal.scheduler->restore_interrupts(irqstate);
-
-    // Report encoder status every 2 seconds - use per-instance timer
-    uint32_t now = AP_HAL::millis();
-    if (now - last_status_report > 2000) {
-        // Get CPR from frontend
-        uint16_t cpr = _frontend.get_counts_per_revolution(_state.instance);
-        last_status_report = now;  // Update the per-instance timer
-    }
 }

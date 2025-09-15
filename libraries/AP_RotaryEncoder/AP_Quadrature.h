@@ -28,9 +28,12 @@ private:
     void update_phase_and_error_count();
 
     struct IrqState {
-        int32_t  phase;             // current phase of encoder (from 0 to cpr)
-        int32_t  angle;             // angle measured by cumulative steps forward or backwards since last update
-        uint32_t last_reading_ms;   // system time of last update from encoder
+        int32_t     phase;             
+        uint32_t    angle;             
+        uint32_t    last_reading_ms;
+        uint32_t    last_timestamp_us;  // for velocity calculation
+        uint32_t    velocity_cps;       // velocity in counts per second
+        uint32_t    velocity_rpm;       // velocity in RPM
     } irq_state;
 
     uint8_t _pinA = -1;

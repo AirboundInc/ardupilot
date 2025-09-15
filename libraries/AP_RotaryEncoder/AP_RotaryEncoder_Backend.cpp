@@ -44,11 +44,11 @@ int8_t AP_RotaryEncoder_Backend::get_pin_b() const
 }
 
 // copy state to front end helper function
-void AP_RotaryEncoder_Backend::copy_state_to_frontend(int32_t count, uint32_t angular_position, uint32_t last_reading_ms)
+void AP_RotaryEncoder_Backend::copy_state_to_frontend(int32_t count, uint32_t angular_position, uint32_t angular_position_count_change, uint32_t last_reading_ms)
 {
     // record rotation and time change for calculating rate before previous state is overwritten
     _state.dt_ms = last_reading_ms - _state.last_reading_ms;
-    _state.angular_position_count_change = angular_position - _state.angular_position;
+    _state.angular_position_count_change = angular_position_count_change;
 
     // copy rotation and error count so it is accessible to front end
     _state.count = count;
