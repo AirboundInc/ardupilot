@@ -178,8 +178,16 @@ void Plane::stabilize_pitch()
         SRV_Channels::set_output_scaled(SRV_Channel::k_elevator, 45*force_elevator);
         return;
     }
-
-    const float pitch_out = stabilize_pitch_get_pitch_out();
+    float pitch_out = stabilize_pitch_get_pitch_out();
+    if(control_mode->is_vtol_mode() &&  !quadplane.motors->armed()){
+        if(quadplane.attitude_control->pitch_exceed){
+            if(quadplane.attitude_control->direction_of_exceed == 1){
+                pitch_out = 4500;
+            } else if(quadplane.attitude_control->direction_of_exceed == -1){
+                pitch_out = -4500;
+            }
+        }
+    }
     AP::logger().Write("ATTP", "TimeUS,PitchOut",
         "sd", // seconds, degrees
         "F0", // micro (1e-6), no mult (1e0)

@@ -86,6 +86,9 @@ public:
 
     // user settable parameters
     static const struct AP_Param::GroupInfo var_info[];
+    
+    bool pitch_exceed = false;
+    int direction_of_exceed = 0; // -1: pitch down exceed, 1: pitch up exceed, 0: no exceed
 
 protected:
 

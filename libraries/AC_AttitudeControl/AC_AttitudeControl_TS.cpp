@@ -78,9 +78,18 @@ void AC_AttitudeControl_TS::input_euler_rate_yaw_euler_angle_pitch_bf_roll(bool 
     attitude_body.to_euler(r_, p_, y_);
     float prev_p = p_;
     float ahrs2_pitch = _ahrs.get_ahrs_frame_pitch();
+    pitch_exceed = false;
+    direction_of_exceed = 0;
     if(ahrs2_pitch<=0.0f){
-        if(p_>0.0f) p_ = 3.14f - p_;
-        else p_ = -(p_)- 3.14f;
+        pitch_exceed = true;
+        if(p_ > 0.0f) {
+            p_ = 3.14f - p_; 
+            direction_of_exceed = 1;
+        }
+        else {
+            p_ = -(p_)- 3.14f; 
+            direction_of_exceed = -1;
+        }
         attitude_body.from_euler(r_, p_, y_);
     }
     AP::logger().WriteStreaming("ATTC", "TimeUS,PREV_P,neW_P,ahrsa2_p",
