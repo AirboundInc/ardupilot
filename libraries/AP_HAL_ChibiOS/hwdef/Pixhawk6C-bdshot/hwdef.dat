@@ -3,9 +3,6 @@
 
 include ../Pixhawk6C/hwdef.dat
 
-# Enable rotary encoder support
-define AP_ROTARYENCODER_ENABLED 1
-
 undef PA8 PE11 PE13 PE14 PD14 PD15 PA0 PA1
 
 # PWM output pins
@@ -17,9 +14,5 @@ PD14 TIM4_CH3 TIM4 PWM(5) GPIO(54) BIDIR
 PD15 TIM4_CH4 TIM4 PWM(6) GPIO(55)
 PA0  TIM5_CH1 TIM5 PWM(7) GPIO(56) BIDIR
 PA1  TIM5_CH2 TIM5 PWM(8) GPIO(57)
-
-# Rotary Encoder input pins (use PWM pins 1 and 2 as inputs)
-# PA8  GPIO(50) INPUT PULLUP  # Rotary Encoder A
-# PE11 GPIO(51) INPUT PULLUP  # Rotary Encoder B
 
 DMA_PRIORITY TIM* SPI* SDMMC* USART6* ADC* UART* USART*

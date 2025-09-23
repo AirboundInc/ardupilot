@@ -423,10 +423,8 @@ struct PACKED log_WheelEncoder {
 struct PACKED log_RotaryEncoder {
     LOG_PACKET_HEADER;
     uint64_t time_us;
-    float angular_position_0;
-    float angular_velocity_0;
-    float angular_position_1;
-    float angular_velocity_1;
+    float pos_left;
+    float pos_right;
 };
 
 struct PACKED log_ADSB {
@@ -1309,7 +1307,7 @@ LOG_STRUCTURE_FROM_AHRS \
 LOG_STRUCTURE_FROM_HAL_CHIBIOS \
 LOG_STRUCTURE_FROM_RPM \
     { LOG_ROTARYENCODER_MSG, sizeof(log_RotaryEncoder), \
-      "RENC", "Qffff", "TimeUS,PosL,VelL,PosR,VelR", "sdddd", "F----", true }, \
+      "RENC", "Qffff", "TimeUS,PosL,PosR", "sdd", "F--", true }, \
 LOG_STRUCTURE_FROM_FENCE \
     { LOG_DF_FILE_STATS, sizeof(log_DSF), \
       "DSF", "QIHIIII", "TimeUS,Dp,Blk,Bytes,FMn,FMx,FAv", "s--b---", "F--0---" }, \

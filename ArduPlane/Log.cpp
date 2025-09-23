@@ -436,7 +436,6 @@ const struct LogStructure Plane::log_structure[] = {
       "TSIT", "Qfffff",  "TimeUS,Ts,Ss,Tmin,TV_L,TV_R", "s---dd", "F-----" , true },
 // #endif
 
-
 // @LoggerMessage: PIDG
 // @Description: Plane Proportional/Integral/Derivative gain values for Heading when using COMMAND_INT control.
 // @Field: TimeUS: Time since system startup

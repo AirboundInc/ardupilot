@@ -37,7 +37,7 @@ protected:
     int8_t get_pin_b() const;
 
     // copy state to front end helper function
-    void copy_state_to_frontend(int32_t count, uint32_t angle, uint32_t angular_count_change, uint32_t last_reading_ms);
+    void copy_state_to_frontend(int32_t count, uint32_t angle, uint32_t time);
 
     AP_RotaryEncoder &_frontend;
     AP_RotaryEncoder::RotaryEncoder_State &_state;

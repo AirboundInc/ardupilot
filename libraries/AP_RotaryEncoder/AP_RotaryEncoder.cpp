@@ -191,9 +191,7 @@ void AP_RotaryEncoder::Log_Write() const
         LOG_PACKET_HEADER_INIT(LOG_ROTARYENCODER_MSG),
         time_us     : AP_HAL::micros64(),
         pos_left    : get_angular_position(0, true),
-        vel_left    : get_rate(0, true),
         pos_right   : get_angular_position(1, true),
-        vel_right   : get_rate(1, true),
     };
     AP::logger().WriteBlock(&pkt, sizeof(pkt));
 }
@@ -256,24 +254,6 @@ float AP_RotaryEncoder::get_angular_position(uint8_t instance, bool degrees) con
     return degrees ? position * (180.0f / M_PI) : position;
 }
 
-// get the instantaneous rate in radians/second
-float AP_RotaryEncoder::get_rate(uint8_t instance, bool degrees) const
-{
-    // for invalid instances return zero
-    if (instance >= ROTARY_ENCODER_MAX_INSTANCES) {
-        return 0.0f;
-    }
-
-    // protect against divide by zero
-    if ((state[instance].dt_ms == 0) || _counts_per_revolution[instance] == 0) {
-        return 0;
-    }
-
-    // calculate delta_angle (in radians) per second
-    float rate = M_2PI * (state[instance].angular_position_count_change / ((float)_counts_per_revolution[instance])) / (state[instance].dt_ms * 1e-3f);
-    return degrees ? rate * (180.0f / M_PI) : rate;
-}
-
 // get the system time (in milliseconds) of the last update
 uint32_t AP_RotaryEncoder::get_last_reading_ms(uint8_t instance) const
 {
@@ -281,7 +261,7 @@ uint32_t AP_RotaryEncoder::get_last_reading_ms(uint8_t instance) const
     if (instance >= ROTARY_ENCODER_MAX_INSTANCES) {
         return 0;
     }
-    return state[instance].last_reading_ms;
+    return state[instance].time;
 }
 
 // singleton instance

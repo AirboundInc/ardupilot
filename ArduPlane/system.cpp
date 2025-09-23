@@ -69,11 +69,7 @@ void Plane::init_ardupilot()
 
     // setup telem slots with serial ports
     gcs().setup_uarts();
-
-#if AP_ROTARYENCODER_ENABLED
-    rotary_encoder.init();
-#endif
-
+    
 
 #if OSD_ENABLED == ENABLED
     osd.init();

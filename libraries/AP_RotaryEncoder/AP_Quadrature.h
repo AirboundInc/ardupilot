@@ -30,10 +30,7 @@ private:
     struct IrqState {
         int32_t     phase;             
         uint32_t    angle;             
-        uint32_t    last_reading_ms;
-        uint32_t    last_timestamp_us;  // for velocity calculation
-        uint32_t    velocity_cps;       // velocity in counts per second
-        uint32_t    velocity_rpm;       // velocity in RPM
+        uint32_t    time;
     } irq_state;
 
     uint8_t _pinA = -1;
