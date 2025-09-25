@@ -300,6 +300,8 @@ void Tailsitter::setup()
     _have_elevon = SRV_Channels::function_assigned(SRV_Channel::k_elevon_left) || SRV_Channels::function_assigned(SRV_Channel::k_elevon_right);
     _have_v_tail = SRV_Channels::function_assigned(SRV_Channel::k_vtail_left) || SRV_Channels::function_assigned(SRV_Channel::k_vtail_right);
 
+
+
     // set defaults for dual/single motor tailsitter
     if (quadplane.frame_class == AP_Motors::MOTOR_FRAME_TAILSITTER) {
         AP_Param::set_defaults_from_table(defaults_table_tailsitter, ARRAY_SIZE(defaults_table_tailsitter));
@@ -320,6 +322,12 @@ void Tailsitter::setup()
         AP_BoardConfig::allocation_error("tailsitter transition");
     }
     quadplane.transition = transition;
+
+    // Initialize the rotary encoder instance
+    rotary_encoder.init();
+
+    // Check if encoders are assigned from the parameter lists
+    _have_encoders = rotary_encoder.enabled(0) && rotary_encoder.enabled(1);
 
     setup_complete = true;
 }
@@ -514,9 +522,20 @@ void Tailsitter::output(void)
     if (plane.arming.is_armed_and_safety_off()) {
         // scale surfaces for throttle
         speed_scaling();
-        
-        // update encoder state for thrust vector feedback
-        update_encoder_state();
+        if(_have_encoders) {
+
+            // update encoder state for thrust vector feedback
+            rotary_encoder.update();
+
+            // // use rotary encoder feedback for thrust vectoring
+            // float left_angle = rotary_encoder.get_angle(0);
+            // float right_angle = rotary_encoder.get_angle(1);
+            // if (isfinite(left_angle) && isfinite(right_angle)) {
+            //     // only apply if we have valid angles
+            //     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, left_angle * 180.0f / M_PI);
+            //     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, right_angle * 180.0f / M_PI);
+            // }
+        }
     } else if (tailsitter_motors != nullptr) {
         tailsitter_motors->set_min_throttle(0.0);
     }
@@ -932,6 +951,9 @@ void Tailsitter::write_log()
         
     };
     plane.logger.WriteBlock(&pkt, sizeof(pkt));
+
+    // Write log for the rotary encoder instance
+    rotary_encoder.Log_Write();
 }
 #endif  // HAL_LOGGING_ENABLED
 
@@ -1168,23 +1190,6 @@ MAV_VTOL_STATE Tailsitter_Transition::get_mav_vtol_state() const
 bool Tailsitter_Transition::allow_weathervane()
 {
     return !tailsitter.in_vtol_transition() && (vtol_limit_start_ms == 0);
-}
-
-// encoder access methods
-float Tailsitter::get_left_encoder_angle() const
-{
-    if (left_encoder != nullptr) {
-        return left_encoder->get_angle();
-    }
-    return 0.0f;
-}
-
-float Tailsitter::get_right_encoder_angle() const
-{
-    if (right_encoder != nullptr) {
-        return right_encoder->get_angle();
-    }
-    return 0.0f;
 }
 
 

@@ -17,6 +17,7 @@
 #include <AP_Param/AP_Param.h>
 #include "transition.h"
 #include <AP_Motors/AP_MotorsTailsitter.h>
+#include <AP_RotaryEncoder/AP_RotaryEncoder.h>
 #include <AP_Logger/LogStructure.h>
 
 class QuadPlane;
@@ -69,12 +70,6 @@ public:
 
     // Write tailsitter specific log
     void write_log();
-
-    // Encoder methods - access global encoder data for tailsitter use
-    void update_encoder_state();           // Update local encoder state from global data
-    float get_left_thrust_vector_angle();  // Get left thrust vector angle in radians
-    float get_right_thrust_vector_angle(); // Get right thrust vector angle in radians
-    bool encoders_healthy();               // Check encoder health status
 
     // tailsitter speed scaler
     float last_spd_scaler = 1.0f; // used to slew rate limiting with TAILSITTER_GSCL_ATT_THR option
@@ -162,18 +157,12 @@ private:
     bool _have_rudder;
     bool _have_elevon;
     bool _have_v_tail;
+    bool _have_encoders;
 
-    // encoder state for tailsitter control
-    struct {
-        float left_thrust_vector_angle;   // Current left thrust vector angle (radians)
-        float right_thrust_vector_angle;  // Current right thrust vector angle (radians)
-        float target_left_angle;          // Target left angle for control
-        float target_right_angle;         // Target right angle for control
-        bool encoders_healthy;            // Health status
-        uint32_t last_log_ms;            // Last time we logged encoder data
-    } encoder_control;
+    // Instance for rotary encoder
+    AP_RotaryEncoder rotary_encoder;
 
-    // refences for convenience
+    // references for convenience
     QuadPlane& quadplane;
     AP_MotorsMulticopter*& motors;
 
