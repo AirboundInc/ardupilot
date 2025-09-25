@@ -2972,6 +2972,7 @@ void QuadPlane::vtol_position_controller(void)
                 last_log_ms = now_ms;
                 gcs().send_text(MAV_SEVERITY_INFO,"Pitch Error! Freezing land descent...");
             }
+            break;
         }
 
         const float descent_rate_cms = landing_descent_rate_cms(height_above_ground);
