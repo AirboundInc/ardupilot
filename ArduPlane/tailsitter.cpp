@@ -300,8 +300,6 @@ void Tailsitter::setup()
     _have_elevon = SRV_Channels::function_assigned(SRV_Channel::k_elevon_left) || SRV_Channels::function_assigned(SRV_Channel::k_elevon_right);
     _have_v_tail = SRV_Channels::function_assigned(SRV_Channel::k_vtail_left) || SRV_Channels::function_assigned(SRV_Channel::k_vtail_right);
 
-
-
     // set defaults for dual/single motor tailsitter
     if (quadplane.frame_class == AP_Motors::MOTOR_FRAME_TAILSITTER) {
         AP_Param::set_defaults_from_table(defaults_table_tailsitter, ARRAY_SIZE(defaults_table_tailsitter));
@@ -948,7 +946,6 @@ void Tailsitter::write_log()
         throttle_scaler     : log_data.throttle_scaler,
         speed_scaler        : log_data.speed_scaler,
         min_throttle        : log_data.min_throttle,
-        
     };
     plane.logger.WriteBlock(&pkt, sizeof(pkt));
 
@@ -1191,6 +1188,5 @@ bool Tailsitter_Transition::allow_weathervane()
 {
     return !tailsitter.in_vtol_transition() && (vtol_limit_start_ms == 0);
 }
-
 
 #endif  // HAL_QUADPLANE_ENABLED

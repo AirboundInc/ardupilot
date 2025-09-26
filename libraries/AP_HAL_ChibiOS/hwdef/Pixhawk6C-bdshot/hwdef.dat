@@ -3,8 +3,6 @@
 
 include ../Pixhawk6C/hwdef.dat
 
-#define HAL_QUADPLANE_ENABLED 1
-
 undef PA8 PE11 PE13 PE14 PD14 PD15 PA0 PA1
 
 # PWM output pins

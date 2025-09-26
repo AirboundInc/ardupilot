@@ -16,6 +16,7 @@ static void failsafe_check_static()
 
 void Plane::init_ardupilot()
 {
+    
 #if STATS_ENABLED == ENABLED
     // initialise stats module
     g2.stats.init();
@@ -69,7 +70,7 @@ void Plane::init_ardupilot()
 
     // setup telem slots with serial ports
     gcs().setup_uarts();
-    
+
 
 #if OSD_ENABLED == ENABLED
     osd.init();
