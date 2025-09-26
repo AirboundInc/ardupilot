@@ -327,8 +327,6 @@ void Tailsitter::setup()
     // Check if encoders are assigned from the parameter lists
     _have_encoders = rotary_encoder.enabled(0) && rotary_encoder.enabled(1);
 
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Tailsitter.setup() called");
-
     setup_complete = true;
 }
 
