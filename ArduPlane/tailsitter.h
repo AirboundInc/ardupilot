@@ -114,6 +114,7 @@ public:
     AP_Float wvane_max_gain;
     AP_Float wvane_pitch_low;
     AP_Float wvane_pitch_hi;
+    AP_Float wvane_pitch_mid;
 
     AP_MotorsTailsitter* tailsitter_motors;
 

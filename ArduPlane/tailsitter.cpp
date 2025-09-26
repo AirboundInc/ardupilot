@@ -181,8 +181,14 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     // @Param: WV_LO
     // @DisplayName: Tailsitter  weathervane enable lower limit
     // @Description: Min AHRS pitch angle to allow weathervaning in degrees (90 is vertical)
+    // @Range: 10 30
+    AP_GROUPINFO("WV_LO", 25, Tailsitter, wvane_pitch_low, 25),
+
+    // @Param: WV_MI
+    // @DisplayName: Tailsitter  weathervane enable middle limit
+    // @Description: Mid AHRS pitch angle to allow weathervaning in degrees with lower gain (90 is vertical)
     // @Range: 45 60
-    AP_GROUPINFO("WV_LO", 25, Tailsitter, wvane_pitch_low, 45),
+    AP_GROUPINFO("WV_MI", 26, Tailsitter, wvane_pitch_mid, 45),
 
     AP_GROUPEND
 };
@@ -486,8 +492,10 @@ void Tailsitter::output(void)
 
         // Put limits on weathervaning basis pitch_cd, only allow if ahrs pitch between low and hi (vertical)
         pitch_cd = quadplane.ahrs.pitch_sensor;
-        if (pitch_cd <= wvane_pitch_hi * 100 && pitch_cd >= wvane_pitch_low * 100) {
+        if (pitch_cd <= wvane_pitch_hi * 100 && pitch_cd >= wvane_pitch_mid * 100) {
             weathervane_gain = wvane_max_gain;
+        } else if (pitch_cd < wvane_pitch_mid * 100 && pitch_cd >= wvane_pitch_low * 100) {
+            weathervane_gain = wvane_max_gain/2.0;
         } else {
             weathervane_gain = 0.0;
             quadplane.weathervane->reset();
