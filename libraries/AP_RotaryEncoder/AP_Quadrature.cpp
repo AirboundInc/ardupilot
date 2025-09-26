@@ -22,10 +22,13 @@ AP_Quadrature::AP_Quadrature(AP_RotaryEncoder &frontend, uint8_t instance, AP_Ro
 
 void AP_Quadrature::update_pin(uint8_t &pin, uint8_t new_pin, uint8_t &pin_value)
 {
+
     if (new_pin == pin) {
         // no change
         return;
     }
+
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "QEnc update_pin: instance %d, old_pin %d, new_pin %d", _state.instance, pin, new_pin);
 
     // remove old gpio event callback if present
     if (pin != UINT8_MAX &&
@@ -54,19 +57,18 @@ void AP_Quadrature::irq_handler(uint8_t pin, bool pin_value, uint32_t timestamp)
     static uint32_t irq_count = 0;
     irq_count++;
     
+
     uint8_t index = 0;
     if(pin == _pinA) {
-        // FIXED: Build index with old_A, old_B, new_A, old_B
         index = A_value << 3 | B_value << 2 | pin_value << 1 | B_value;
         A_value = pin_value;
     }
     else if(pin == _pinB) {
-        // FIXED: Build index with old_A, old_B, old_A, new_B  
         index = A_value << 3 | B_value << 2 | A_value << 1 | pin_value;
         B_value = pin_value;
     }
     else {
-        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "IRQ on unknown pin %d", pin);
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "IRQ on unknown pin %d (instance %d)", pin, _state.instance);
         return;
     }
 
@@ -85,7 +87,7 @@ void AP_Quadrature::irq_handler(uint8_t pin, bool pin_value, uint32_t timestamp)
     } else {
         irq_state.angle = 0.0f;
     }
-    
+
     irq_state.time = current_time_us;
 }
 

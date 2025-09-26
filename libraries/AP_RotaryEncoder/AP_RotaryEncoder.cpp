@@ -21,7 +21,7 @@
 extern const AP_HAL::HAL& hal;
 
 // table of user settable parameters
-const AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
+const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Param: _TYPE
     // @DisplayName: RotaryEncoder type
     // @Description: What type of RotaryEncoder is connected
@@ -96,7 +96,7 @@ const AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
     // @RebootRequired: True
-    AP_GROUPINFO("R_PINA",   8, AP_RotaryEncoder, _pina[1], 53),
+    AP_GROUPINFO("R_PINA",   8, AP_RotaryEncoder, _pina[1], -1),
 
     // @Param: 2_PINB
     // @DisplayName: Second Encoder Input Pin B
@@ -104,7 +104,7 @@ const AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
     // @RebootRequired: True
-    AP_GROUPINFO("R_PINB",   9, AP_RotaryEncoder, _pinb[1], 52),
+    AP_GROUPINFO("R_PINB",   9, AP_RotaryEncoder, _pinb[1], -1),
 #endif
 
     AP_GROUPEND
@@ -125,17 +125,12 @@ void AP_RotaryEncoder::init(void)
         return;
     }
     
-    // Add debugging to see if init is called
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "RotaryEncoder init called");
-    
     for (uint8_t i=0; i<ROTARY_ENCODER_MAX_INSTANCES; i++) {
         uint8_t type_val = _type[i].get();
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "RotaryEncoder[%d] type=%d", i, type_val);
         
         switch ((RotaryEncoder_Type)_type[i].get()) {
 
         case RotaryEncoder_TYPE_QUADRATURE:
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Creating AP_Quadrature for instance %d", i);
             drivers[i] = new AP_Quadrature(*this, i, state[i]);
             break;
         case RotaryEncoder_TYPE_NONE:
@@ -158,17 +153,6 @@ void AP_RotaryEncoder::update(void)
     // Early return if no encoders are configured to save CPU cycles
     if (!any_enabled()) {
         return;
-    }
-    
-    // Debug message to confirm update is running
-    static bool first_run = true;
-    if (first_run) {
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "RotaryEncoder update running, num_instances=%d", num_instances);
-        for (uint8_t i=0; i<num_instances; i++) {
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Instance %d: driver=%s, type=%d", 
-                          i, (drivers[i] != nullptr) ? "EXISTS" : "NULL", (int)_type[i]);
-        }
-        first_run = false;
     }
     
     for (uint8_t i=0; i<num_instances; i++) {

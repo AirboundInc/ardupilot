@@ -433,7 +433,7 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
 
     // @Group: TAILSIT_
     // @Path: tailsitter.cpp
-    AP_SUBGROUPINFO(tailsitter, "TAILSIT_", 26, QuadPlane, Tailsitter),
+    AP_SUBGROUPINFO(tailsitter, "TSIT_", 26, QuadPlane, Tailsitter),
 
     // @Group: TILT_
     // @Path: tiltrotor.cpp
@@ -538,14 +538,8 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Standard
     AP_GROUPINFO("BCK_PIT_LIM", 38, QuadPlane, q_bck_pitch_lim, 10.0f),
 
-    // @Param: LND_FRZ_TIM
-    // @DisplayName: Q mode landing freeze time before final descent
-    // @Description: Time in seconds to hold position at pos2 before starting final descent
-    // @Units: s
-    // @Range: 0.0 15.0
-    // @Increment: 0.1
-    // @User: Advanced
-    AP_GROUPINFO("LND_FRZ_TIM", 39, QuadPlane, q_land_freeze_time, 7.0f),
+
+    AP_SUBGROUPINFO(tailsitter.rotary_encoder, "RENC_", 39, QuadPlane, AP_RotaryEncoder), 
 
     AP_GROUPEND
 };
@@ -610,20 +604,20 @@ const AP_Param::ConversionInfo q_conversion_table[] = {
     { Parameters::k_param_q_attitude_control, 451,  AP_PARAM_FLOAT, "Q_A_RAT_YAW_FF" },  // Q_A_RAT_YAW_FILT
 
     // tailsitter params have moved but retain the same names
-    { Parameters::k_param_quadplane, 48,  AP_PARAM_INT8,  "Q_TAILSIT_ANGLE" },
-    { Parameters::k_param_quadplane, 61,  AP_PARAM_INT8,  "Q_TAILSIT_ANG_VT" },
-    { Parameters::k_param_quadplane, 50,  AP_PARAM_INT8,  "Q_TAILSIT_INPUT" },
-    { Parameters::k_param_quadplane, 53,  AP_PARAM_FLOAT, "Q_TAILSIT_VFGAIN" },
-    { Parameters::k_param_quadplane, 54,  AP_PARAM_FLOAT, "Q_TAILSIT_VHGAIN" },
-    { Parameters::k_param_quadplane, 56,  AP_PARAM_FLOAT, "Q_TAILSIT_VHPOW" },
-    { Parameters::k_param_quadplane, 251,   AP_PARAM_FLOAT, "Q_TAILSIT_GSCMAX" },
-    { Parameters::k_param_quadplane, 379,   AP_PARAM_FLOAT, "Q_TAILSIT_RLL_MX" },
-    { Parameters::k_param_quadplane, 635,   AP_PARAM_INT16, "Q_TAILSIT_MOTMX" },
-    { Parameters::k_param_quadplane, 1147,  AP_PARAM_INT16, "Q_TAILSIT_GSCMSK" },
-    { Parameters::k_param_quadplane, 1211,  AP_PARAM_FLOAT, "Q_TAILSIT_GSCMIN" },
-    { Parameters::k_param_quadplane, 1403,  AP_PARAM_FLOAT, "Q_TAILSIT_DSKLD" },
-    { Parameters::k_param_quadplane, 1595,  AP_PARAM_FLOAT, "Q_TAILSIT_RAT_FW" },
-    { Parameters::k_param_quadplane, 1659,  AP_PARAM_FLOAT, "Q_TAILSIT_RAT_FW" },
+    { Parameters::k_param_quadplane, 48,  AP_PARAM_INT8,  "Q_TSIT_ANGLE" },
+    { Parameters::k_param_quadplane, 61,  AP_PARAM_INT8,  "Q_TSIT_ANG_VT" },
+    { Parameters::k_param_quadplane, 50,  AP_PARAM_INT8,  "Q_TSIT_INPUT" },
+    { Parameters::k_param_quadplane, 53,  AP_PARAM_FLOAT, "Q_TSIT_VFGAIN" },
+    { Parameters::k_param_quadplane, 54,  AP_PARAM_FLOAT, "Q_TSIT_VHGAIN" },
+    { Parameters::k_param_quadplane, 56,  AP_PARAM_FLOAT, "Q_TSIT_VHPOW" },
+    { Parameters::k_param_quadplane, 251,   AP_PARAM_FLOAT, "Q_TSIT_GSCMAX" },
+    { Parameters::k_param_quadplane, 379,   AP_PARAM_FLOAT, "Q_TSIT_RLL_MX" },
+    { Parameters::k_param_quadplane, 635,   AP_PARAM_INT16, "Q_TSIT_MOTMX" },
+    { Parameters::k_param_quadplane, 1147,  AP_PARAM_INT16, "Q_TSIT_GSCMSK" },
+    { Parameters::k_param_quadplane, 1211,  AP_PARAM_FLOAT, "Q_TSIT_GSCMIN" },
+    { Parameters::k_param_quadplane, 1403,  AP_PARAM_FLOAT, "Q_TSIT_DSKLD" },
+    { Parameters::k_param_quadplane, 1595,  AP_PARAM_FLOAT, "Q_TSIT_RAT_FW" },
+    { Parameters::k_param_quadplane, 1659,  AP_PARAM_FLOAT, "Q_TSIT_RAT_FW" },
 
     // tiltrotor params have moved but retain the same names
     { Parameters::k_param_quadplane, 37,  AP_PARAM_INT16,  "Q_TILT_MASK" },

@@ -329,6 +329,8 @@ void Tailsitter::setup()
     // Check if encoders are assigned from the parameter lists
     _have_encoders = rotary_encoder.enabled(0) && rotary_encoder.enabled(1);
 
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Tailsitter.setup() called");
+
     setup_complete = true;
 }
 
@@ -369,6 +371,7 @@ void Tailsitter::output(void)
         return;
     }
 
+<<<<<<< HEAD
     static uint32_t last_log_ms = 0;
     uint32_t ab = AP_HAL::millis();
 
@@ -376,6 +379,17 @@ void Tailsitter::output(void)
         last_log_ms = ab;
         GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>>TV_L and TV_R : %f %f", get_left_encoder_angle(), get_right_encoder_angle());
     }
+=======
+    // Call rotary_encoder update to refresh encoder values
+    rotary_encoder.update();
+
+    // Incase need to log on GCS uncomment the below lines
+    // static uint32_t last_time = 0;
+    // if (AP_HAL::millis() - last_time > 1000) {
+    //     last_time = AP_HAL::millis();
+    //     GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Thrust L:%d R:%d", rotary_encoder.get_angular_position(0, true), rotary_encoder.get_angular_position(1, true));
+    // }
+>>>>>>> d3fdfcb039 (Add rotary encoder logs in quadplane, comment out debug statements through GCS logs)
 
     float tilt_left = 0.0f;
     float tilt_right = 0.0f;
@@ -522,20 +536,6 @@ void Tailsitter::output(void)
     if (plane.arming.is_armed_and_safety_off()) {
         // scale surfaces for throttle
         speed_scaling();
-        if(_have_encoders) {
-
-            // update encoder state for thrust vector feedback
-            rotary_encoder.update();
-
-            // // use rotary encoder feedback for thrust vectoring
-            // float left_angle = rotary_encoder.get_angle(0);
-            // float right_angle = rotary_encoder.get_angle(1);
-            // if (isfinite(left_angle) && isfinite(right_angle)) {
-            //     // only apply if we have valid angles
-            //     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, left_angle * 180.0f / M_PI);
-            //     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, right_angle * 180.0f / M_PI);
-            // }
-        }
     } else if (tailsitter_motors != nullptr) {
         tailsitter_motors->set_min_throttle(0.0);
     }
