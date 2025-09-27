@@ -126,7 +126,6 @@ void AP_RotaryEncoder::init(void)
     }
     
     for (uint8_t i=0; i<ROTARY_ENCODER_MAX_INSTANCES; i++) {
-        uint8_t type_val = _type[i].get();
         
         switch ((RotaryEncoder_Type)_type[i].get()) {
 
@@ -137,7 +136,6 @@ void AP_RotaryEncoder::init(void)
             GCS_SEND_TEXT(MAV_SEVERITY_INFO, "No encoder configured for instance %d", i);
             break;
         }
-
 
         if (drivers[i] != nullptr) {
             // we loaded a driver for this instance, so it must be
