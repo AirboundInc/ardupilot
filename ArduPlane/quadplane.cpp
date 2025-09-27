@@ -2960,21 +2960,6 @@ void QuadPlane::vtol_position_controller(void)
             set_climb_rate_cms(wp_nav->get_default_speed_up());
             break;
         }
-        // Add check for extreme pitch error to freeze climb rate
-        float PITCH_ERROR_THRESHOLD = 20;
-        float des_pitch_cd = attitude_control->get_att_target_euler_cd().y;
-        int32_t pitch_error_cd = (des_pitch_cd - ahrs_view->pitch_sensor);
-        if (fabsf(pitch_error_cd) >= PITCH_ERROR_THRESHOLD * 100) {
-            set_climb_rate_cms(0);
-            static uint32_t last_log_ms = 0;
-
-            if (now_ms - last_log_ms >= 2000) {
-                last_log_ms = now_ms;
-                gcs().send_text(MAV_SEVERITY_INFO,"Pitch Error! Freezing land descent...");
-            }
-            break;
-        }
-
         const float descent_rate_cms = landing_descent_rate_cms(height_above_ground);
         pos_control->land_at_climb_rate_cm(-descent_rate_cms, descent_rate_cms>0);
         break;
