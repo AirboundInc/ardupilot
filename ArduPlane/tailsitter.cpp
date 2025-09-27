@@ -238,6 +238,11 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     // @Increment: 1
     // @User: Standard
     AP_GROUPINFO("E2CPR", 28, Tailsitter, encoder2_cpr, 4096),
+    // @Param: GCS_RE_EN
+    // @DisplayName: Tailsitter enable rotary encoder realtime gcs statements
+    // @Description: Make this true to get rotary encoder angles displayed on the GCS logs for both the left and right encoders on the thrust vector.
+    // @Range: 0 1
+    AP_GROUPINFO("GCS_RE_EN", 23, Tailsitter, log_gcs_rotary_encoder, 0),
 
     AP_GROUPEND
 };
@@ -379,14 +384,14 @@ void Tailsitter::output(void)
     // Call rotary_encoder update to refresh encoder values
     rotary_encoder.update();
 
-    // Incase need to log on GCS uncomment the below lines
-    // static uint32_t last_time = 0;
-    // if (AP_HAL::millis() - last_time > 1000) {
-    //     last_time = AP_HAL::millis();
-    //     GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Thrust L:%d R:%d", rotary_encoder.get_angular_position(0, true), rotary_encoder.get_angular_position(1, true));
-    // }
->>>>>>> d3fdfcb039 (Add rotary encoder logs in quadplane, comment out debug statements through GCS logs)
-
+    // Log on GCS in realtime if demanded by the user
+    if(log_gcs_rotary_encoder) {
+        static uint32_t last_time = 0;
+        if (AP_HAL::millis() - last_time > 1000) {
+            last_time = AP_HAL::millis();
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Thrust L:%d R:%d", rotary_encoder.get_angular_position(0, true), rotary_encoder.get_angular_position(1, true));
+        }
+    }
     float tilt_left = 0.0f;
     float tilt_right = 0.0f;
 

@@ -111,6 +111,7 @@ public:
     AP_Float VTOL_pitch_scale;
     AP_Float VTOL_yaw_scale;
     AP_Float disk_loading_min_outflow;
+    AP_Int8 log_gcs_rotary_encoder;
 
     AP_Float wvane_max_gain;
     AP_Float wvane_pitch_low;
@@ -144,8 +145,7 @@ private:
         float speed_scaler;
         float min_throttle;
     } log_data;
-
-
+    
     bool setup_complete;
 
     // true when flying a tilt-vectored tailsitter
