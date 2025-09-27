@@ -431,9 +431,13 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // 24: TAILSIT_RAT_FW
     // 25: TAILSIT_RAT_VT
 
-    // @Group: TAILSIT_
+    // @Group: TSIT_
     // @Path: tailsitter.cpp
     AP_SUBGROUPINFO(tailsitter, "TSIT_", 26, QuadPlane, Tailsitter),
+
+    // @Group: RENC_
+    // @Path: libraries/AP_RotaryEncoder/AP_RotaryEncoder.cpp
+    AP_SUBGROUPINFO(tailsitter.rotary_encoder, "RENC_", 39, QuadPlane, AP_RotaryEncoder), 
 
     // @Group: TILT_
     // @Path: tiltrotor.cpp
@@ -537,9 +541,6 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Increment: 0.1
     // @User: Standard
     AP_GROUPINFO("BCK_PIT_LIM", 38, QuadPlane, q_bck_pitch_lim, 10.0f),
-
-
-    AP_SUBGROUPINFO(tailsitter.rotary_encoder, "RENC_", 39, QuadPlane, AP_RotaryEncoder), 
 
     AP_GROUPEND
 };
