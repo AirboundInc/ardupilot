@@ -389,7 +389,7 @@ void Tailsitter::output(void)
         static uint32_t last_time = 0;
         if (AP_HAL::millis() - last_time > 1000) {
             last_time = AP_HAL::millis();
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Thrust L:%d R:%d", rotary_encoder.get_angular_position(0, true), rotary_encoder.get_angular_position(1, true));
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Thrust L:%f R:%f", rotary_encoder.get_angular_position(0, true), rotary_encoder.get_angular_position(1, true));
         }
     }
     float tilt_left = 0.0f;
