@@ -463,7 +463,7 @@ void Tailsitter::output(void)
 
     tilt_left = 0.0f;
     tilt_right = 0.0f;
-    float pitch_cd = 0.0f, weathervane_gain = 0.0f;
+    float pitch_cd = 0.0f, weathervane_gain = 0.0f, gain_slope = 0.0f;
 
     if (vectored_hover_gain > 0) {
         // thrust vectoring VTOL modes
@@ -490,12 +490,20 @@ void Tailsitter::output(void)
             tilt_right = tilt_right * vectored_hover_gain;
         }
 
-        // Put limits on weathervaning basis pitch_cd, only allow if ahrs pitch between low and hi (vertical)
+        // Put limits on weathervaning basis pitch_cd,
+        // only allow if ahrs pitch between low and hi (vertical)
+        // example calc for default values:
+        // AHRS pitch range -> Weathervane gain output
+        // (45 - 92) -> 3.0
+        // (25 - 45) -> linearly scale between 0 - 3.0
+        // (0 - 25) -> 0
         pitch_cd = quadplane.ahrs.pitch_sensor;
         if (pitch_cd <= wvane_pitch_hi * 100 && pitch_cd >= wvane_pitch_mid * 100) {
             weathervane_gain = wvane_max_gain;
         } else if (pitch_cd < wvane_pitch_mid * 100 && pitch_cd >= wvane_pitch_low * 100) {
-            weathervane_gain = wvane_max_gain/2.0;
+            // scale from max_gain to 0 between pitch mid and pitch low while preventing div by zero
+            gain_slope = (pitch_cd - wvane_pitch_low * 100) / ((wvane_pitch_mid - wvane_pitch_low + FLT_EPSILON) * 100);
+            weathervane_gain = (wvane_max_gain) * gain_slope;
         } else {
             weathervane_gain = 0.0;
             quadplane.weathervane->reset();
@@ -506,11 +514,11 @@ void Tailsitter::output(void)
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
 
     // Add logging for desired thrust vectoring angles
-    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,AhrsPitch,WVGain",
-            "sddd-", // seconds, degrees
-            "F0000", // micro (1e-6), no mult (1e0)
-            "Qffff", // uint64_t, float
-            AP_HAL::micros64(), tilt_left/100, tilt_right/100,pitch_cd/100,weathervane_gain);
+    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,AhrsPitch,WVGain,WVGainS",
+            "sddd--", // seconds, degrees
+            "F00000", // micro (1e-6), no mult (1e0)
+            "Qfffff", // uint64_t, float
+            AP_HAL::micros64(), tilt_left/100, tilt_right/100,pitch_cd/100,weathervane_gain,gain_slope);
 
     // Check for saturated limits
     bool tilt_lim = _is_vectored && ((fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorLeft)) >= SERVO_MAX) || (fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorRight)) >= SERVO_MAX));
