@@ -1,4 +1,5 @@
 #include "Plane.h"
+#include "AP_Logger/AP_Logger.h"
 
 /*
   calculate speed scaling number for control surfaces. This is applied
