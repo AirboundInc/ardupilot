@@ -14,7 +14,7 @@
  */
 /*
   control code for tailsitters. Enabled by setting Q_FRAME_CLASS=10 
-  or by setting Q_TAILSIT_MOTMX nonzero and Q_FRAME_CLASS and Q_FRAME_TYPE
+  or by setting Q_TSIT_MOTMX nonzero and Q_FRAME_CLASS and Q_FRAME_TYPE
   to a configuration supported by AP_MotorsMatrix
  */
 #include "tailsitter.h"
@@ -41,7 +41,7 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
 
     // @Param: ANG_VT
     // @DisplayName: Tailsitter VTOL transition angle
-    // @Description: This is the pitch angle at which tailsitter aircraft will change from fixed wing control to VTOL control, if zero Q_TAILSIT_ANGLE will be used
+    // @Description: This is the pitch angle at which tailsitter aircraft will change from fixed wing control to VTOL control, if zero Q_TSIT_ANGLE will be used
     // @Units: deg
     // @Range: 5 80
     AP_GROUPINFO("ANG_VT", 3, Tailsitter, transition_angle_vtol, 0),
@@ -406,7 +406,7 @@ void Tailsitter::output(void)
               during transitions to vtol mode set the throttle to hover thrust, center the rudder
             */
             if (!is_negative(transition_throttle_vtol)) { 
-                // Q_TAILSIT_THR_VT is positive use it until transition is complete
+                // Q_TSIT_THR_VT is positive use it until transition is complete
                 throttle = motors->thr_lin.actuator_to_thrust(MIN(transition_throttle_vtol*0.01,1.0));
             } else {
                 throttle = motors->get_throttle_hover();
