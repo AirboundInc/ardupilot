@@ -239,10 +239,11 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("E2CPR", 28, Tailsitter, encoder2_cpr, 4096),
     // @Param: GCS_RE_EN
+    // @Param: RE_DB
     // @DisplayName: Tailsitter enable rotary encoder realtime gcs statements
     // @Description: Make this true to get rotary encoder angles displayed on the GCS logs for both the left and right encoders on the thrust vector.
     // @Range: 0 1
-    AP_GROUPINFO("GCS_RE_EN", 23, Tailsitter, log_gcs_rotary_encoder, 0),
+    AP_GROUPINFO("RE_DB", 23, Tailsitter, log_gcs_rotary_encoder, 0),
 
     AP_GROUPEND
 };
