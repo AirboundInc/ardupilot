@@ -239,15 +239,15 @@ const AP_Param::GroupInfo QuadPlane::var_info[] = {
     AP_GROUPINFO("ASSIST_ANGLE", 45, QuadPlane, assist_angle, 30),
 
     // 47: TILT_TYPE
-    // 48: TSIT_ANGLE
-    // 61: TSIT_ANG_VT
+    // 48: TAILSIT_ANGLE
+    // 61: TAILSIT_ANG_VT
     // 49: TILT_RATE_DN
-    // 50: TSIT_INPUT
-    // 51: TSIT_MASK
-    // 52: TSIT_MASKCH
-    // 53: TSIT_VFGAIN
-    // 54: TSIT_VHGAIN
-    // 56: TSIT_VHPOW
+    // 50: TAILSIT_INPUT
+    // 51: TAILSIT_MASK
+    // 52: TAILSIT_MASKCH
+    // 53: TAILSIT_VFGAIN
+    // 54: TAILSIT_VHGAIN
+    // 56: TAILSIT_VHPOW
 
     // @Param: MAV_TYPE
     // @DisplayName: MAVLink type identifier
@@ -285,7 +285,7 @@ const AP_Param::GroupInfo QuadPlane::var_info[] = {
     AP_SUBGROUPEXTENSION("",59, QuadPlane, var_info2),
 
     // 60 is used above for VELZ_MAX_DN
-    // 61 was used above for TSIT_ANG_VT
+    // 61 was used above for TAILSIT_ANG_VT
 
     AP_GROUPEND
 };
@@ -306,7 +306,7 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Path: ../libraries/AC_WPNav/AC_Loiter.cpp
     AP_SUBGROUPPTR(loiter_nav, "LOIT_",  2, QuadPlane, AC_Loiter),
 
-    // 3: TSIT_GSCMAX
+    // 3: TAILSIT_GSCMAX
 
     // @Param: TRIM_PITCH
     // @DisplayName: Quadplane AHRS trim pitch
@@ -318,7 +318,7 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @RebootRequired: True
     AP_GROUPINFO("TRIM_PITCH", 4, QuadPlane, ahrs_trim_pitch, 0),
 
-    // 5: TSIT_RLL_MX
+    // 5: TAILSIT_RLL_MX
 
 #if QAUTOTUNE_ENABLED
     // @Group: AUTOTUNE_
@@ -344,7 +344,7 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("TRANS_FAIL", 8, QuadPlane, transition_failure.timeout, 0),
 
-    // 9: TSIT_MOTMX
+    // 9: TAILSIT_MOTMX
 
     // @Param: THROTTLE_EXPO
     // @DisplayName: Throttle expo strength
@@ -407,8 +407,8 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Standard
     AP_GROUPINFO("ASSIST_ALT", 16, QuadPlane, assist_alt, 0),
 
-    // 17: TSIT_GSCMSK
-    // 18: TSIT_GSCMIN
+    // 17: TAILSIT_GSCMSK
+    // 18: TAILSIT_GSCMIN
 
     // @Param: ASSIST_DELAY
     // @DisplayName: Quadplane assistance delay
@@ -425,15 +425,15 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Range: 0 100
     AP_GROUPINFO("FWD_MANTHR_MAX", 20, QuadPlane, fwd_thr_max, 0),
 
-    // 21: TSIT_DSKLD
+    // 21: TAILSIT_DSKLD
     // 22: TILT_FIX_ANGLE
     // 23: TILT_FIX_GAIN
-    // 24: TSIT_RAT_FW
-    // 25: TSIT_RAT_VT
+    // 24: TAILSIT_RAT_FW
+    // 25: TAILSIT_RAT_VT
 
-    // @Group: TSIT_
+    // @Group: TAILSIT_
     // @Path: tailsitter.cpp
-    AP_SUBGROUPINFO(tailsitter, "TSIT_", 26, QuadPlane, Tailsitter),
+    AP_SUBGROUPINFO(tailsitter, "TAILSIT_", 26, QuadPlane, Tailsitter),
 
 #if HAL_QUADPLANE_ENABLED
     // @Group: RENC_
@@ -607,20 +607,20 @@ const AP_Param::ConversionInfo q_conversion_table[] = {
     { Parameters::k_param_q_attitude_control, 451,  AP_PARAM_FLOAT, "Q_A_RAT_YAW_FF" },  // Q_A_RAT_YAW_FILT
 
     // tailsitter params have moved but retain the same names
-    { Parameters::k_param_quadplane, 48,  AP_PARAM_INT8,  "Q_TSIT_ANGLE" },
-    { Parameters::k_param_quadplane, 61,  AP_PARAM_INT8,  "Q_TSIT_ANG_VT" },
-    { Parameters::k_param_quadplane, 50,  AP_PARAM_INT8,  "Q_TSIT_INPUT" },
-    { Parameters::k_param_quadplane, 53,  AP_PARAM_FLOAT, "Q_TSIT_VFGAIN" },
-    { Parameters::k_param_quadplane, 54,  AP_PARAM_FLOAT, "Q_TSIT_VHGAIN" },
-    { Parameters::k_param_quadplane, 56,  AP_PARAM_FLOAT, "Q_TSIT_VHPOW" },
-    { Parameters::k_param_quadplane, 251,   AP_PARAM_FLOAT, "Q_TSIT_GSCMAX" },
-    { Parameters::k_param_quadplane, 379,   AP_PARAM_FLOAT, "Q_TSIT_RLL_MX" },
-    { Parameters::k_param_quadplane, 635,   AP_PARAM_INT16, "Q_TSIT_MOTMX" },
-    { Parameters::k_param_quadplane, 1147,  AP_PARAM_INT16, "Q_TSIT_GSCMSK" },
-    { Parameters::k_param_quadplane, 1211,  AP_PARAM_FLOAT, "Q_TSIT_GSCMIN" },
-    { Parameters::k_param_quadplane, 1403,  AP_PARAM_FLOAT, "Q_TSIT_DSKLD" },
-    { Parameters::k_param_quadplane, 1595,  AP_PARAM_FLOAT, "Q_TSIT_RAT_FW" },
-    { Parameters::k_param_quadplane, 1659,  AP_PARAM_FLOAT, "Q_TSIT_RAT_FW" },
+    { Parameters::k_param_quadplane, 48,  AP_PARAM_INT8,  "Q_TAILSIT_ANGLE" },
+    { Parameters::k_param_quadplane, 61,  AP_PARAM_INT8,  "Q_TAILSIT_ANG_VT" },
+    { Parameters::k_param_quadplane, 50,  AP_PARAM_INT8,  "Q_TAILSIT_INPUT" },
+    { Parameters::k_param_quadplane, 53,  AP_PARAM_FLOAT, "Q_TAILSIT_VFGAIN" },
+    { Parameters::k_param_quadplane, 54,  AP_PARAM_FLOAT, "Q_TAILSIT_VHGAIN" },
+    { Parameters::k_param_quadplane, 56,  AP_PARAM_FLOAT, "Q_TAILSIT_VHPOW" },
+    { Parameters::k_param_quadplane, 251,   AP_PARAM_FLOAT, "Q_TAILSIT_GSCMAX" },
+    { Parameters::k_param_quadplane, 379,   AP_PARAM_FLOAT, "Q_TAILSIT_RLL_MX" },
+    { Parameters::k_param_quadplane, 635,   AP_PARAM_INT16, "Q_TAILSIT_MOTMX" },
+    { Parameters::k_param_quadplane, 1147,  AP_PARAM_INT16, "Q_TAILSIT_GSCMSK" },
+    { Parameters::k_param_quadplane, 1211,  AP_PARAM_FLOAT, "Q_TAILSIT_GSCMIN" },
+    { Parameters::k_param_quadplane, 1403,  AP_PARAM_FLOAT, "Q_TAILSIT_DSKLD" },
+    { Parameters::k_param_quadplane, 1595,  AP_PARAM_FLOAT, "Q_TAILSIT_RAT_FW" },
+    { Parameters::k_param_quadplane, 1659,  AP_PARAM_FLOAT, "Q_TAILSIT_RAT_FW" },
 
     // tiltrotor params have moved but retain the same names
     { Parameters::k_param_quadplane, 37,  AP_PARAM_INT16,  "Q_TILT_MASK" },
@@ -746,7 +746,7 @@ bool QuadPlane::setup(void)
 
     // Make sure not both a tailsiter and tiltrotor
     if ((tailsitter.enable > 0) && (tiltrotor.enable > 0)) {
-        AP_BoardConfig::config_error("set TSIT_ENABLE 0 or TILT_ENABLE 0");
+        AP_BoardConfig::config_error("set TAILSIT_ENABLE 0 or TILT_ENABLE 0");
     }
 
     switch ((AP_Motors::motor_frame_class)frame_class) {

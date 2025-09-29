@@ -41,7 +41,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Param: _POS_0
     // @DisplayName: RotaryEncoder position offset
     // @Description: Add a positional offset for the rotary encoder
-    // @Units: radians
+    // @Units: rad
     // @Range: -3.14 3.14
     // @Increment: 0.01
     // @User: Standard
@@ -84,7 +84,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Param: 2_POS_X
     // @DisplayName: RotaryEncoder 2's X position offset
     // @Description: X position of the center of the second rotary encoder in body frame. Positive X is forward of the origin.
-    // @Units: radians
+    // @Units: rad
     // @Range: -3.14 3.14
     // @Increment: 0.01
     // @User: Standard
