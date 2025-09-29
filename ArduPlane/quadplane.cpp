@@ -435,9 +435,11 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Path: tailsitter.cpp
     AP_SUBGROUPINFO(tailsitter, "TSIT_", 26, QuadPlane, Tailsitter),
 
+#if HAL_QUADPLANE_ENABLED
     // @Group: RENC_
-    // @Path: libraries/AP_RotaryEncoder/AP_RotaryEncoder.cpp
+    // @Path: ../libraries/AP_RotaryEncoder/AP_RotaryEncoder.cpp
     AP_SUBGROUPINFO(tailsitter.rotary_encoder, "RENC_", 39, QuadPlane, AP_RotaryEncoder), 
+#endif
 
     // @Group: TILT_
     // @Path: tiltrotor.cpp

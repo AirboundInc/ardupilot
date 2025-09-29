@@ -78,7 +78,7 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
 
     // @Param: GSCMAX
     // @DisplayName: Maximum tailsitter gain scaling
-    // @Description: Maximum gain scaling for tailsitter Q_TAILSIT_GSCMSK options
+    // @Description: Maximum gain scaling for tailsitter Q_TSIT_GSCMSK options
     // @Range: 1 5
     // @User: Standard
     AP_GROUPINFO("GSCMAX", 10, Tailsitter, throttle_scale_max, 2),
@@ -100,21 +100,21 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
 
     // @Param: GSCMSK
     // @DisplayName: Tailsitter gain scaling mask
-    // @Description: Bitmask of gain scaling methods to be applied: Throttle: scale gains with throttle, ATT_THR: reduce gain at high throttle/tilt, 2:Disk theory velocity calculation, requires Q_TAILSIT_DSKLD to be set, ATT_THR must not be set, 3:Altitude correction, scale with air density
+    // @Description: Bitmask of gain scaling methods to be applied: Throttle: scale gains with throttle, ATT_THR: reduce gain at high throttle/tilt, 2:Disk theory velocity calculation, requires Q_TSIT_DSKLD to be set, ATT_THR must not be set, 3:Altitude correction, scale with air density
     // @User: Standard
     // @Bitmask: 0:Throttle,1:ATT_THR,2:Disk Theory,3:Altitude correction
     AP_GROUPINFO("GSCMSK", 13, Tailsitter, gain_scaling_mask, TAILSITTER_GSCL_THROTTLE),
 
     // @Param: GSCMIN
     // @DisplayName: Minimum tailsitter gain scaling
-    // @Description: Minimum gain scaling for tailsitter Q_TAILSIT_GSCMSK options
+    // @Description: Minimum gain scaling for tailsitter Q_TSIT_GSCMSK options
     // @Range: 0.1 1
     // @User: Standard
     AP_GROUPINFO("GSCMIN", 14, Tailsitter, gain_scaling_min, 0.4),
 
     // @Param: DSKLD
     // @DisplayName: Tailsitter disk loading
-    // @Description: This is the vehicle weight in kg divided by the total disk area of all propellers in m^2. Only used with Q_TAILSIT_GSCMSK = 4
+    // @Description: This is the vehicle weight in kg divided by the total disk area of all propellers in m^2. Only used with Q_TSIT_GSCMSK = 4
     // @Units: kg/m/m
     // @Range: 0 50
     // @User: Standard
@@ -161,7 +161,7 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
 
     // @Param: MIN_VO
     // @DisplayName: Tailsitter Disk loading minimum outflow speed
-    // @Description: Use in conjunction with disk theory gain scaling and Q_TAILSIT_DSKLD to specify minumum airspeed over control surfaces, this will be used to boost throttle, when descending for example, 0 disables
+    // @Description: Use in conjunction with disk theory gain scaling and Q_TSIT_DSKLD to specify minumum airspeed over control surfaces, this will be used to boost throttle, when descending for example, 0 disables
     // @Range: 0 15
     AP_GROUPINFO("MIN_VO", 22, Tailsitter, disk_loading_min_outflow, 0),
 
