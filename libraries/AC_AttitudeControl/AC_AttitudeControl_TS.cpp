@@ -85,13 +85,16 @@ void AC_AttitudeControl_TS::input_euler_rate_yaw_euler_angle_pitch_bf_roll(bool 
         if(p_ > 0.0f) {
             p_ = 3.14f - p_; 
             direction_of_exceed = 1;
+            // gcs().send_text(MAV_SEVERITY_WARNING, "Pitch exceed 90 degrees");
         }
         else {
             p_ = -(p_)- 3.14f; 
             direction_of_exceed = -1;
+            // gcs().send_text(MAV_SEVERITY_WARNING, "Pitch exceed -90 degrees");
         }
         attitude_body.from_euler(r_, p_, y_);
     }
+    _motors.set_pitch_exceed(pitch_exceed, direction_of_exceed);
     AP::logger().WriteStreaming("ATTC", "TimeUS,PREV_P,neW_P,ahrsa2_p",
         "sddd", // seconds, degrees
         "F000", // micro (1e-6), no mult (1e0)

@@ -143,6 +143,7 @@ public:
     void                set_slew_filter_cutoff(float filt_hz) { _throttle_slew_filter.set_cutoff_frequency(filt_hz); }
     void                set_forward(float forward_in) { _forward_in = forward_in; }; // range -1 ~ +1
     void                set_lateral(float lateral_in) { _lateral_in = lateral_in; };     // range -1 ~ +1
+    void                set_pitch_exceed(bool exceed ,int direction) { _pitch_exceed = exceed; _direction_of_exceed = direction;} // tailsitter pitch exceed 90 degrees
 
     // for 6DoF vehicles, sets the roll and pitch offset, this rotates the thrust vector in body frame
     virtual void        set_roll_pitch(float roll_deg, float pitch_deg) {};
@@ -329,6 +330,10 @@ protected:
     LowPassFilterFloat  _throttle_slew_filter;      // filter for the output of the throttle slew
     DesiredSpoolState   _spool_desired;             // desired spool state
     SpoolState          _spool_state;               // current spool mode
+
+    // Taisitter exceeds angle
+    bool _pitch_exceed = false;
+    int _direction_of_exceed = 0; // -1: pitch down exceed, 1: pitch up exceed, 0: no exceed
 
     // mask of what channels need fast output
     uint32_t            _motor_fast_mask;
