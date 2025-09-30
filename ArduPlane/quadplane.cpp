@@ -435,12 +435,6 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Path: tailsitter.cpp
     AP_SUBGROUPINFO(tailsitter, "TAILSIT_", 26, QuadPlane, Tailsitter),
 
-#if HAL_QUADPLANE_ENABLED
-    // @Group: RENC_
-    // @Path: ../libraries/AP_RotaryEncoder/AP_RotaryEncoder.cpp
-    AP_SUBGROUPINFO(tailsitter.rotary_encoder, "RENC_", 39, QuadPlane, AP_RotaryEncoder), 
-#endif
-
     // @Group: TILT_
     // @Path: tiltrotor.cpp
     AP_SUBGROUPINFO(tiltrotor, "TILT_", 27, QuadPlane, Tiltrotor),
@@ -552,6 +546,12 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Increment: 0.1
     // @User: Advanced
     AP_GROUPINFO("LND_FRZ_TIM", 39, QuadPlane, q_land_freeze_time, 7.0f),
+    
+#if HAL_QUADPLANE_ENABLED
+    // @Group: RENC_
+    // @Path: ../libraries/AP_RotaryEncoder/AP_RotaryEncoder.cpp
+    AP_SUBGROUPINFO(rotary_encoder, "RENC_", 39, Tailsitter, AP_RotaryEncoder), 
+#endif
 
     AP_GROUPEND
 };
