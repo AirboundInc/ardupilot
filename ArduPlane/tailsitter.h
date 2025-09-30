@@ -18,6 +18,7 @@
 #include "transition.h"
 #include <AP_Motors/AP_MotorsTailsitter.h>
 #include <AP_Logger/LogStructure.h>
+#include <AP_RotaryEncoder/AP_RotaryEncoder.h>
 
 class QuadPlane;
 class AP_MotorsMulticopter;
@@ -131,6 +132,7 @@ public:
     AP_Int16 encoder2_pin_b;
     AP_Int16 encoder2_cpr;
 
+    AP_RotaryEncoder rotary_encoder;
     AP_MotorsTailsitter* tailsitter_motors;
 
 private:
@@ -162,6 +164,7 @@ private:
     bool _have_rudder;
     bool _have_elevon;
     bool _have_v_tail;
+    bool _have_rotary_encoders;
 
     // encoder state for tailsitter control
     struct {

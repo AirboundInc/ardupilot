@@ -327,6 +327,10 @@ void Tailsitter::setup()
     }
     quadplane.transition = transition;
 
+    rotary_encoder.init();
+
+    _have_rotary_encoders = rotary_encoder.enabled(0) && rotary_encoder.enabled(1);
+
     setup_complete = true;
 }
 
@@ -532,12 +536,6 @@ void Tailsitter::output(void)
     if (plane.arming.is_armed_and_safety_off()) {
         // scale surfaces for throttle
         speed_scaling();
-<<<<<<< HEAD
-=======
-        
-        // update encoder state for thrust vector feedback
-        update_encoder_state();
->>>>>>> parent of 6338bdbe67 (Remove notations in the Plane.h)
     } else if (tailsitter_motors != nullptr) {
         tailsitter_motors->set_min_throttle(0.0);
     }
@@ -952,6 +950,9 @@ void Tailsitter::write_log()
         min_throttle        : log_data.min_throttle,
     };
     plane.logger.WriteBlock(&pkt, sizeof(pkt));
+    if(_have_rotary_encoders) {
+        rotary_encoder.Log_Write();
+    }
 }
 #endif  // HAL_LOGGING_ENABLED
 

@@ -28,7 +28,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Values: 0:None,1:Quadrature,10:SITL Quadrature
     // @User: Standard
     // @RebootRequired: True
-    AP_GROUPINFO_FLAGS("L_TYPE", 0, AP_RotaryEncoder, _type[0], 0, AP_PARAM_FLAG_ENABLE),
+    AP_GROUPINFO_FLAGS("LT", 0, AP_RotaryEncoder, _type[0], 0, AP_PARAM_FLAG_ENABLE),
 
     // @Param: _CPR
     // @DisplayName: RotaryEncoder counts per revolution
@@ -36,7 +36,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Increment: 1
     // @User: Standard
     // @RebootRequired: True
-    AP_GROUPINFO("L_CPR",     1, AP_RotaryEncoder, _counts_per_revolution[0], ROTARY_ENCODER_CPR_DEFAULT),
+    AP_GROUPINFO("LC",     1, AP_RotaryEncoder, _counts_per_revolution[0], ROTARY_ENCODER_CPR_DEFAULT),
 
     // @Param: _POS_0
     // @DisplayName: RotaryEncoder position offset
@@ -46,7 +46,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Increment: 0.01
     // @User: Standard
 
-    AP_GROUPINFO("L_POS0",     2, AP_RotaryEncoder, pos_offset_zero[0], 0.0f),
+    AP_GROUPINFO("L0",     2, AP_RotaryEncoder, pos_offset_zero[0], 0.0f),
 
     // @Param: _PINA
     // @DisplayName: Input Pin A
@@ -54,7 +54,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
     // @RebootRequired: True
-    AP_GROUPINFO("L_PINA",    3, AP_RotaryEncoder, _pina[0], -1),
+    AP_GROUPINFO("LA",   3, AP_RotaryEncoder, _pina[0], -1),
 
     // @Param: _PINB
     // @DisplayName: Input Pin B
@@ -62,7 +62,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
     // @RebootRequired: True
-    AP_GROUPINFO("L_PINB",    4, AP_RotaryEncoder, _pinb[0], -1),
+    AP_GROUPINFO("LB",   4, AP_RotaryEncoder, _pinb[0], -1),
 
 #if ROTARY_ENCODER_MAX_INSTANCES > 1
     // @Param: 2_TYPE
@@ -71,7 +71,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Values: 0:None,1:Quadrature,10:SITL Quadrature
     // @User: Standard
     // @RebootRequired: True
-    AP_GROUPINFO("R_TYPE",   5, AP_RotaryEncoder, _type[1], 0),
+    AP_GROUPINFO("RT",   5, AP_RotaryEncoder, _type[1], 0),
 
     // @Param: 2_CPR
     // @DisplayName: RotaryEncoder 2 counts per revolution
@@ -79,7 +79,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Increment: 1
     // @User: Standard
     // @RebootRequired: True
-    AP_GROUPINFO("R_CPR",     6, AP_RotaryEncoder, _counts_per_revolution[1], ROTARY_ENCODER_CPR_DEFAULT),
+    AP_GROUPINFO("RC",   6, AP_RotaryEncoder, _counts_per_revolution[1], ROTARY_ENCODER_CPR_DEFAULT),
 
     // @Param: 2_POS_X
     // @DisplayName: RotaryEncoder 2's X position offset
@@ -88,7 +88,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Range: -3.14 3.14
     // @Increment: 0.01
     // @User: Standard
-    AP_GROUPINFO("R_POS0",    7, AP_RotaryEncoder, pos_offset_zero[1], 0.0f),
+    AP_GROUPINFO("R0",  7, AP_RotaryEncoder, pos_offset_zero[1], 0.0f),
 
     // @Param: 2_PINA
     // @DisplayName: Second Encoder Input Pin A
@@ -96,7 +96,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
     // @RebootRequired: True
-    AP_GROUPINFO("R_PINA",   8, AP_RotaryEncoder, _pina[1], -1),
+    AP_GROUPINFO("RA",   8, AP_RotaryEncoder, _pina[1], -1),
 
     // @Param: 2_PINB
     // @DisplayName: Second Encoder Input Pin B
@@ -104,7 +104,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
     // @RebootRequired: True
-    AP_GROUPINFO("R_PINB",   9, AP_RotaryEncoder, _pinb[1], -1),
+    AP_GROUPINFO("RB",   9, AP_RotaryEncoder, _pinb[1], -1),
 #endif
 
     AP_GROUPEND
