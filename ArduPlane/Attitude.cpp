@@ -121,6 +121,7 @@ void Plane::stabilize_roll()
     }
 
     const float roll_out = stabilize_roll_get_roll_out();
+
 #if HAL_LOGGING_ENABLED
     AP::logger().Write("ATTR", "TimeUS,RollOut",
         "sd", // seconds, degrees
