@@ -327,8 +327,6 @@ void Tailsitter::setup()
     }
     quadplane.transition = transition;
 
-    _have_rotary_encoders = quadplane.rotary_encoder.enabled(0) && quadplane.rotary_encoder.enabled(1);
-
     setup_complete = true;
 }
 
@@ -948,7 +946,7 @@ void Tailsitter::write_log()
         min_throttle        : log_data.min_throttle,
     };
     plane.logger.WriteBlock(&pkt, sizeof(pkt));
-    
+
     quadplane.rotary_encoder.Log_Write();
 }
 #endif  // HAL_LOGGING_ENABLED
