@@ -71,12 +71,6 @@ public:
     // Write tailsitter specific log
     void write_log();
 
-    // Encoder methods - access global encoder data for tailsitter use
-    void update_encoder_state();           // Update local encoder state from global data
-    float get_left_thrust_vector_angle();  // Get left thrust vector angle in radians
-    float get_right_thrust_vector_angle(); // Get right thrust vector angle in radians
-    bool encoders_healthy();               // Check encoder health status
-
     // tailsitter speed scaler
     float last_spd_scaler = 1.0f; // used to slew rate limiting with TAILSITTER_GSCL_ATT_THR option
 
