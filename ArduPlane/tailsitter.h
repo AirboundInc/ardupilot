@@ -164,17 +164,6 @@ private:
     bool _have_rudder;
     bool _have_elevon;
     bool _have_v_tail;
-    bool _have_rotary_encoders;
-
-    // encoder state for tailsitter control
-    struct {
-        float left_thrust_vector_angle;   // Current left thrust vector angle (radians)
-        float right_thrust_vector_angle;  // Current right thrust vector angle (radians)
-        float target_left_angle;          // Target left angle for control
-        float target_right_angle;         // Target right angle for control
-        bool encoders_healthy;            // Health status
-        uint32_t last_log_ms;            // Last time we logged encoder data
-    } encoder_control;
 
     // refences for convenience
     QuadPlane& quadplane;

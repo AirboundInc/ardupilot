@@ -327,9 +327,7 @@ void Tailsitter::setup()
     }
     quadplane.transition = transition;
 
-    rotary_encoder.init();
-
-    _have_rotary_encoders = rotary_encoder.enabled(0) && rotary_encoder.enabled(1);
+    _have_rotary_encoders = quadplane.rotary_encoder.enabled(0) && quadplane.rotary_encoder.enabled(1);
 
     setup_complete = true;
 }
@@ -381,14 +379,14 @@ void Tailsitter::output(void)
     }
 =======
     // Call rotary_encoder update to refresh encoder values
-    rotary_encoder.update();
+    quadplane.rotary_encoder.update();
 
     // Log on GCS in realtime if demanded by the user
     if(log_gcs_rotary_encoder) {
         static uint32_t last_time = 0;
         if (AP_HAL::millis() - last_time > 1000) {
             last_time = AP_HAL::millis();
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Thrust L:%f R:%f", rotary_encoder.get_angular_position(0, true), rotary_encoder.get_angular_position(1, true));
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Thrust L:%f R:%f", quadplane.rotary_encoder.get_angular_position(0, true), quadplane.rotary_encoder.get_angular_position(1, true));
         }
     }
     float tilt_left = 0.0f;
@@ -950,9 +948,8 @@ void Tailsitter::write_log()
         min_throttle        : log_data.min_throttle,
     };
     plane.logger.WriteBlock(&pkt, sizeof(pkt));
-    if(_have_rotary_encoders) {
-        rotary_encoder.Log_Write();
-    }
+    
+    quadplane.rotary_encoder.Log_Write();
 }
 #endif  // HAL_LOGGING_ENABLED
 
