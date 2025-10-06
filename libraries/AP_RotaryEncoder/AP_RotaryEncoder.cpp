@@ -22,42 +22,42 @@ extern const AP_HAL::HAL& hal;
 
 // table of user settable parameters
 const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
-    // @Param: _TYPE
-    // @DisplayName: RotaryEncoder type
+    // @Param: LT
+    // @DisplayName: RotaryEncoder type for left encoder
     // @Description: What type of RotaryEncoder is connected
     // @Values: 0:None,1:Quadrature,10:SITL Quadrature
     // @User: Standard
     // @RebootRequired: True
     AP_GROUPINFO_FLAGS("LT", 0, AP_RotaryEncoder, _type[0], 0, AP_PARAM_FLAG_ENABLE),
 
-    // @Param: _CPR
-    // @DisplayName: RotaryEncoder counts per revolution
+    // @Param: LC
+    // @DisplayName: RotaryEncoder counts per revolution for left encoder
     // @Description: RotaryEncoder counts per full revolution of the rotary encoder
     // @Increment: 1
     // @User: Standard
     // @RebootRequired: True
     AP_GROUPINFO("LC",     1, AP_RotaryEncoder, _counts_per_revolution[0], ROTARY_ENCODER_CPR_DEFAULT),
 
-    // @Param: _POS_0
-    // @DisplayName: RotaryEncoder position offset
+    // @Param: L0
+    // @DisplayName: RotaryEncoder position offset for left encoder
     // @Description: Add a positional offset for the rotary encoder
-    // @Units: rad
-    // @Range: -3.14 3.14
-    // @Increment: 0.01
+    // @Units: d
+    // @Range: -180 180
+    // @Increment: 0.1
     // @User: Standard
 
     AP_GROUPINFO("L0",     2, AP_RotaryEncoder, pos_offset_zero[0], 0.0f),
 
-    // @Param: _PINA
-    // @DisplayName: Input Pin A
+    // @Param: LA
+    // @DisplayName: Input Pin A for left encoder
     // @Description: Input Pin A
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
     // @RebootRequired: True
     AP_GROUPINFO("LA",   3, AP_RotaryEncoder, _pina[0], -1),
 
-    // @Param: _PINB
-    // @DisplayName: Input Pin B
+    // @Param: LB
+    // @DisplayName: Input Pin B for left encoder
     // @Description: Input Pin B
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
@@ -65,42 +65,42 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     AP_GROUPINFO("LB",   4, AP_RotaryEncoder, _pinb[0], -1),
 
 #if ROTARY_ENCODER_MAX_INSTANCES > 1
-    // @Param: 2_TYPE
-    // @DisplayName: Second RotaryEncoder type
+    // @Param: RT
+    // @DisplayName: RotaryEncoder type for right encoder
     // @Description: What type of RotaryEncoder sensor is connected
     // @Values: 0:None,1:Quadrature,10:SITL Quadrature
     // @User: Standard
     // @RebootRequired: True
     AP_GROUPINFO("RT",   5, AP_RotaryEncoder, _type[1], 0),
 
-    // @Param: 2_CPR
-    // @DisplayName: RotaryEncoder 2 counts per revolution
-    // @Description: RotaryEncoder 2 counts per full revolution of the rotary encoder
+    // @Param: RC
+    // @DisplayName: RotaryEncoder counts per revolution for right encoder
+    // @Description: RotaryEncoder counts per full revolution of the rotary encoder
     // @Increment: 1
     // @User: Standard
     // @RebootRequired: True
     AP_GROUPINFO("RC",   6, AP_RotaryEncoder, _counts_per_revolution[1], ROTARY_ENCODER_CPR_DEFAULT),
 
-    // @Param: 2_POS_X
-    // @DisplayName: RotaryEncoder 2's X position offset
+    // @Param: R0
+    // @DisplayName: RotaryEncoder's X position offset for right encoder
     // @Description: X position of the center of the second rotary encoder in body frame. Positive X is forward of the origin.
-    // @Units: rad
-    // @Range: -3.14 3.14
-    // @Increment: 0.01
+    // @Units: d
+    // @Range: -180 180
+    // @Increment: 0.1
     // @User: Standard
     AP_GROUPINFO("R0",  7, AP_RotaryEncoder, pos_offset_zero[1], 0.0f),
 
-    // @Param: 2_PINA
-    // @DisplayName: Second Encoder Input Pin A
-    // @Description: Second Encoder Input Pin A
+    // @Param: RA
+    // @DisplayName: Input Pin A for right encoder 
+    // @Description: Input Pin A
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
     // @RebootRequired: True
     AP_GROUPINFO("RA",   8, AP_RotaryEncoder, _pina[1], -1),
 
-    // @Param: 2_PINB
-    // @DisplayName: Second Encoder Input Pin B
-    // @Description: Second Encoder Input Pin B
+    // @Param: RB
+    // @DisplayName: Input Pin B for right encoder
+    // @Description: Input Pin B
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
     // @RebootRequired: True

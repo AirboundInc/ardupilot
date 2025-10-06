@@ -282,7 +282,13 @@ const AP_Param::GroupInfo QuadPlane::var_info[] = {
     // @Bitmask: 22: Scale FF by the ratio of VTOL/plane angle P gains in VTOL modes rather than reducing VTOL angle P based on airspeed.
     AP_GROUPINFO("OPTIONS", 58, QuadPlane, options, 0),
 
-    AP_SUBGROUPEXTENSION("",59, QuadPlane, var_info2),
+#if HAL_QUADPLANE_ENABLED
+    // @Group: RE_
+    // @Path: ../libraries/AP_RotaryEncoder/AP_RotaryEncoder.cpp
+    AP_SUBGROUPINFO(rotary_encoder, "RE_", 59, QuadPlane, AP_RotaryEncoder), 
+#endif
+
+    AP_SUBGROUPEXTENSION("",60, QuadPlane, var_info2),
 
     // 60 is used above for VELZ_MAX_DN
     // 61 was used above for TAILSIT_ANG_VT
@@ -546,12 +552,6 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Increment: 0.1
     // @User: Advanced
     AP_GROUPINFO("LND_FRZ_TIM", 39, QuadPlane, q_land_freeze_time, 7.0f),
-    
-#if HAL_QUADPLANE_ENABLED
-    // @Group: RENC_
-    // @Path: ../libraries/AP_RotaryEncoder/AP_RotaryEncoder.cpp
-    AP_SUBGROUPINFO(rotary_encoder, "RE_", 40, QuadPlane, AP_RotaryEncoder), 
-#endif
 
     AP_GROUPEND
 };
