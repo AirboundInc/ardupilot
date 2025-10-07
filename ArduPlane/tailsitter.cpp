@@ -327,6 +327,7 @@ void Tailsitter::setup()
     }
     quadplane.transition = transition;
 
+    first_loop = true;
     setup_complete = true;
 }
 
@@ -367,15 +368,12 @@ void Tailsitter::output(void)
         return;
     }
 
-<<<<<<< HEAD
-    static uint32_t last_log_ms = 0;
-    uint32_t ab = AP_HAL::millis();
-
-    if (ab - last_log_ms >= 10000) {
-        last_log_ms = ab;
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, ">>>TV_L and TV_R : %f %f", get_left_encoder_angle(), get_right_encoder_angle());
+    if(first_loop) {
+        quadplane.rotary_encoder.set_position_offset(0, quadplane.rotary_encoder.get_angular_position(0,true));
+        quadplane.rotary_encoder.set_position_offset(1, quadplane.rotary_encoder.get_angular_position(1,true));
+        first_loop = false;
     }
-=======
+
     // Call rotary_encoder update to refresh encoder values
     quadplane.rotary_encoder.update();
 

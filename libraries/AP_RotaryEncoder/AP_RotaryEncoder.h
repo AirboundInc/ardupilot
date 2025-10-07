@@ -75,6 +75,9 @@ public:
     // get the system time (in milliseconds) of the last update
     uint32_t get_last_reading_ms(uint8_t instance) const;
 
+    // set zero value in rotary encoder
+    void set_position_offset(uint8_t instance, float position);
+
     static const struct AP_Param::GroupInfo var_info[];
 
 protected:

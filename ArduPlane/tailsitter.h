@@ -148,6 +148,7 @@ private:
     } log_data;
     
     bool setup_complete;
+    bool first_loop;
 
     // true when flying a tilt-vectored tailsitter
     bool _is_vectored;

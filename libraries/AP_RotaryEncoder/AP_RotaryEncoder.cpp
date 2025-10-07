@@ -45,7 +45,6 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Range: -180 180
     // @Increment: 0.1
     // @User: Standard
-
     AP_GROUPINFO("L0",     2, AP_RotaryEncoder, pos_offset_zero[0], 0.0f),
 
     // @Param: LA
@@ -233,7 +232,7 @@ float AP_RotaryEncoder::get_angular_position(uint8_t instance, bool degrees) con
     }
 
     float position = M_2_PI * state[instance].count / _counts_per_revolution[instance];
-    return degrees ? position * (180.0f / M_PI) : position;
+    return degrees ? position * (180.0f / M_PI) - pos_offset_zero[instance] : position - pos_offset_zero[instance] * M_2_PI / _counts_per_revolution[instance];
 }
 
 // get the system time (in milliseconds) of the last update
@@ -244,6 +243,10 @@ uint32_t AP_RotaryEncoder::get_last_reading_ms(uint8_t instance) const
         return 0;
     }
     return state[instance].time;
+}
+
+void AP_RotaryEncoder::set_position_offset(uint8_t instance, float position) {
+    pos_offset_zero[instance].set(position);
 }
 
 // singleton instance
