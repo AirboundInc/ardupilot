@@ -25,7 +25,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Param: LT
     // @DisplayName: RotaryEncoder type for left encoder
     // @Description: What type of RotaryEncoder is connected
-    // @Values: 0:None,1:Quadrature,10:SITL Quadrature
+    // @Values: 0:None,1:Quadrature
     // @User: Standard
     // @RebootRequired: True
     AP_GROUPINFO_FLAGS("LT", 0, AP_RotaryEncoder, _type[0], 0, AP_PARAM_FLAG_ENABLE),
@@ -41,7 +41,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Param: L0
     // @DisplayName: RotaryEncoder position offset for left encoder
     // @Description: Add a positional offset for the rotary encoder
-    // @Units: d
+    // @Units: deg
     // @Range: -180 180
     // @Increment: 0.1
     // @User: Standard
@@ -68,7 +68,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Param: RT
     // @DisplayName: RotaryEncoder type for right encoder
     // @Description: What type of RotaryEncoder sensor is connected
-    // @Values: 0:None,1:Quadrature,10:SITL Quadrature
+    // @Values: 0:None,1:Quadrature
     // @User: Standard
     // @RebootRequired: True
     AP_GROUPINFO("RT",   5, AP_RotaryEncoder, _type[1], 0),
@@ -84,7 +84,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Param: R0
     // @DisplayName: RotaryEncoder's X position offset for right encoder
     // @Description: X position of the center of the second rotary encoder in body frame. Positive X is forward of the origin.
-    // @Units: d
+    // @Units: deg
     // @Range: -180 180
     // @Increment: 0.1
     // @User: Standard
