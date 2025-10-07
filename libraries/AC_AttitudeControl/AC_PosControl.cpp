@@ -944,6 +944,81 @@ bool AC_PosControl::is_active_z() const
 ///     Position and velocity errors are converted to velocity and acceleration targets using PID objects
 ///     Desired velocity and accelerations are added to these corrections as they are calculated
 ///     Kinematically consistent target position and desired velocity and accelerations should be provided before calling this function
+// void AC_PosControl::update_z_controller()
+// {
+//     // check for ekf z-axis position reset
+//     handle_ekf_z_reset();
+
+//     // Check for z_controller time out
+//     if (!is_active_z()) {
+//         init_z_controller();
+//         if (has_good_timing()) {
+//             // call internal error because initialisation has not been done
+//             INTERNAL_ERROR(AP_InternalError::error_t::flow_of_control);
+//         }
+//     }
+//     _last_update_z_ticks = AP::scheduler().ticks32();
+
+//     // calculate the target velocity correction
+//     float pos_target_zf = _pos_target.z;
+
+//     _vel_target.z = _p_pos_z.update_all(pos_target_zf, _inav.get_position_z_up_cm());
+//     _vel_target.z *= AP::ahrs().getControlScaleZ();
+
+//     _pos_target.z = pos_target_zf;
+
+//     // add feed forward component
+//     _vel_target.z += _vel_desired.z;
+
+//     // Velocity Controller
+
+//     const float curr_vel_z = _inav.get_velocity_z_up_cms();
+//     _accel_target.z = _pid_vel_z.update_all(_vel_target.z, curr_vel_z, _dt, _motors.limit.throttle_lower, _motors.limit.throttle_upper);
+//     _accel_target.z *= AP::ahrs().getControlScaleZ();
+
+//     // add feed forward component
+//     _accel_target.z += _accel_desired.z;
+
+//     // Acceleration Controller
+
+//     // Calculate vertical acceleration
+//     const float z_accel_meas = get_z_accel_cmss();
+
+//     // ensure imax is always large enough to overpower hover throttle
+//     if (_motors.get_throttle_hover() * 1000.0f > _pid_accel_z.imax()) {
+//         _pid_accel_z.imax(_motors.get_throttle_hover() * 1000.0f);
+//     }
+//     float thr_out;
+//     if (_vibe_comp_enabled) {
+//         thr_out = get_throttle_with_vibration_override();
+//     } else {
+//         thr_out = _pid_accel_z.update_all(_accel_target.z, z_accel_meas, _dt, (_motors.limit.throttle_lower || _motors.limit.throttle_upper)) * 0.001f;
+//         thr_out += _pid_accel_z.get_ff() * 0.001f;
+//     }
+//     thr_out += _motors.get_throttle_hover();
+
+//     // Actuator commands
+
+//     // send throttle to attitude controller with angle boost
+//     _attitude_control.set_throttle_out(thr_out, true, POSCONTROL_THROTTLE_CUTOFF_FREQ_HZ);
+
+//     // Check for vertical controller health
+
+//     // _speed_down_cms is checked to be non-zero when set
+//     float error_ratio = _pid_vel_z.get_error() / _vel_max_down_cms;
+//     _vel_z_control_ratio += _dt * 0.1f * (0.5 - error_ratio);
+//     _vel_z_control_ratio = constrain_float(_vel_z_control_ratio, 0.0f, 2.0f);
+
+//     // set vertical component of the limit vector
+//     if (_motors.limit.throttle_upper) {
+//         _limit_vector.z = 1.0f;
+//     } else if (_motors.limit.throttle_lower) {
+//         _limit_vector.z = -1.0f;
+//     } else {
+//         _limit_vector.z = 0.0f;
+//     }
+// }
+
 void AC_PosControl::update_z_controller()
 {
     // check for ekf z-axis position reset
@@ -953,7 +1028,6 @@ void AC_PosControl::update_z_controller()
     if (!is_active_z()) {
         init_z_controller();
         if (has_good_timing()) {
-            // call internal error because initialisation has not been done
             INTERNAL_ERROR(AP_InternalError::error_t::flow_of_control);
         }
     }
@@ -961,17 +1035,14 @@ void AC_PosControl::update_z_controller()
 
     // calculate the target velocity correction
     float pos_target_zf = _pos_target.z;
-
     _vel_target.z = _p_pos_z.update_all(pos_target_zf, _inav.get_position_z_up_cm());
     _vel_target.z *= AP::ahrs().getControlScaleZ();
-
     _pos_target.z = pos_target_zf;
 
     // add feed forward component
     _vel_target.z += _vel_desired.z;
 
     // Velocity Controller
-
     const float curr_vel_z = _inav.get_velocity_z_up_cms();
     _accel_target.z = _pid_vel_z.update_all(_vel_target.z, curr_vel_z, _dt, _motors.limit.throttle_lower, _motors.limit.throttle_upper);
     _accel_target.z *= AP::ahrs().getControlScaleZ();
@@ -980,36 +1051,64 @@ void AC_PosControl::update_z_controller()
     _accel_target.z += _accel_desired.z;
 
     // Acceleration Controller
-
-    // Calculate vertical acceleration
     const float z_accel_meas = get_z_accel_cmss();
 
-    // ensure imax is always large enough to overpower hover throttle
     if (_motors.get_throttle_hover() * 1000.0f > _pid_accel_z.imax()) {
         _pid_accel_z.imax(_motors.get_throttle_hover() * 1000.0f);
     }
+
     float thr_out;
     if (_vibe_comp_enabled) {
         thr_out = get_throttle_with_vibration_override();
     } else {
-        thr_out = _pid_accel_z.update_all(_accel_target.z, z_accel_meas, _dt, (_motors.limit.throttle_lower || _motors.limit.throttle_upper)) * 0.001f;
+        thr_out = _pid_accel_z.update_all(_accel_target.z, z_accel_meas, _dt,
+                                          (_motors.limit.throttle_lower || _motors.limit.throttle_upper)) * 0.001f;
         thr_out += _pid_accel_z.get_ff() * 0.001f;
     }
-    thr_out += _motors.get_throttle_hover();
 
+    // thr_out += _motors.get_throttle_hover();
+
+    // ----------------------------
+    // Add acceleration-based thrust control logic (from _accelerationControl)
+    // ----------------------------
+
+    // Create a 3D acceleration setpoint vector (assuming lateral components from pos/vel controllers)
+    Vector3f acc_sp = Vector3f(_accel_target.x, _accel_target.y, _accel_target.z + GRAVITY_MSS);
+
+    // Compute body Z direction
+    Vector3f body_z = Vector3f(-acc_sp.x, -acc_sp.y, GRAVITY_MSS).normalized();
+
+    // Limit tilt (you can reuse existing attitude limit)
+    // ControlMath::limitTilt(body_z, Vector3f(0, 0, 1), radians(35.0f)); // example tilt limit
+
+    // Scale thrust relative to hover thrust
+    float collective_thrust = acc_sp.z * (_motors.get_throttle_hover() / GRAVITY_MSS) - _motors.get_throttle_hover();
+
+    // Project thrust to vertical axis
+    collective_thrust /= (Vector3f(0, 0, 1).dot(body_z));
+    collective_thrust = constrain_float(collective_thrust, 0.0f, 1.0f);
+
+    // Final thrust vector
+    Vector3f thr_sp = body_z * collective_thrust;
+
+    // ----------------------------
     // Actuator commands
-
-    // send throttle to attitude controller with angle boost
+    // ----------------------------
+    thr_out += thr_sp.z;
+    // Option 1: use scalar throttle as before (keeps full backward compatibility)
     _attitude_control.set_throttle_out(thr_out, true, POSCONTROL_THROTTLE_CUTOFF_FREQ_HZ);
 
-    // Check for vertical controller health
+    // Option 2 (optional future extension): feed vector thrust to attitude control if supported
+    // _attitude_control.set_thrust_vector(thr_sp);
 
-    // _speed_down_cms is checked to be non-zero when set
+    // ----------------------------
+    // Controller health checks
+    // ----------------------------
+
     float error_ratio = _pid_vel_z.get_error() / _vel_max_down_cms;
     _vel_z_control_ratio += _dt * 0.1f * (0.5 - error_ratio);
     _vel_z_control_ratio = constrain_float(_vel_z_control_ratio, 0.0f, 2.0f);
 
-    // set vertical component of the limit vector
     if (_motors.limit.throttle_upper) {
         _limit_vector.z = 1.0f;
     } else if (_motors.limit.throttle_lower) {
