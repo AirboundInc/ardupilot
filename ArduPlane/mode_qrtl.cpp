@@ -111,9 +111,11 @@ void ModeQRTL::run()
             }
             // weathervane with no pilot input
             quadplane.disable_yaw_rate_time_constant();
-            attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
-                                                                          plane.nav_pitch_cd,
-                                                                          quadplane.get_weathervane_yaw_rate_cds());
+            // attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
+            //                                                               plane.nav_pitch_cd,
+            //                                                               quadplane.get_weathervane_yaw_rate_cds());
+            attitude_control->input_euler_rate_yaw_euler_angle_pitch_bf_roll(false,plane.nav_roll_cd, plane.nav_pitch_cd,
+                                                                     quadplane.get_weathervane_yaw_rate_cds());
 
             // climb at full WP nav speed
             quadplane.set_climb_rate_cms(quadplane.wp_nav->get_default_speed_up());

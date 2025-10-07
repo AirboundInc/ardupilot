@@ -991,6 +991,9 @@ void QuadPlane::multicopter_attitude_rate_update(float yaw_rate_cds)
             attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
                                                                           plane.nav_pitch_cd,
                                                                           yaw_rate_cds);
+            // QHOVER and QSTABILIZE modes.
+            // attitude_control->input_euler_rate_yaw_euler_angle_pitch_bf_roll(false, plane.nav_roll_cd, plane.nav_pitch_cd,
+            //                                                          yaw_rate_cds);
         }
     } else {
         // use the fixed wing desired rates
@@ -2807,9 +2810,13 @@ void QuadPlane::vtol_position_controller(void)
 
         // call attitude controller
         set_pilot_yaw_rate_time_constant();
-        attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
-                                                                      plane.nav_pitch_cd,
-                                                                      get_pilot_input_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
+        // change in QRTL descend
+        // attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
+        //                                                               plane.nav_pitch_cd,
+        //                                                               get_pilot_input_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
+        attitude_control->input_euler_rate_yaw_euler_angle_pitch_bf_roll(false,plane.nav_roll_cd, plane.nav_pitch_cd,
+                                                                     get_pilot_input_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
+
         break;
     }
 
@@ -2849,9 +2856,12 @@ void QuadPlane::vtol_position_controller(void)
 
         // call attitude controller
         set_pilot_yaw_rate_time_constant();
-        attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
-                                                                      plane.nav_pitch_cd,
-                                                                      get_pilot_input_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
+        // QLAND final descend change
+        // attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
+        //                                                               plane.nav_pitch_cd,
+        //                                                               get_pilot_input_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
+        attitude_control->input_euler_rate_yaw_euler_angle_pitch_bf_roll(false,plane.nav_roll_cd, plane.nav_pitch_cd,
+                                                                     get_pilot_input_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
         break;
 
     case QPOS_LAND_COMPLETE:
