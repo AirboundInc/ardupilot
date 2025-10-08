@@ -78,6 +78,9 @@ public:
     // set zero value in rotary encoder
     void set_position_offset(uint8_t instance, float position);
 
+    // get time in milliseconds after arming to wait before setting the zero position of the rotary encoder
+    int32_t get_init_time_ms() const; 
+    
     static const struct AP_Param::GroupInfo var_info[];
 
 protected:
@@ -86,6 +89,7 @@ protected:
     AP_Int16 _counts_per_revolution[ROTARY_ENCODER_MAX_INSTANCES];
     AP_Int8  _pina[ROTARY_ENCODER_MAX_INSTANCES];
     AP_Int8  _pinb[ROTARY_ENCODER_MAX_INSTANCES];
+    AP_Int32 init_time_ms;
     float pos_offset_zero[ROTARY_ENCODER_MAX_INSTANCES];
 
     RotaryEncoder_State state[ROTARY_ENCODER_MAX_INSTANCES];

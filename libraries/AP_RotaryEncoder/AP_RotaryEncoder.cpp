@@ -107,6 +107,14 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     AP_GROUPINFO("RB",   7, AP_RotaryEncoder, _pinb[1], -1),
 #endif
 
+    // @Param: INIT_TIME
+    // @DisplayName: time before setting the zero position
+    // @Description: Time in milliseconds after arming to wait before setting the zero position of the rotary encoder
+    // @Units: ms
+    // @Range: 0 60000
+    // @User: Standard
+    AP_GROUPINFO("TIME", 8, AP_RotaryEncoder, init_time_ms, 5000),
+
     AP_GROUPEND
 };
 
@@ -248,6 +256,10 @@ uint32_t AP_RotaryEncoder::get_last_reading_ms(uint8_t instance) const
 
 void AP_RotaryEncoder::set_position_offset(uint8_t instance, float position) {
     pos_offset_zero[instance] = position;
+}
+
+int32_t AP_RotaryEncoder::get_init_time_ms() const { 
+    return (uint32_t)init_time_ms.get(); 
 }
 
 // singleton instance

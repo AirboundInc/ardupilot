@@ -148,7 +148,7 @@ private:
     } log_data;
     
     bool setup_complete;
-    bool first_loop;
+    bool rotary_encoder_zero;
 
     // true when flying a tilt-vectored tailsitter
     bool _is_vectored;

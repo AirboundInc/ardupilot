@@ -327,7 +327,7 @@ void Tailsitter::setup()
     }
     quadplane.transition = transition;
 
-    first_loop = true;
+    rotary_encoder_zero = true;
     setup_complete = true;
 }
 
@@ -368,10 +368,11 @@ void Tailsitter::output(void)
         return;
     }
 
-    if(first_loop) {
+    if(rotary_encoder_zero && (AP_HAL::millis() > quadplane.rotary_encoder.get_init_time_ms())) {
         quadplane.rotary_encoder.set_position_offset(0, quadplane.rotary_encoder.get_angular_position(0,true));
         quadplane.rotary_encoder.set_position_offset(1, quadplane.rotary_encoder.get_angular_position(1,true));
-        first_loop = false;
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "initial offset L:%f R:%f", quadplane.rotary_encoder.get_angular_position(0, true), quadplane.rotary_encoder.get_angular_position(1, true));
+        rotary_encoder_zero = false;
     }
 
     // Call rotary_encoder update to refresh encoder values
@@ -382,7 +383,7 @@ void Tailsitter::output(void)
         static uint32_t last_time = 0;
         if (AP_HAL::millis() - last_time > 1000) {
             last_time = AP_HAL::millis();
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Thrust L:%f R:%f", quadplane.rotary_encoder.get_angular_position(0, true), quadplane.rotary_encoder.get_angular_position(1, true));
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Thrust Angles L:%f R:%f", quadplane.rotary_encoder.get_angular_position(0, true), quadplane.rotary_encoder.get_angular_position(1, true));
         }
     }
     float tilt_left = 0.0f;
