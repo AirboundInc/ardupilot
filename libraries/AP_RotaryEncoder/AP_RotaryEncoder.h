@@ -79,8 +79,8 @@ public:
     void set_position_offset(uint8_t instance, float position);
 
     // get time in milliseconds after arming to wait before setting the zero position of the rotary encoder
-    int32_t get_init_time_ms() const; 
-    
+    uint32_t get_init_time_ms() const; 
+
     static const struct AP_Param::GroupInfo var_info[];
 
 protected:

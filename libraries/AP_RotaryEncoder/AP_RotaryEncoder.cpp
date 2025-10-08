@@ -258,7 +258,7 @@ void AP_RotaryEncoder::set_position_offset(uint8_t instance, float position) {
     pos_offset_zero[instance] = position;
 }
 
-int32_t AP_RotaryEncoder::get_init_time_ms() const { 
+uint32_t AP_RotaryEncoder::get_init_time_ms() const { 
     return (uint32_t)init_time_ms.get(); 
 }
 
