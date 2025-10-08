@@ -53,7 +53,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
     // @RebootRequired: True
-    AP_GROUPINFO("LA",   3, AP_RotaryEncoder, _pina[0], -1),
+    AP_GROUPINFO("LA",   2, AP_RotaryEncoder, _pina[0], -1),
 
     // @Param: LB
     // @DisplayName: Input Pin B for left encoder
@@ -61,7 +61,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
     // @RebootRequired: True
-    AP_GROUPINFO("LB",   4, AP_RotaryEncoder, _pinb[0], -1),
+    AP_GROUPINFO("LB",   3, AP_RotaryEncoder, _pinb[0], -1),
 
 #if ROTARY_ENCODER_MAX_INSTANCES > 1
     // @Param: RT
@@ -70,7 +70,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Values: 0:None,1:Quadrature
     // @User: Standard
     // @RebootRequired: True
-    AP_GROUPINFO("RT",   5, AP_RotaryEncoder, _type[1], 0),
+    AP_GROUPINFO("RT",   4, AP_RotaryEncoder, _type[1], 0),
 
     // @Param: RC
     // @DisplayName: RotaryEncoder counts per revolution for right encoder
@@ -88,6 +88,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Increment: 0.1
     // @User: Standard
     AP_GROUPINFO("R0",  7, AP_RotaryEncoder, pos_offset_zero[1], 0.0f),
+    AP_GROUPINFO("RC",   5, AP_RotaryEncoder, _counts_per_revolution[1], ROTARY_ENCODER_CPR_DEFAULT),
 
     // @Param: RA
     // @DisplayName: Input Pin A for right encoder 
@@ -95,7 +96,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
     // @RebootRequired: True
-    AP_GROUPINFO("RA",   8, AP_RotaryEncoder, _pina[1], -1),
+    AP_GROUPINFO("RA",   6, AP_RotaryEncoder, _pina[1], -1),
 
     // @Param: RB
     // @DisplayName: Input Pin B for right encoder
@@ -103,7 +104,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
     // @RebootRequired: True
-    AP_GROUPINFO("RB",   9, AP_RotaryEncoder, _pinb[1], -1),
+    AP_GROUPINFO("RB",   7, AP_RotaryEncoder, _pinb[1], -1),
 #endif
 
     AP_GROUPEND
@@ -246,7 +247,7 @@ uint32_t AP_RotaryEncoder::get_last_reading_ms(uint8_t instance) const
 }
 
 void AP_RotaryEncoder::set_position_offset(uint8_t instance, float position) {
-    pos_offset_zero[instance].set(position);
+    pos_offset_zero[instance] = position;
 }
 
 // singleton instance

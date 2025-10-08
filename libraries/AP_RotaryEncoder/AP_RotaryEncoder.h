@@ -86,7 +86,7 @@ protected:
     AP_Int16 _counts_per_revolution[ROTARY_ENCODER_MAX_INSTANCES];
     AP_Int8  _pina[ROTARY_ENCODER_MAX_INSTANCES];
     AP_Int8  _pinb[ROTARY_ENCODER_MAX_INSTANCES];
-    AP_Float pos_offset_zero[ROTARY_ENCODER_MAX_INSTANCES];
+    float pos_offset_zero[ROTARY_ENCODER_MAX_INSTANCES];
 
     RotaryEncoder_State state[ROTARY_ENCODER_MAX_INSTANCES];
     AP_RotaryEncoder_Backend *drivers[ROTARY_ENCODER_MAX_INSTANCES];
