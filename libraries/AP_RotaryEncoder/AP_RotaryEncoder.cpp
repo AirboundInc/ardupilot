@@ -54,6 +54,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @User: Standard
     // @RebootRequired: True
     AP_GROUPINFO("LA",   2, AP_RotaryEncoder, _pina[0], -1),
+    AP_GROUPINFO("LA",   2, AP_RotaryEncoder, _pina[0], -1),
 
     // @Param: LB
     // @DisplayName: Input Pin B for left encoder
@@ -70,6 +71,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Values: 0:None,1:Quadrature
     // @User: Standard
     // @RebootRequired: True
+    AP_GROUPINFO("RT",   4, AP_RotaryEncoder, _type[1], 0),
     AP_GROUPINFO("RT",   4, AP_RotaryEncoder, _type[1], 0),
 
     // @Param: RC
@@ -97,6 +99,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @User: Standard
     // @RebootRequired: True
     AP_GROUPINFO("RA",   6, AP_RotaryEncoder, _pina[1], -1),
+    AP_GROUPINFO("RA",   6, AP_RotaryEncoder, _pina[1], -1),
 
     // @Param: RB
     // @DisplayName: Input Pin B for right encoder
@@ -104,6 +107,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
     // @User: Standard
     // @RebootRequired: True
+    AP_GROUPINFO("RB",   7, AP_RotaryEncoder, _pinb[1], -1),
     AP_GROUPINFO("RB",   7, AP_RotaryEncoder, _pinb[1], -1),
 #endif
 
@@ -255,15 +259,7 @@ uint32_t AP_RotaryEncoder::get_last_reading_ms(uint8_t instance) const
 }
 
 void AP_RotaryEncoder::set_position_offset(uint8_t instance, float position) {
-<<<<<<< HEAD
     pos_offset_zero[instance] = position;
-}
-
-uint32_t AP_RotaryEncoder::get_init_time_ms() const { 
-    return (uint32_t)init_time_ms.get(); 
-=======
-    pos_offset_zero[instance].set(position);
->>>>>>> a8ee3dbd0f (Modify parameter comments and test build)
 }
 
 // singleton instance
