@@ -552,6 +552,12 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Increment: 0.1
     // @User: Advanced
     AP_GROUPINFO("LND_FRZ_TIM", 39, QuadPlane, q_land_freeze_time, 7.0f),
+    
+#if HAL_QUADPLANE_ENABLED
+    // @Group: RE_
+    // @Path: ../libraries/AP_RotaryEncoder/AP_RotaryEncoder.cpp
+    AP_SUBGROUPINFO(rotary_encoder, "RE_", 40, QuadPlane, AP_RotaryEncoder), 
+#endif
 
     AP_GROUPEND
 };
