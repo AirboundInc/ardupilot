@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 #include "Plane.h"
 
 #if HAL_QUADPLANE_ENABLED
