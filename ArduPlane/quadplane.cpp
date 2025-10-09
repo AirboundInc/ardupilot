@@ -878,6 +878,7 @@ bool QuadPlane::setup(void)
     gcs().send_text(MAV_SEVERITY_INFO, "QuadPlane initialised, %s", frame_and_type_string);
     initialised = true;
     return true;
+
 }
 
 /*
