@@ -69,7 +69,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     // @Increment: 1
     // @User: Standard
     // @RebootRequired: True
-    AP_GROUPINFO("RC",   6, AP_RotaryEncoder, _counts_per_revolution[1], ROTARY_ENCODER_CPR_DEFAULT),
+    AP_GROUPINFO("RC",   5, AP_RotaryEncoder, _counts_per_revolution[1], ROTARY_ENCODER_CPR_DEFAULT),
 
     // @Param: RA
     // @DisplayName: Input Pin A for right encoder 
@@ -88,7 +88,7 @@ const struct AP_Param::GroupInfo AP_RotaryEncoder::var_info[] = {
     AP_GROUPINFO("RB",   7, AP_RotaryEncoder, _pinb[1], -1),
 #endif
 
-    // @Param: INIT_TIME
+    // @Param: TIME
     // @DisplayName: time before setting the zero position
     // @Description: Time in milliseconds after arming to wait before setting the zero position of the rotary encoder
     // @Units: ms
