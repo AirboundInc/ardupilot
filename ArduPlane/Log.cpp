@@ -433,7 +433,7 @@ const struct LogStructure Plane::log_structure[] = {
 // @Field: Tmin: minimum output throttle caculated from disk thoery gain scale with Q_TAILSIT_MIN_VO
 // #if HAL_QUADPLANE_ENABLED
     { LOG_TSIT_MSG, sizeof(Tailsitter::log_tailsitter),
-      "TSIT", "Qfffff",  "TimeUS,Ts,Ss,Tmin,TV_L,TV_R", "s---dd", "F-----" , true },
+      "TSIT", "Qfff",  "TimeUS,Ts,Ss,Tmin", "s---", "F---" , true },
 // #endif
 
 // @LoggerMessage: RENC
