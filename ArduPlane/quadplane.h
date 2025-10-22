@@ -21,6 +21,7 @@
 #include <AP_Logger/LogStructure.h>
 #include <AP_Mission/AP_Mission.h>
 #include <AP_Proximity/AP_Proximity.h>
+#include <AP_RotaryEncoder/AP_RotaryEncoder.h>
 #include "qautotune.h"
 #include "defines.h"
 #include "tailsitter.h"
@@ -567,6 +568,9 @@ private:
 
     // time when motors were last active
     uint32_t last_motors_active_ms;
+
+    // rotary encoder input for thrust vectoring
+    AP_RotaryEncoder rotary_encoder;
 
     // time when we last ran the vertical accel controller
     uint32_t last_pidz_active_ms;

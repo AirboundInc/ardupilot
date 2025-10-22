@@ -110,6 +110,7 @@ public:
     AP_Float VTOL_pitch_scale;
     AP_Float VTOL_yaw_scale;
     AP_Float disk_loading_min_outflow;
+    AP_Int8 log_gcs_rotary_encoder;
 
     AP_MotorsTailsitter* tailsitter_motors;
 
@@ -133,6 +134,7 @@ private:
 
 
     bool setup_complete;
+    bool rotary_encoder_zero;
 
     // true when flying a tilt-vectored tailsitter
     bool _is_vectored;

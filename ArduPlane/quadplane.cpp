@@ -554,6 +554,12 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Increment: 1
     // @User: Standard
     AP_GROUPINFO("APPROACH_DIST", 39, QuadPlane, approach_distance, 0),
+
+#if HAL_QUADPLANE_ENABLED
+    // @Group: RE_
+    // @Path: ../libraries/AP_RotaryEncoder/AP_RotaryEncoder.cpp
+    AP_SUBGROUPINFO(rotary_encoder, "RE_", 40, QuadPlane, AP_RotaryEncoder), 
+#endif
     
     AP_GROUPEND
 };
@@ -835,7 +841,8 @@ bool QuadPlane::setup(void)
     thrust_type = ThrustType::SLT;
 
     tailsitter.setup();
-
+    rotary_encoder.init();
+    
     tiltrotor.setup();
 
     if (!transition) {
