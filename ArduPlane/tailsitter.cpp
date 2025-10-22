@@ -165,6 +165,13 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     // @Range: 0 15
     AP_GROUPINFO("MIN_VO", 22, Tailsitter, disk_loading_min_outflow, 0),
 
+    // @Param: RE_DB
+    // @DisplayName: Tailsitter enable rotary encoder realtime gcs statements
+    // @Description: Make this true to get rotary encoder angles displayed on the GCS logs for both the left and right encoders on the thrust vector.
+    // @Range: 0 1
+    AP_GROUPINFO("RE_DB", 23, Tailsitter, log_gcs_rotary_encoder, 0),
+
+
     AP_GROUPEND
 };
 
@@ -249,6 +256,7 @@ void Tailsitter::setup()
     }
     quadplane.transition = transition;
 
+    rotary_encoder_zero = true;
     setup_complete = true;
 }
 
@@ -293,6 +301,25 @@ void Tailsitter::output(void)
         SRV_Channels::get_emergency_stop()) {
         // Ensure motors stop on disarm
         motors->output_min();
+    }
+
+    if(rotary_encoder_zero && (AP_HAL::millis() > quadplane.rotary_encoder.get_init_time_ms())) {
+        quadplane.rotary_encoder.set_position_offset(0, quadplane.rotary_encoder.get_angular_position(0,true));
+        quadplane.rotary_encoder.set_position_offset(1, quadplane.rotary_encoder.get_angular_position(1,true));
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "initial offset L:%f R:%f", quadplane.rotary_encoder.get_angular_position(0, true), quadplane.rotary_encoder.get_angular_position(1, true));
+        rotary_encoder_zero = false;
+    }
+
+    // Call rotary_encoder update to refresh encoder values
+    quadplane.rotary_encoder.update();
+
+    // Log on GCS in realtime if demanded by the user
+    if(log_gcs_rotary_encoder) {
+        static uint32_t last_time = 0;
+        if (AP_HAL::millis() - last_time > 1000) {
+            last_time = AP_HAL::millis();
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Thrust Angles L:%f R:%f", quadplane.rotary_encoder.get_angular_position(0, true), quadplane.rotary_encoder.get_angular_position(1, true));
+        }
     }
 
     float tilt_left = 0.0f;
@@ -807,6 +834,8 @@ void Tailsitter::write_log()
         min_throttle        : log_data.min_throttle,
     };
     plane.logger.WriteBlock(&pkt, sizeof(pkt));
+
+    quadplane.rotary_encoder.Log_Write();
 }
 #endif  // HAL_LOGGING_ENABLED
 
