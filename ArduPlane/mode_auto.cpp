@@ -79,7 +79,7 @@ void ModeAuto::update()
     }
 
     if (plane.quadplane.tailsitter.enabled() && 
-        plane.quadplane.tailsitter.transition->recently_completed_fw_transition()) {
+        plane.quadplane->transition->recently_completed_fw_transition()) {
         // Add safe waypoint handling to prevent stalling post fixed wing transition of tailsitter
         navigate_to_first_waypoint_after_transition();
         return;
@@ -190,9 +190,10 @@ void ModeAuto::run()
 
 void ModeAuto::navigate_to_first_waypoint_after_transition()
 {
-    
+    if (!tailsitter.enabled()) return;
+
     // If we just completed a forward transition
-    if (plane.quadplane.tailsitter.transition->transition_fw_complete()) {
+    if (plane.quadplane->transition->transition_fw_complete()) {
         const float min_dist_m = 100.0f; // Minimum distance to fly straight ahead
         const float max_turn_angle_deg = 45.0f; // Maximum heading change allowed
         
