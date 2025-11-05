@@ -246,6 +246,8 @@ private:
         uint32_t time_start_ms;
     } nav_delay;
 
+    void navigate_to_first_waypoint_after_transition();
+
 };
 
 

@@ -77,6 +77,13 @@ void ModeAuto::update()
         plane.quadplane.control_auto();
         return;
     }
+
+    if (plane.quadplane.tailsitter.enabled() && 
+        plane.quadplane.tailsitter.transition->recently_completed_fw_transition()) {
+        // Add safe waypoint handling to prevent stalling post fixed wing transition of tailsitter
+        navigate_to_first_waypoint_after_transition();
+        return;
+    }
 #endif
 
     if (nav_cmd_id == MAV_CMD_NAV_TAKEOFF ||
@@ -178,5 +185,33 @@ void ModeAuto::run()
         // Normal flight, run base class
         Mode::run();
 
+    }
+}
+
+void ModeAuto::navigate_to_first_waypoint_after_transition()
+{
+    
+    // If we just completed a forward transition
+    if (plane.quadplane.tailsitter.transition->transition_fw_complete()) {
+        const float min_dist_m = 100.0f; // Minimum distance to fly straight ahead
+        const float max_turn_angle_deg = 45.0f; // Maximum heading change allowed
+        
+        // Get current position and next waypoint
+        Location current_loc = plane.current_loc;
+        Location next_wp = plane.next_WP_loc;
+        
+        // Calculate heading difference
+        float heading_diff_deg = fabsf(degrees(current_loc.get_bearing_to(next_wp) - plane.ahrs.yaw_sensor*0.01f));
+        if (heading_diff_deg > 180.0f) {
+            heading_diff_deg = 360.0f - heading_diff_deg;
+        }
+        
+        // If turn angle is too sharp, create an intermediate waypoint
+        if (heading_diff_deg > max_turn_angle_deg) {
+            Location intermediate_wp = current_loc;
+            intermediate_wp.offset_bearing(plane.ahrs.yaw_sensor*0.01f, min_dist_m);
+            next_WP_loc = intermediate_wp;
+            next_WP_crosstrack = false;
+        }
     }
 }
