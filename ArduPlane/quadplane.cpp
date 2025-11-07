@@ -555,6 +555,15 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Standard
     AP_GROUPINFO("APPROACH_DIST", 39, QuadPlane, approach_distance, 0),
     
+     // @Param: LND_FRZ_TIM
+    // @DisplayName: Q mode landing freeze time before final descent
+    // @Description: Time in seconds to hold position at pos2 before starting final descent
+    // @Units: s
+    // @Range: 0.0 15.0
+    // @Increment: 0.1
+    // @User: Advanced
+    AP_GROUPINFO("LND_FRZ_TIM", 40, QuadPlane, q_land_freeze_time, 7.0f),
+
     AP_GROUPEND
 };
 
@@ -2840,11 +2849,16 @@ void QuadPlane::vtol_position_controller(void)
             float target_z = target_altitude_cm;
             pos_control->input_pos_vel_accel_z(target_z, zero, 0);
         } else if (plane.control_mode == &plane.mode_qrtl) {
-            Location loc2 = loc;
-            loc2.change_alt_frame(Location::AltFrame::ABOVE_ORIGIN);
-            float target_z = loc2.alt;
-            float zero = 0;
-            pos_control->input_pos_vel_accel_z(target_z, zero, 0);
+            if (tailsitter.enabled()){
+                set_climb_rate_cms(0);
+                last_pos2_ms = now_ms;
+            }else{
+                Location loc2 = loc;
+                loc2.change_alt_frame(Location::AltFrame::ABOVE_ORIGIN);
+                float target_z = loc2.alt;
+                float zero = 0;
+                pos_control->input_pos_vel_accel_z(target_z, zero, 0);
+            }
         } else {
             set_climb_rate_cms(0);
         }
@@ -2854,6 +2868,15 @@ void QuadPlane::vtol_position_controller(void)
     case QPOS_LAND_DESCEND:
     case QPOS_LAND_ABORT:
     case QPOS_LAND_FINAL: {
+        if (tailsitter.enabled() && now_ms - last_pos2_ms < q_land_freeze_time * 1000) {
+            set_climb_rate_cms(0);
+            static uint32_t last_log_ms = 0;
+            if (now_ms - last_log_ms >= 2000) {
+                last_log_ms = now_ms;
+                gcs().send_text(MAV_SEVERITY_INFO,"Land descent freezing t=%.1f",(double)q_land_freeze_time);
+            }
+            break;
+        }
         float height_above_ground = plane.relative_ground_altitude(RangeFinderUse::TAKEOFF_LANDING);
         if (poscontrol.get_state() == QPOS_LAND_FINAL) {
             if (!option_is_set(QuadPlane::OPTION::DISABLE_GROUND_EFFECT_COMP)) {
