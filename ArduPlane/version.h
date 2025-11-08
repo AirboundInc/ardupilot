@@ -6,7 +6,7 @@
 
 #include "ap_version.h"
 
-#define THISFIRMWARE "ArduPlane V4.6.3 - desphi vhpow disable"
+#define THISFIRMWARE "ArduPlane V4.6.3 - wvane checks"
 
 // the following line is parsed by the autotest scripts
 #define FIRMWARE_VERSION 4,6,3,FIRMWARE_VERSION_TYPE_DEV
