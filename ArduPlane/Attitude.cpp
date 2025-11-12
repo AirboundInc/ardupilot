@@ -121,6 +121,7 @@ void Plane::stabilize_roll()
     }
 
     const float roll_out = stabilize_roll_get_roll_out();
+
     SRV_Channels::set_output_scaled(SRV_Channel::k_aileron, roll_out);
 }
 
@@ -174,6 +175,7 @@ void Plane::stabilize_pitch()
     }
 
     const float pitch_out = stabilize_pitch_get_pitch_out();
+
     SRV_Channels::set_output_scaled(SRV_Channel::k_elevator, pitch_out);
 }
 
