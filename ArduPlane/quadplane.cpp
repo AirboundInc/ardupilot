@@ -2934,9 +2934,9 @@ void QuadPlane::vtol_position_controller(void)
             }
         } else {
             if (tailsitter.enabled()){
-                set_climb_rate_cms(0);
                 last_pos2_ms = now_ms;
             }
+            set_climb_rate_cms(0);
         }
         break;
     }
