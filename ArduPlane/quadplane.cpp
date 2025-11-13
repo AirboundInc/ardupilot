@@ -546,6 +546,12 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Increment: 0.1
     // @User: Advanced
     AP_GROUPINFO("LND_FRZ_TIM", 39, QuadPlane, q_land_freeze_time, 7.0f),
+    
+#if HAL_QUADPLANE_ENABLED
+    // @Group: RE_
+    // @Path: ../libraries/AP_RotaryEncoder/AP_RotaryEncoder.cpp
+    AP_SUBGROUPINFO(rotary_encoder, "RE_", 40, QuadPlane, AP_RotaryEncoder), 
+#endif
 
     AP_GROUPEND
 };
@@ -848,6 +854,8 @@ bool QuadPlane::setup(void)
     pilot_accel_z.convert_centi_parameter(AP_PARAM_INT16);
 
     tailsitter.setup();
+    rotary_encoder.init();
+    rotary_encoder.init();
 
     tiltrotor.setup();
 
@@ -871,6 +879,8 @@ bool QuadPlane::setup(void)
     gcs().send_text(MAV_SEVERITY_INFO, "QuadPlane initialised, %s", frame_and_type_string);
     initialised = true;
     return true;
+
+
 }
 
 /*
@@ -2932,6 +2942,16 @@ void QuadPlane::vtol_position_controller(void)
                 float zero = 0;
                 pos_control->input_pos_vel_accel_z(target_z, zero, 0);
             }
+            if (tailsitter.enabled()){
+                set_climb_rate_cms(0);
+                last_pos2_ms = now_ms;
+            }else{
+                Location loc2 = loc;
+                loc2.change_alt_frame(Location::AltFrame::ABOVE_ORIGIN);
+                float target_z = loc2.alt;
+                float zero = 0;
+                pos_control->input_pos_vel_accel_z(target_z, zero, 0);
+            }
         } else {
             if (tailsitter.enabled()){
                 last_pos2_ms = now_ms;
@@ -2944,6 +2964,15 @@ void QuadPlane::vtol_position_controller(void)
     case QPOS_LAND_DESCEND:
     case QPOS_LAND_ABORT:
     case QPOS_LAND_FINAL: {
+        if (tailsitter.enabled() && now_ms - last_pos2_ms < q_land_freeze_time * 1000) {
+            set_climb_rate_cms(0);
+            static uint32_t last_log_ms = 0;
+            if (now_ms - last_log_ms >= 2000) {
+                last_log_ms = now_ms;
+                gcs().send_text(MAV_SEVERITY_INFO,"Land descent freezing t=%.1f",(double)q_land_freeze_time);
+            }
+            break;
+        }
         if (tailsitter.enabled() && now_ms - last_pos2_ms < q_land_freeze_time * 1000) {
             set_climb_rate_cms(0);
             static uint32_t last_log_ms = 0;

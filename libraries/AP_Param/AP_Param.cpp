@@ -59,7 +59,7 @@ AP_Param *AP_Param::_singleton;
 #endif
 
 
-#define ENABLE_DEBUG 0
+#define ENABLE_DEBUG 1
 
 #if ENABLE_DEBUG
 # define FATAL(fmt, args ...) AP_HAL::panic(fmt, ## args);
@@ -2460,6 +2460,7 @@ bool AP_Param::count_param_defaults(const volatile char *ptr, int32_t length, ui
  */
 void AP_Param::load_param_defaults(const volatile char *ptr, int32_t length, bool last_pass)
 {
+    const volatile char *original_ptr = ptr;  // Save original pointer for offset calculations
     delete[] param_overrides;
     param_overrides = nullptr;
     param_overrides_len = 0;
@@ -2514,10 +2515,10 @@ void AP_Param::load_param_defaults(const volatile char *ptr, int32_t length, boo
             if (last_pass) {
 #if ENABLE_DEBUG
                 ::printf("Ignored unknown param %s from embedded region (offset=%u)\n",
-                         pname, unsigned(ptr - param_defaults_data.data));
+                         pname, unsigned(ptr - original_ptr));
                 hal.console->printf(
                          "Ignored unknown param %s from embedded region (offset=%u)\n",
-                         pname, unsigned(ptr - param_defaults_data.data));
+                         pname, unsigned(ptr - original_ptr));
 #endif
             }
             continue;
