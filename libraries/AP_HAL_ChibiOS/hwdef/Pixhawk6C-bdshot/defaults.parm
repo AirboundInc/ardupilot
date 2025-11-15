@@ -1,1 +1,3 @@
 @include ../Pixhawk6C/defaults.parm
+
+Q_TAILSIT_WV_LO 27 @READONLY
