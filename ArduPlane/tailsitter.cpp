@@ -190,6 +190,12 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     // @Range: 45 60
     AP_GROUPINFO("WV_MI", 26, Tailsitter, wvane_pitch_mid, 45),
 
+    // @Param: THR_EN
+    // @DisplayName: Enable Tailsitter throttle scaling
+    // @Description: Use throttle based gain scaling for tailsitter stabilization
+    // @Range: 0 1
+    AP_GROUPINFO("THR_EN", 27, Tailsitter, use_throttle_scale, 0),
+
     AP_GROUPEND
 };
 
@@ -836,8 +842,13 @@ void Tailsitter::speed_scaling(void)
     for (uint8_t i=0; i<ARRAY_SIZE(functions); i++) {
         float v = SRV_Channels::get_output_scaled(functions[i]);
         if ((functions[i] == SRV_Channel::Aux_servo_function_t::k_tiltMotorLeft) || (functions[i] == SRV_Channel::Aux_servo_function_t::k_tiltMotorRight)) {
-            // always apply throttle scaling to tilts
-            v *= throttle_scaler;
+            // apply throttle scaling to tilts as per parameter
+            if(use_throttle_scale){
+                v *= throttle_scaler;
+            }
+            else{
+                v *= 1.0f;
+            }
         } else {
             v *= spd_scaler;
         }

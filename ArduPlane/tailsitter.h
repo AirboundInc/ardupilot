@@ -116,6 +116,8 @@ public:
     AP_Float wvane_pitch_hi;
     AP_Float wvane_pitch_mid;
 
+    AP_Int8 use_throttle_scale;
+
     AP_MotorsTailsitter* tailsitter_motors;
 
 private:
