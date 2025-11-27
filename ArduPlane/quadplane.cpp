@@ -547,6 +547,15 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("LND_FRZ_TIM", 39, QuadPlane, q_land_freeze_time, 7.0f),
 
+    // @Param: LND_OVS_RAD
+    // @DisplayName: Q mode landing overshoot radius
+    // @Description: Distance in meters to landing point to pause descent and treat as pos1
+    // @Units: m
+    // @Range: 5.0 35.0
+    // @Increment: 0.5
+    // @User: Advanced
+    AP_GROUPINFO("LND_OVS_RAD", 40, QuadPlane, q_land_overshoot_radius, 15.0f),
+
     AP_GROUPEND
 };
 
@@ -2953,6 +2962,19 @@ void QuadPlane::vtol_position_controller(void)
             }
             break;
         }
+
+        // Handle big overshoots due to gusts during landing
+        // Intent is to reposition to pos2 and then resume descent
+        Location current_loc = plane.current_loc;
+        Location next_waypoint = plane.next_WP_loc;
+        float distance_to_landing_point = current_loc.get_distance(next_waypoint);
+
+        if (distance_to_landing_point >= q_land_overshoot_radius) {
+           gcs().send_text(MAV_SEVERITY_WARNING,"%f m far from home during landing! Repositioning...",(double)distance_to_landing_point);
+           poscontrol.set_state(QPOS_POSITION1);
+           break;
+        }
+
         float height_above_ground = plane.relative_ground_altitude(plane.g.rangefinder_landing);
         if (poscontrol.get_state() == QPOS_LAND_FINAL) {
             if (!option_is_set(QuadPlane::OPTION::DISABLE_GROUND_EFFECT_COMP)) {
