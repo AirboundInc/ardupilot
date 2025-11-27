@@ -7,7 +7,10 @@
 #include <AP_Scheduler/AP_Scheduler.h>
 
 extern const AP_HAL::HAL& hal;
-
+bool        _first_time_step = true;    // true on first time step after initialisation
+uint32_t    start_time;
+int         _signal_sign = 1;
+float       _step_size;
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)
  // default gains for Plane
  # define POSCONTROL_POS_Z_P                    1.0f    // vertical position controller P gain default
@@ -317,7 +320,16 @@ const AP_Param::GroupInfo AC_PosControl::var_info[] = {
     // @Increment: 1
     // @User: Advanced
     AP_GROUPINFO("_JERK_Z", 11, AC_PosControl, _shaping_jerk_z, POSCONTROL_JERK_Z),
-
+    // @Param: _JERK_Z
+    // @DisplayName: Jerk limit for the vertical kinematic input shaping
+    // @Description: Jerk limit of the vertical kinematic path generation used to determine how quickly the aircraft varies the acceleration target
+    // @Units: m/s/s/s
+    // @Range: 5 50
+    // @Increment: 1
+    // @User: Advanced
+    AP_GROUPINFO("_STEP_EN", 12, AC_PosControl, _step_z_enabled, 0),
+    AP_GROUPINFO("_STEP_MAG", 13, AC_PosControl, _step_amplitude, 5.0f),
+    AP_GROUPINFO("_STEP_DUR", 14, AC_PosControl, _step_duration, 2.0f),
     AP_GROUPEND
 };
 
@@ -939,6 +951,18 @@ bool AC_PosControl::is_active_z() const
     const uint32_t dt_ticks = AP::scheduler().ticks32() - _last_update_z_ticks;
     return dt_ticks <= 1;
 }
+float AC_PosControl::getStep(uint32_t now) // generate a step signal for z-axis tuning
+{
+	float dT = (now - start_time) / 1000.0f; // convert to seconds
+	if (dT >= _step_size)
+	{
+		_signal_sign *= -1.0f;
+		start_time = now;
+        _step_size = _step_duration;
+	}
+	const float step = float(_signal_sign) *_step_amplitude*100.0f;
+    return step;
+}
 
 /// update_z_controller - runs the vertical position controller correcting position, velocity and acceleration errors.
 ///     Position and velocity errors are converted to velocity and acceleration targets using PID objects
@@ -978,6 +1002,18 @@ void AC_PosControl::update_z_controller()
 
     // add feed forward component
     _accel_target.z += _accel_desired.z;
+
+    // Step signal generation for tuning
+    if (_step_z_enabled) {
+        if(_first_time_step)
+        {
+        	start_time = AP_HAL::millis();
+        	_first_time_step = false;
+            _step_size = _step_duration / 2.0f;
+        }
+        const float step_signal = getStep(AP_HAL::millis());
+        _accel_target.z = step_signal;
+    }
 
     // Acceleration Controller
 

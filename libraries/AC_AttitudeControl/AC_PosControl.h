@@ -472,6 +472,11 @@ protected:
     float       _vel_offset_z;          // vertical velocity offset in NEU cm/s calculated by pos_to_rate step
     float       _accel_offset_z;        // vertical acceleration offset in NEU cm/s/s
 
+    // acceleration step test parameters
+    AP_Float       _step_amplitude;  // amplitude of acceleration step test in m/s/s
+    AP_Float       _step_duration;   // duration of acceleration step test in seconds
+    AP_Int8        _step_z_enabled; // true when z-axis acceleration step test is enabled
+
     // ekf reset handling
     uint32_t    _ekf_xy_reset_ms;       // system time of last recorded ekf xy position reset
     uint32_t    _ekf_z_reset_ms;        // system time of last recorded ekf altitude reset
@@ -484,4 +489,5 @@ protected:
 
     // return true if on a real vehicle or SITL with lock-step scheduling
     bool has_good_timing(void) const;
+    float getStep(uint32_t now);
 };
