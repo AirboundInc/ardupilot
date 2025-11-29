@@ -1014,6 +1014,9 @@ void AC_PosControl::update_z_controller()
         const float step_signal = getStep(AP_HAL::millis());
         _accel_target.z = step_signal;
     }
+    else{
+        _first_time_step = true;
+    }
 
     // Acceleration Controller
 
