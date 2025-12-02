@@ -8,6 +8,7 @@
 
 extern const AP_HAL::HAL& hal;
 bool        _first_time_step = true;    // true on first time step after initialisation
+bool        _first_time_step_vel = true; // true on first time step after initialisation of velocity controller
 uint32_t    start_time;
 int         _signal_sign = 1;
 float       _step_size;
@@ -330,6 +331,7 @@ const AP_Param::GroupInfo AC_PosControl::var_info[] = {
     AP_GROUPINFO("_STEP_EN", 12, AC_PosControl, _step_z_enabled, 0),
     AP_GROUPINFO("_STEP_MAG", 13, AC_PosControl, _step_amplitude, 5.0f),
     AP_GROUPINFO("_STEP_DUR", 14, AC_PosControl, _step_duration, 2.0f),
+    AP_GROUPINFO("_STEP_VEL_EN", 15, AC_PosControl, _step_vel_enabled, 0),
     AP_GROUPEND
 };
 
@@ -993,6 +995,22 @@ void AC_PosControl::update_z_controller()
 
     // add feed forward component
     _vel_target.z += _vel_desired.z;
+    bool accel_step = _step_z_enabled;
+    if(_step_vel_enabled){
+        // Step signal generation for tuning 
+        accel_step = false;
+        if(_first_time_step_vel)
+        {
+        	start_time = AP_HAL::millis();
+        	_first_time_step_vel = false;
+            _step_size = _step_duration / 2.0f;
+        }
+        const float step_signal = getStep(AP_HAL::millis());
+        _vel_target.z = step_signal;
+    }
+    else{
+        _first_time_step_vel = true;
+    }
 
     // Velocity Controller
 
@@ -1004,7 +1022,7 @@ void AC_PosControl::update_z_controller()
     _accel_target.z += _accel_desired.z;
 
     // Step signal generation for tuning
-    if (_step_z_enabled) {
+    if (accel_step) {
         if(_first_time_step)
         {
         	start_time = AP_HAL::millis();

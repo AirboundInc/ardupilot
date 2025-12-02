@@ -476,6 +476,7 @@ protected:
     AP_Float       _step_amplitude;  // amplitude of acceleration step test in m/s/s
     AP_Float       _step_duration;   // duration of acceleration step test in seconds
     AP_Int8        _step_z_enabled; // true when z-axis acceleration step test is enabled
+    AP_Int8        _step_vel_enabled; // true when velocity step test is enabled
 
     // ekf reset handling
     uint32_t    _ekf_xy_reset_ms;       // system time of last recorded ekf xy position reset
