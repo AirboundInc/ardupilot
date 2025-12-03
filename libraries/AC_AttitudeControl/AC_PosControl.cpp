@@ -978,6 +978,9 @@ void AC_PosControl::update_z_controller()
 
     // add feed forward component
     _accel_target.z += _accel_desired.z;
+    
+    // constrain to maximum vertical acceleration
+    _accel_target.z = constrain_float(_accel_target.z, -_accel_max_z_cmss, _accel_max_z_cmss);
 
     // Acceleration Controller
 
