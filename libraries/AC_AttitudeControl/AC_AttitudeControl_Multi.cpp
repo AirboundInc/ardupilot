@@ -3,6 +3,7 @@
 #include <AP_Math/AP_Math.h>
 #include <AC_PID/AC_PID.h>
 #include <AP_Scheduler/AP_Scheduler.h>
+#include <AP_Logger/AP_Logger.h>
 
 // table of user settable parameters
 const AP_Param::GroupInfo AC_AttitudeControl_Multi::var_info[] = {
@@ -399,19 +400,23 @@ float AC_AttitudeControl_Multi::get_throttle_boosted_ts(float throttle_in)
         _angle_boost = 0;
         return throttle_in;
     }
-    // inverted_factor is 1 for tilt angles below 60 degrees
-    // inverted_factor reduces from 1 to 0 for tilt angles between 60 and 90 degrees
+    // math and geometry behind this idea is given in https://www.notion.so/airbound/Decoupling-the-vertical-and-Attitude-controllers-2c321adf4be980b89fa5cae73ac286fb?source=copy_link
 
-    // float term_1 =  _ahrs.cos_roll()*_ahrs.cos_pitch()*_ahrs.cos_yaw() + _ahrs.sin_roll()*_ahrs.sin_yaw();
-    // float term_2 =  _ahrs.cos_roll()*_ahrs.cos_pitch();
+    float term_1 =  _ahrs.cos_roll()*_ahrs.sin_pitch()*_ahrs.cos_yaw() + _ahrs.sin_roll()*_ahrs.sin_yaw();
+    float term_2 =  _ahrs.cos_roll()*_ahrs.cos_pitch();
     float tilt_angle_rad = constrain_float(radians(_ts_tilt_angle/100.0f), -radians(45.0f), radians(45.0f)); // convert to radians and constrain between 0 and 90 degrees 
-    gcs().send_text(MAV_SEVERITY_WARNING, "Tilt Angle: %f, %f",_ts_tilt_angle/100.0f, tilt_angle_rad*180.0f/3.14f);
-    // float inverted_factor = constrain_float(10.0f * cos_tilt, 0.0f, 1.0f);
-    // float cos_tilt_target = cosf(_thrust_angle);
-    // float boost_factor = 1.0f / constrain_float(cos_tilt_target, 0.1f, 1.0f);
-    // float throttle_out = throttle_in * inverted_factor * boost_factor;
-    // _angle_boost = constrain_float(throttle_out - throttle_in, -1.0f, 1.0f);
-    return throttle_in;
+    // gcs().send_text(MAV_SEVERITY_WARNING, "Tilt Angle: %f, %f",_ts_tilt_angle/100.0f, tilt_angle_rad*180.0f/3.14f);
+    float inv_compensation_gain =  term_1 * sinf(tilt_angle_rad) + term_2 * cosf(tilt_angle_rad);
+    float boost_factor = 1.0f / constrain_float(inv_compensation_gain, 0.1f, 1.0f);
+    float throttle_out = throttle_in * boost_factor;
+    _angle_boost = constrain_float(throttle_out - throttle_in, -1.0f, 1.0f);
+    AP::logger().WriteStreaming("ANGB", "TimeUS,ThrIn,ThrO,Boost,BFactor",
+        "s----", // seconds,
+        "F0000", // micro (1e-6), no mult (1e0)
+        "Qffff", // uint64_t, float
+        AP_HAL::micros64(),
+        throttle_in, throttle_out, _angle_boost, boost_factor);
+    return throttle_out;
 }
 
 // returns a throttle including compensation for roll/pitch angle
