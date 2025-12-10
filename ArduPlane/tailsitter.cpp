@@ -318,6 +318,9 @@ void Tailsitter::output(void)
     // throttle 0 to 1
     float throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle) * 0.01;
 
+    // To inform the attitude controller that tailsitter is enabled
+    quadplane.attitude_control->set_tailsitter_enabled(true);
+
     // handle forward flight modes and transition to VTOL modes
     if (!active() || in_vtol_transition()) {
         // get FW controller throttle demand and mask of motors enabled during forward flight
@@ -510,6 +513,7 @@ void Tailsitter::output(void)
         }
         quadplane.weathervane->set_gain(weathervane_gain);
     }
+    quadplane.attitude_control->get_tilt_motor_angle((tilt_left + tilt_right)/2.0f);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
 
