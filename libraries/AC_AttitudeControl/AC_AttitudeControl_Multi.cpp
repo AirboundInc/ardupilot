@@ -354,8 +354,12 @@ void AC_AttitudeControl_Multi::set_throttle_out(float throttle_in, bool apply_an
     _motors.set_throttle_filter_cutoff(filter_cutoff);
     if (apply_angle_boost) {
         // Apply angle boost
-        throttle_in = get_throttle_boosted(throttle_in);
-    } else {
+        if(_ts_enabled) {
+            throttle_in = get_throttle_boosted_ts(throttle_in);
+        }else{
+            throttle_in = get_throttle_boosted(throttle_in);
+        }   
+    }else {
         // Clear angle_boost for logging purposes
         _angle_boost = 0.0f;
     }
@@ -388,6 +392,26 @@ float AC_AttitudeControl_Multi::get_throttle_boosted(float throttle_in)
     float throttle_out = throttle_in * inverted_factor * boost_factor;
     _angle_boost = constrain_float(throttle_out - throttle_in, -1.0f, 1.0f);
     return throttle_out;
+}
+float AC_AttitudeControl_Multi::get_throttle_boosted_ts(float throttle_in)
+{
+    if (!_angle_boost_enabled) {
+        _angle_boost = 0;
+        return throttle_in;
+    }
+    // inverted_factor is 1 for tilt angles below 60 degrees
+    // inverted_factor reduces from 1 to 0 for tilt angles between 60 and 90 degrees
+
+    // float term_1 =  _ahrs.cos_roll()*_ahrs.cos_pitch()*_ahrs.cos_yaw() + _ahrs.sin_roll()*_ahrs.sin_yaw();
+    // float term_2 =  _ahrs.cos_roll()*_ahrs.cos_pitch();
+    float tilt_angle_rad = constrain_float(radians(_ts_tilt_angle/100.0f), -radians(45.0f), radians(45.0f)); // convert to radians and constrain between 0 and 90 degrees 
+    gcs().send_text(MAV_SEVERITY_WARNING, "Tilt Angle: %f, %f",_ts_tilt_angle/100.0f, tilt_angle_rad*180.0f/3.14f);
+    // float inverted_factor = constrain_float(10.0f * cos_tilt, 0.0f, 1.0f);
+    // float cos_tilt_target = cosf(_thrust_angle);
+    // float boost_factor = 1.0f / constrain_float(cos_tilt_target, 0.1f, 1.0f);
+    // float throttle_out = throttle_in * inverted_factor * boost_factor;
+    // _angle_boost = constrain_float(throttle_out - throttle_in, -1.0f, 1.0f);
+    return throttle_in;
 }
 
 // returns a throttle including compensation for roll/pitch angle
