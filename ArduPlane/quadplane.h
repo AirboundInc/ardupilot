@@ -409,6 +409,9 @@ private:
     // Time to wait at pos2 before starting final descent to allow for weathervaning
     AP_Float q_land_freeze_time;
 
+    // Distance in meters to landing point to pause descent and treat as pos1
+    AP_Float q_land_overshoot_radius;
+
     // which fwd throttle handling method is active
     enum class ActiveFwdThr : uint8_t {
         NONE = 0,
