@@ -235,7 +235,7 @@ static const struct AP_Param::defaults_table_struct defaults_table_tailsitter[] 
     
 };
 
-Tailsitter::Tailsitter(QuadPlane& _quadplane, AP_MotorsMulticopter*& _motors):quadplane(_quadplane),motors(_motors)
+Tailsitter::Tailsitter(QuadPlane& _quadplane, AP_MotorsMulticopter*& _motors):quadplane(_quadplane),motors(_motors),_esc_telem(nullptr)
 {
 #if HAL_WITH_ESC_TELEM
     _esc_telem = nullptr;
@@ -1302,6 +1302,21 @@ void Tailsitter::update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt)
     kf.innovation = innovation;
 }
 
+
+float Tailsitter::get_rpm_based_throttle_scaler()
+{
+     if (_esc_telem == nullptr) {
+        _esc_telem = AP_ESC_Telem::get_singleton();
+    }
+     if (_esc_telem != nullptr) {
+        float rpm;
+        if (_esc_telem->get_average_motor_rpm() > 0) {
+            rpm = _esc_telem->get_average_motor_rpm();
+            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Avg RPM: %f", rpm);
+        }
+    }
+    return 1.0f;
+}
 
 // only allow to weathervane once transition is complete and desired pitch has been reached
 bool Tailsitter_Transition::allow_weathervane()
