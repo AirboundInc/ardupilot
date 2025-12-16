@@ -64,6 +64,7 @@ void AP_ESC_Telem_SITL::update()
 
         const float min_rpm = hal.util->get_soft_armed()? sitl->esc_rpm_armed : 0;
         update_rpm(motor, MAX(min_rpm, sitl->state.rpm[motor]));
+        printf("ESC_TELEM_SITL: motor %u rpm %.1f\n", unsigned(motor), sitl->state.rpm[motor]);
 
         // some fake values so that is_telemetry_active() returns true
         TelemetryData t {

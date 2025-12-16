@@ -18,6 +18,8 @@
 #include "transition.h"
 #include <AP_Motors/AP_MotorsTailsitter.h>
 #include <AP_Logger/LogStructure.h>
+#include <AP_ESC_Telem/AP_ESC_Telem.h>
+
 
 class QuadPlane;
 class AP_MotorsMulticopter;
@@ -70,6 +72,9 @@ public:
     // Write tailsitter specific log
     void write_log();
 
+    // get throttle scaler for current flight mode based on motor rpm
+    float get_rpm_based_throttle_scaler();
+
     // tailsitter speed scaler
     float last_spd_scaler = 1.0f; // used to slew rate limiting with TAILSITTER_GSCL_ATT_THR option
 
@@ -115,6 +120,7 @@ public:
     AP_Float wvane_pitch_low;
     AP_Float wvane_pitch_hi;
     AP_Float wvane_pitch_mid;
+    AP_Int8 rpm_based_tilt_scaling;
 
     AP_MotorsTailsitter* tailsitter_motors;
 
@@ -155,6 +161,9 @@ private:
 
     // transition logic
     Tailsitter_Transition* transition;
+
+    // ESC Telemetry
+    AP_ESC_Telem* _esc_telem;
 
 };
 
