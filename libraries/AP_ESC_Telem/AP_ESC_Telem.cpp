@@ -76,7 +76,6 @@ float AP_ESC_Telem::get_average_motor_rpm(uint32_t servo_channel_mask) const
     if (valid_escs > 0) {
         rpm_avg /= valid_escs;
     }
-
     return rpm_avg;
 }
 
