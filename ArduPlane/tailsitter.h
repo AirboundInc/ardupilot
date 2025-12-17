@@ -88,6 +88,15 @@ public:
     // update the rpm kalman filter
     void update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt);
 
+    // Kalman filter for RPM estimation
+    struct RPM_KF {
+    float x;   // estimated RPM
+    float P;   // covariance
+    };
+
+    // update the rpm kalman filter
+    void update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt);
+
     // tailsitter speed scaler
     float last_spd_scaler = 1.0f; // used to slew rate limiting with TAILSITTER_GSCL_ATT_THR option
 
