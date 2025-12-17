@@ -75,6 +75,15 @@ public:
     // get throttle scaler for current flight mode based on motor rpm
     float get_rpm_based_throttle_scaler();
 
+    // Kalman filter for RPM estimation
+    struct RPM_KF {
+    float x;   // estimated RPM
+    float P;   // covariance
+    };
+
+    // update the rpm kalman filter
+    void update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt);
+
     // tailsitter speed scaler
     float last_spd_scaler = 1.0f; // used to slew rate limiting with TAILSITTER_GSCL_ATT_THR option
 
@@ -233,5 +242,6 @@ private:
     float prev_fw_initial_pitch;
 
     Tailsitter& tailsitter;
+
 
 };

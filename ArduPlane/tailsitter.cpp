@@ -849,13 +849,14 @@ void Tailsitter::speed_scaling(void)
         float v = SRV_Channels::get_output_scaled(functions[i]);
         if ((functions[i] == SRV_Channel::Aux_servo_function_t::k_tiltMotorLeft) || (functions[i] == SRV_Channel::Aux_servo_function_t::k_tiltMotorRight)) {
             // always apply throttle scaling to tilts
-            if (rpm_based_tilt_scaling) {
-                float scaler = get_rpm_based_throttle_scaler();
-                v *= scaler;
-            }
-            else{
-                v *= throttle_scaler;
-            }
+            // if (rpm_based_tilt_scaling) {
+            //     float scaler = get_rpm_based_throttle_scaler();
+            //     v *= scaler;
+            // }
+            // else{
+            //     v *= throttle_scaler;
+            // }
+            v *= throttle_scaler;
         } else {
             v *= spd_scaler;
         }
@@ -1120,21 +1121,88 @@ MAV_VTOL_STATE Tailsitter_Transition::get_mav_vtol_state() const
 
     return MAV_VTOL_STATE_UNDEFINED;
 }
-
+// Commented for the hardware implementation because in real flight only one RPM is available from the ESC telemetry
+// Get RPM based throttle scaler for tilt motors
 float Tailsitter::get_rpm_based_throttle_scaler()
 {
-     if (_esc_telem == nullptr) {
+    // ESC indices in quadplane motor layout
+    // RPM_KF kf_left  {0.0f, 1e6f};
+    // RPM_KF kf_right {0.0f, 1e6f};
+    // uint8_t ESC_RIGHT; // ESC index for right motor 
+    // uint8_t ESC_LEFT;
+    // if(!(SRV_Channels::find_channel(SRV_Channel::k_throttleLeft, ESC_LEFT) || SRV_Channels::find_channel(SRV_Channel::k_throttleRight, ESC_RIGHT)))
+    // {
+    //     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find motor channels");
+    //     return 0.0f;     
+    // }
+    static struct RPM_KF rpm_state{0.0f, 1e6f};
+    float rpm_hover = 3000.0f; // set default hover rpm
+    float rpm_result = rpm_state.x; // default to last valid rpm
+    if (_esc_telem == nullptr) {
         _esc_telem = AP_ESC_Telem::get_singleton();
     }
-     if (_esc_telem != nullptr) {
+    if (_esc_telem != nullptr) {
         float rpm;
+        static float rpm_lpf = 1000.0f;
+        uint16_t pwm;
+        if(!SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, pwm)){
+            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find right motor channel");
+            return 1.0f;
+        }
+        // For real hardware implementation, only use right motor RPM for scaling
+        // float rpm_l, rpm_r;
+        // uint16_t pwm_l, pwm_r;
+        // bool valid_l = _esc_telem->get_rpm(ESC_LEFT, rpm_l) && SRV_Channels::get_output_pwm(SRV_Channel::k_throttleLeft, pwm_l);
+        // bool valid_r = _esc_telem->get_rpm(ESC_RIGHT, rpm_r) && SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, pwm_r);
+        // if(!(valid_l || valid_r)){
+        //     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, no valid RPM data");
+        //     return 1.0f;
+        // }
+        // GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Avg RPM: %f, %f, %d, %d", rpm_l, rpm_r, pwm_l, pwm_r);
         if (_esc_telem->get_average_motor_rpm() > 0) {
             rpm = _esc_telem->get_average_motor_rpm();
-            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Avg RPM: %f", rpm);
+            if(rpm >= 1000.0f && rpm <= 6000.f){
+                rpm_lpf = rpm * 0.15f + rpm_lpf*0.85f;
+                rpm_result = rpm_lpf;
+            }
+            else{
+                rpm_result = rpm_state.x; // use last valid rpm
+            }
+            // Used raw measurement for Kalman filter update to avoid large delay
+            update_rpm_kalman(rpm_state,pwm,rpm,quadplane.attitude_control->get_dt());
+            // GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Avg RPM LAST: %f", rpm);
         }
     }
-    return 1.0f;
+    rpm_result = constrain_float(rpm_result, 1000.0f, 6000.0f);
+    return rpm_hover / rpm_result;
 }
+void Tailsitter::update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt)
+{
+    const float tau  = 0.05f;     // motor time constant (s)
+    const float Kpwm = 5.76f;     // PWM -> RPM gain (calculated from motor test data)
+    // Noise setup currenly tuned such that we trust meaurements more than model prediction
+    const float Q    = 10000.0f;  // process noise (Need to tune)
+    const float R    = 40000.0f;  // measurement noise
+
+    float a = expf(-dt / tau);
+    float b = (1.0f - a) * Kpwm;
+
+    // Prediction
+    float x_pred = a * kf.x + b * pwm;
+    float P_pred = a * a * kf.P + Q;
+
+    // Update
+    if(rpm_meas < 1000.0f || rpm_meas > 6000.0f){
+        // invalid measurement, skip update use prediction only
+        kf.x = x_pred;
+        kf.P = P_pred;
+        return;
+    }
+    float K = P_pred / (P_pred + R);
+    kf.x = x_pred + K * (rpm_meas - x_pred);
+    kf.P = (1.0f - K) * P_pred;
+}
+
 
 // only allow to weathervane once transition is complete and desired pitch has been reached
 bool Tailsitter_Transition::allow_weathervane()
