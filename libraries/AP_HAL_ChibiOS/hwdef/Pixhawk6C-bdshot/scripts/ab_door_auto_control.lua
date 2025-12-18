@@ -357,7 +357,6 @@ function run_auto_mode()
 end
 
 function check_manual_override()
-
     local rc_pwm = rc:get_pwm(config.cache.man_cmd_ch)
     if not rc_pwm then return false end
 
