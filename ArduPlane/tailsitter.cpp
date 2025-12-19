@@ -848,15 +848,15 @@ void Tailsitter::speed_scaling(void)
     for (uint8_t i=0; i<ARRAY_SIZE(functions); i++) {
         float v = SRV_Channels::get_output_scaled(functions[i]);
         if ((functions[i] == SRV_Channel::Aux_servo_function_t::k_tiltMotorLeft) || (functions[i] == SRV_Channel::Aux_servo_function_t::k_tiltMotorRight)) {
-            // always apply throttle scaling to tilts
-            // if (rpm_based_tilt_scaling) {
-            //     float scaler = get_rpm_based_throttle_scaler();
-            //     v *= scaler;
-            // }
-            // else{
-            //     v *= throttle_scaler;
-            // }
-            v *= throttle_scaler;
+            //always apply throttle scaling to tilts
+            if (rpm_based_tilt_scaling) {
+                float scaler = get_rpm_based_throttle_scaler();
+                v *= scaler;
+            }
+            else{
+                v *= throttle_scaler;
+            }
+            // v *= throttle_scaler;
         } else {
             v *= spd_scaler;
         }
@@ -1136,7 +1136,7 @@ float Tailsitter::get_rpm_based_throttle_scaler()
     //     return 0.0f;     
     // }
     static struct RPM_KF rpm_state{0.0f, 1e6f};
-    float rpm_hover = 3000.0f; // set default hover rpm
+    float rpm_hover = 3600.0f; // set default hover rpm
     float rpm_result = rpm_state.x; // default to last valid rpm
     if (_esc_telem == nullptr) {
         _esc_telem = AP_ESC_Telem::get_singleton();
@@ -1174,7 +1174,7 @@ float Tailsitter::get_rpm_based_throttle_scaler()
         }
     }
     rpm_result = constrain_float(rpm_result, 1000.0f, 6000.0f);
-    return rpm_hover / rpm_result;
+    return (rpm_hover*rpm_hover) / (rpm_result*rpm_result);
 }
 void Tailsitter::update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt)
 {
