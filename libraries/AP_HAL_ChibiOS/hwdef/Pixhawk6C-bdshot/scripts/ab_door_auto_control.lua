@@ -12,7 +12,6 @@ local RC_SWITCH_THRESHOLD = 1500
 local PWM_SAFE_MIN = 800
 local PWM_SAFE_MAX = 2200
 local MAV_CMD_NAV_VTOL_LAND = 85
-local MAV_CMD_NAV_LAND = 21
 
 -- ###############################################################################
 -- # PARAMETER DEFINITIONS
