@@ -6,7 +6,11 @@
 
 #include "ap_version.h"
 
+<<<<<<< HEAD
 #define THISFIRMWARE "arduplane v4.5.7.1 rc11 rotary encoder"
+=======
+#define THISFIRMWARE "Airbound ArduPlane V4.5.7.2 - rc3"
+>>>>>>> c8875d9ed6 (Ardupilot 4.5.7: Change Synthetic airspeed estimation algorithm from EK3 to DCM (#25))
 
 // the following line is parsed by the autotest scripts
 #define FIRMWARE_VERSION 4,5,7,FIRMWARE_VERSION_TYPE_DEV
