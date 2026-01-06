@@ -1028,6 +1028,8 @@ Vector3f AC_AttitudeControl::update_ang_vel_target_from_att_error(const Vector3f
     } else {
         rate_target_ang_vel.y = angleP_pitch * attitude_error_rot_vec_rad.y;
     }
+    // Store angle error for usage elsewhere
+    _attitude_error_rot_vec_rad = attitude_error_rot_vec_rad;
 
     // Compute the yaw angular velocity demand from the yaw angle error
     const float angleP_yaw = _p_angle_yaw.kP() * _angle_P_scale.z;

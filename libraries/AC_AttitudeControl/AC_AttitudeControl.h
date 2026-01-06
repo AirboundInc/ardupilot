@@ -217,6 +217,9 @@ public:
     Vector3f get_att_target_euler_cd() const { return _euler_angle_target * degrees(100.0f); }
     const Vector3f & get_att_target_euler_rad() const { return _euler_angle_target; }
 
+    // Getter for attitude error rotation vector in radians
+    Vector3f get_att_error_rot_vec_rad() const { return _attitude_error_rot_vec_rad; }
+
     // Return the body-to-NED target attitude used by the quadplane-specific attitude control input methods
     Quaternion get_attitude_target_quat() const { return _attitude_target; }
 
@@ -476,6 +479,9 @@ protected:
     // This represents a quaternion rotation in NED frame to the target (setpoint)
     // attitude used in the attitude controller.
     Quaternion          _attitude_target;
+
+    // Attitude error rotation vector in radians
+    Vector3f            _attitude_error_rot_vec_rad;
 
     // This represents the angular velocity of the target (setpoint) attitude used in
     // the attitude controller as an angular velocity vector, in radians per second in

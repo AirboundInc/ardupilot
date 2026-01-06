@@ -464,6 +464,7 @@ void Tailsitter::output(void)
     tilt_left = 0.0f;
     tilt_right = 0.0f;
     float pitch_cd = 0.0f, weathervane_gain = 0.0f, gain_slope = 0.0f;
+    int32_t pitch_error_cd_att = 0, pitch_error_cd = 0;
 
     if (vectored_hover_gain > 0) {
         // thrust vectoring VTOL modes
@@ -475,8 +476,14 @@ void Tailsitter::output(void)
           takeoff without integrator windup
          */
         float des_pitch_cd = quadplane.attitude_control->get_att_target_euler_cd().y;
-        int32_t pitch_error_cd = (des_pitch_cd - quadplane.ahrs_view->pitch_sensor) * 0.5;
+        pitch_error_cd_att = (des_pitch_cd - quadplane.ahrs_view->pitch_sensor) * 0.5;
+
+        // Use attitude controller error rotation vector y component for pitch error
+        pitch_error_cd = degrees(quadplane.attitude_control->get_att_error_rot_vec_rad().y) * 0.5 * 100;
+
         float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
+
+        extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
         float extra_sign = extra_pitch > 0?1:-1;
         float extra_elevator = 0;
         if (!is_zero(extra_pitch) && quadplane.in_vtol_mode()) {
@@ -514,11 +521,12 @@ void Tailsitter::output(void)
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
 
     // Add logging for desired thrust vectoring angles
-    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,AhrsPitch,WVGain,WVGainS",
-            "sddd--", // seconds, degrees
-            "F00000", // micro (1e-6), no mult (1e0)
-            "Qfffff", // uint64_t, float
-            AP_HAL::micros64(), tilt_left/100, tilt_right/100,pitch_cd/100,weathervane_gain,gain_slope);
+    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,AhrsPitch,WVGain,WVGainS,PitEAtt,PitE",
+            "sddd--dd", // seconds, degrees
+            "F0000000", // micro (1e-6), no mult (1e0)
+            "Qfffffff", // uint64_t, float
+            AP_HAL::micros64(), tilt_left/100, tilt_right/100,pitch_cd/100,weathervane_gain,gain_slope,
+            (float)pitch_error_cd_att/100, (float)pitch_error_cd/100);
 
     // Check for saturated limits
     bool tilt_lim = _is_vectored && ((fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorLeft)) >= SERVO_MAX) || (fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorRight)) >= SERVO_MAX));
