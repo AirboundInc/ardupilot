@@ -350,6 +350,12 @@ void AP_AHRS::update_state(void)
     state.airspeed_vec_ok = _airspeed_vector_true(state.airspeed_vec);
     state.quat_ok = _get_quaternion(state.quat);
     state.secondary_attitude_ok = _get_secondary_attitude(state.secondary_attitude);
+    
+    // TODO: Clean up if moving to quaternion based check instead of ahrs
+    float r_,p_,y_;
+    state.quat.to_euler(r_,p_,y_);
+    _ahrs2_pitch = p_;
+
     state.secondary_quat_ok = _get_secondary_quaternion(state.secondary_quat);
     state.location_ok = _get_location(state.location);
     state.secondary_pos_ok = _get_secondary_position(state.secondary_pos);

@@ -87,6 +87,10 @@ public:
     // user settable parameters
     static const struct AP_Param::GroupInfo var_info[];
 
+    bool pitch_exceed = false;
+    // -1: pitch down exceed, 1: pitch up exceed, 0: no exceed
+    int direction_of_exceed = 0;
+
 protected:
 
     // boost angle_p/pd each cycle on high throttle slew
