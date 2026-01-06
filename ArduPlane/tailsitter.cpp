@@ -529,7 +529,7 @@ void Tailsitter::output(void)
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
 
     // Add logging for desired thrust vectoring angles
-    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,AhrsPitch,WVGain,WVGainS,PitEAtt,PitE,AhrsRll",
+    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,AhrsPitch,WVGain,WVGainS,PitEAtt,PitE,AttRll",
             "sddd--ddd", // seconds, degrees
             "F00000000", // micro (1e-6), no mult (1e0)
             "Qffffffff", // uint64_t, float
