@@ -19,7 +19,7 @@
 #include <AP_Motors/AP_MotorsTailsitter.h>
 #include <AP_Logger/LogStructure.h>
 #include <AP_ESC_Telem/AP_ESC_Telem.h>
-
+// #define SITL_DEBUG
 
 class QuadPlane;
 class AP_MotorsMulticopter;
@@ -73,7 +73,11 @@ public:
     void write_log();
 
     // get throttle scaler for current flight mode based on motor rpm
-    float get_rpm_based_throttle_scaler();
+    #ifdef SITL_DEBUG
+    float get_rpm_based_tilt_scaler();
+    #else
+    void get_rpm_based_tilt_scaler(float &scale_l, float &scale_r);
+    #endif
 
     // Kalman filter for RPM estimation
     struct RPM_KF {
