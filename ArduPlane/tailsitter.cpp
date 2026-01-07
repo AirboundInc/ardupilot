@@ -1306,20 +1306,12 @@ void Tailsitter::update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt)
 float Tailsitter::get_rpm_based_throttle_scaler()
 {
     // ESC indices in quadplane motor layout
-    // RPM_KF kf_left  {0.0f, 1e6f};
-    // RPM_KF kf_right {0.0f, 1e6f};
-    // uint8_t ESC_RIGHT; // ESC index for right motor 
-    // uint8_t ESC_LEFT;
-    // if(!(SRV_Channels::find_channel(SRV_Channel::k_throttleLeft, ESC_LEFT) || SRV_Channels::find_channel(SRV_Channel::k_throttleRight, ESC_RIGHT)))
-    // {
-    //     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find motor channels");
-    //     return 0.0f;     
-    // }
     static struct RPM_KF rpm_state{0.0f, 1e6f};
     float rpm_hover = 3500.0f; // set default hover rpm
     float rpm_result = rpm_state.x; // default to last valid rpm
     float rpm = 1000.0f;
     static float rpm_lpf = 1000.0f;
+    uint8_t ESC_INDEX = 1; // Got from Log that only ESC[1] publishing the rpm in realflight
     if (_esc_telem == nullptr) {
         _esc_telem = AP_ESC_Telem::get_singleton();
     }
@@ -1330,16 +1322,7 @@ float Tailsitter::get_rpm_based_throttle_scaler()
             return 1.0f;
         }
         // For real hardware implementation, only use right motor RPM for scaling
-        // float rpm_l, rpm_r;
-        // uint16_t pwm_l, pwm_r;
-        // bool valid_l = _esc_telem->get_rpm(ESC_LEFT, rpm_l) && SRV_Channels::get_output_pwm(SRV_Channel::k_throttleLeft, pwm_l);
-        // bool valid_r = _esc_telem->get_rpm(ESC_RIGHT, rpm_r) && SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, pwm_r);
-        // if(!(valid_l || valid_r)){
-        //     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, no valid RPM data");
-        //     return 1.0f;
-        // }
-        // GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Avg RPM: %f, %f, %d, %d", rpm_l, rpm_r, pwm_l, pwm_r);
-        if (_esc_telem->get_rpm(1, rpm)) {
+        if (_esc_telem->get_rpm(ESC_INDEX, rpm)) {
             // _esc_telem->get_rpm(1, rpm); // get right motor RPM
             if(rpm >= 1000.0f && rpm <= 6000.f){
                 rpm_lpf = rpm * 0.05f + rpm_lpf*0.95f;
@@ -1354,14 +1337,80 @@ float Tailsitter::get_rpm_based_throttle_scaler()
         }
     }
     rpm_result = constrain_float(rpm_result, 1000.0f, 6000.0f);
-    AP::logger().WriteStreaming("RPME", "TimeUS,RPMResult,RPMLpf,RPMEst,RPMRaw",
-        "s----", // seconds,
-        "F0000", // micro (1e-6), no mult (1e0)
-        "Qffff", // uint64_t, float
+    float scale = (rpm_hover*rpm_hover) / (rpm_result*rpm_result);
+    AP::logger().WriteStreaming("RPME", "TimeUS,RPMResult,RPMLpf,RPMEst,RPMRaw,RPMScaler",
+        "s-----", // seconds,
+        "F00000", // micro (1e-6), no mult (1e0)
+        "Qfffff", // uint64_t, float
         AP_HAL::micros64(),
-        rpm_result, rpm_lpf, rpm_state.x, rpm);
-    return (rpm_hover*rpm_hover) / (rpm_result*rpm_result);
+        rpm_result, rpm_lpf, rpm_state.x, rpm,scale);
+    return scale;
 }
+    #else
+void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
+
+    static struct RPM_KF kf_left  {0.0f, 1e6f};
+    static struct RPM_KF kf_right {0.0f, 1e6f};
+    uint8_t ESC_RIGHT; // ESC index for right motor
+    uint8_t ESC_LEFT;  // ESC index for left motor
+    float rpm_l = 1000.0f, rpm_r = 1000.0f, rpm_hover_l = 3500.0f,rpm_hover_r = 3500.0f; // set default hover rpm
+    static float rpm_lpf_l = 1000.0f, rpm_lpf_r = 1000.0f;
+    uint16_t pwm_l, pwm_r;
+    float rpm_result_l = kf_left.x; // default to last valid rpm
+    float rpm_result_r = kf_right.x; // default to last valid rpm
+    if(!(SRV_Channels::find_channel(SRV_Channel::k_throttleLeft, ESC_LEFT) || SRV_Channels::find_channel(SRV_Channel::k_throttleRight, ESC_RIGHT)))
+    {
+        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find motor channels");
+        scale_l = 1.0f;
+        scale_r = 1.0f;
+        return;
+    }
+    bool valid_l = _esc_telem->get_rpm(ESC_LEFT, rpm_l) && SRV_Channels::get_output_pwm(SRV_Channel::k_throttleLeft, pwm_l);
+    bool valid_r = _esc_telem->get_rpm(ESC_RIGHT, rpm_r) && SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, pwm_r);
+    if(!(valid_l || valid_r)){
+        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, no valid RPM data");
+        scale_l = 1.0f;
+        scale_r = 1.0f;
+        return;
+    }
+     if (_esc_telem == nullptr) {
+        _esc_telem = AP_ESC_Telem::get_singleton();
+    }
+    if (_esc_telem != nullptr) {
+        if(rpm_l >= 1000.0f && rpm_l <= 6000.0f){
+            rpm_lpf_l = rpm_l * 0.05f + rpm_lpf_l*0.95f;
+            rpm_result_l = rpm_lpf_l;
+            }
+            else{
+                rpm_result_l = kf_left.x; // use last valid rpm
+            }
+            // Used raw measurement for Kalman filter update to avoid large delay
+            update_rpm_kalman(kf_left,pwm_l,rpm_l,quadplane.attitude_control->get_dt());
+        if(rpm_r >= 1000.0f && rpm_r <= 6000.0f){
+            rpm_lpf_r = rpm_r * 0.05f + rpm_lpf_r*0.95f;
+            rpm_result_r = rpm_lpf_r;
+            }
+            else{
+                rpm_result_r = kf_right.x; // use last valid rpm
+            }
+            // Used raw measurement for Kalman filter update to avoid large delay
+            update_rpm_kalman(kf_right,pwm_r,rpm_r,quadplane.attitude_control->get_dt());
+        }
+    rpm_result_l = constrain_float(rpm_result_l, 1000.0f, 6000.0f);
+    rpm_result_r = constrain_float(rpm_result_r, 1000.0f, 6000.0f);
+    scale_l = (rpm_hover_l*rpm_hover_l) / (rpm_result_l*rpm_result_l);
+    scale_r = (rpm_hover_r*rpm_hover_r) / (rpm_result_r*rpm_result_r);
+    AP::logger().WriteStreaming("RPME", "TimeUS,RPMResultL,RPMResultR,RPMLpfL,RPMLpfR,RPMEstL,RPMEstR,RPMRawL,RPMRawR,scaleL,scaleR",
+        "s---------",
+        "F0000000000",
+        "Qffffffffff",
+        AP_HAL::micros64(),
+        rpm_result_l, rpm_result_r,
+        rpm_lpf_l, rpm_lpf_r,
+        kf_left.x, kf_right.x,
+        rpm_l, rpm_r,scale_l,scale_r);
+}
+#endif
 void Tailsitter::update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt)
 {
     const float tau  = 0.05f;     // motor time constant (s)
