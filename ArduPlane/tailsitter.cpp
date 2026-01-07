@@ -1316,14 +1316,14 @@ float Tailsitter::get_rpm_based_throttle_scaler()
     //     return 0.0f;     
     // }
     static struct RPM_KF rpm_state{0.0f, 1e6f};
-    float rpm_hover = 3600.0f; // set default hover rpm
+    float rpm_hover = 3500.0f; // set default hover rpm
     float rpm_result = rpm_state.x; // default to last valid rpm
+    float rpm = 1000.0f;
+    static float rpm_lpf = 1000.0f;
     if (_esc_telem == nullptr) {
         _esc_telem = AP_ESC_Telem::get_singleton();
     }
     if (_esc_telem != nullptr) {
-        float rpm;
-        static float rpm_lpf = 1000.0f;
         uint16_t pwm;
         if(!SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, pwm)){
             GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find right motor channel");
@@ -1339,10 +1339,10 @@ float Tailsitter::get_rpm_based_throttle_scaler()
         //     return 1.0f;
         // }
         // GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Avg RPM: %f, %f, %d, %d", rpm_l, rpm_r, pwm_l, pwm_r);
-        if (_esc_telem->get_average_motor_rpm() > 0) {
-            rpm = _esc_telem->get_average_motor_rpm();
+        if (_esc_telem->get_rpm(1, rpm)) {
+            // _esc_telem->get_rpm(1, rpm); // get right motor RPM
             if(rpm >= 1000.0f && rpm <= 6000.f){
-                rpm_lpf = rpm * 0.15f + rpm_lpf*0.85f;
+                rpm_lpf = rpm * 0.05f + rpm_lpf*0.95f;
                 rpm_result = rpm_lpf;
             }
             else{
@@ -1354,6 +1354,12 @@ float Tailsitter::get_rpm_based_throttle_scaler()
         }
     }
     rpm_result = constrain_float(rpm_result, 1000.0f, 6000.0f);
+    AP::logger().WriteStreaming("RPME", "TimeUS,RPMResult,RPMLpf,RPMEst,RPMRaw",
+        "s----", // seconds,
+        "F0000", // micro (1e-6), no mult (1e0)
+        "Qffff", // uint64_t, float
+        AP_HAL::micros64(),
+        rpm_result, rpm_lpf, rpm_state.x, rpm);
     return (rpm_hover*rpm_hover) / (rpm_result*rpm_result);
 }
 void Tailsitter::update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt)
