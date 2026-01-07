@@ -1358,6 +1358,9 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
     uint16_t pwm_l, pwm_r;
     float rpm_result_l = kf_left.x; // default to last valid rpm
     float rpm_result_r = kf_right.x; // default to last valid rpm
+    if (_esc_telem == nullptr) {
+        _esc_telem = AP_ESC_Telem::get_singleton();
+    }
     if(!(SRV_Channels::find_channel(SRV_Channel::k_throttleLeft, ESC_LEFT) || SRV_Channels::find_channel(SRV_Channel::k_throttleRight, ESC_RIGHT)))
     {
         GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find motor channels");
@@ -1372,9 +1375,6 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
         scale_l = 1.0f;
         scale_r = 1.0f;
         return;
-    }
-     if (_esc_telem == nullptr) {
-        _esc_telem = AP_ESC_Telem::get_singleton();
     }
     if (_esc_telem != nullptr) {
         if(rpm_l >= 1000.0f && rpm_l <= 6000.0f){
