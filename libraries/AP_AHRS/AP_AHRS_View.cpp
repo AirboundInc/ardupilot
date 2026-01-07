@@ -20,7 +20,7 @@
 
 #include "AP_AHRS_View.h"
 #include <stdio.h>
-
+#include <GCS_MAVLink/GCS.h>
 AP_AHRS_View::AP_AHRS_View(AP_AHRS &_ahrs, enum Rotation _rotation, float pitch_trim_deg) :
     rotation(_rotation),
     ahrs(_ahrs)
@@ -67,8 +67,22 @@ void AP_AHRS_View::update()
         rot_body_to_ned = rot_body_to_ned * rot_view_T;
         gyro = rot_view * gyro;
     }
-
     rot_body_to_ned.to_euler(&roll, &pitch, &yaw);
+    Vector3f z_body{0, 0, 1};
+    Vector3f x_body{1, 0, 0};
+    Vector3f z_ned = rot_body_to_ned * z_body;
+    Vector3f x_ned = rot_body_to_ned * x_body;
+    if( z_ned.z <= 0 ) {
+        gcs().send_text(MAV_SEVERITY_DEBUG, "Nose down AHRS view detected");
+        if( x_ned.z <= 0 ) {
+            gcs().send_text(MAV_SEVERITY_DEBUG, "Belly UP");
+            pitch = - 3.14f - pitch;
+        } else {
+            gcs().send_text(MAV_SEVERITY_DEBUG, "Belly DOWN");
+            pitch = 3.14f - pitch;
+        }
+    }
+    
 
     roll_sensor  = degrees(roll) * 100;
     pitch_sensor = degrees(pitch) * 100;
