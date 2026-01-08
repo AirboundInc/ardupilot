@@ -1191,7 +1191,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
     if (_esc_telem == nullptr) {
         _esc_telem = AP_ESC_Telem::get_singleton();
     }
-    if(!(SRV_Channels::find_channel(SRV_Channel::k_throttleLeft, ESC_LEFT) || SRV_Channels::find_channel(SRV_Channel::k_throttleRight, ESC_RIGHT)))
+    if(!(SRV_Channels::find_channel(SRV_Channel::k_throttleLeft, ESC_LEFT) && SRV_Channels::find_channel(SRV_Channel::k_throttleRight, ESC_RIGHT)))
     {
         GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find motor channels");
         scale_l = 1.0f;
@@ -1200,7 +1200,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
     }
     bool valid_l = _esc_telem->get_rpm(ESC_LEFT, rpm_l) && SRV_Channels::get_output_pwm(SRV_Channel::k_throttleLeft, pwm_l);
     bool valid_r = _esc_telem->get_rpm(ESC_RIGHT, rpm_r) && SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, pwm_r);
-    if(!(valid_l || valid_r)){
+    if(!(valid_l && valid_r)){
         GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, no valid RPM data");
         scale_l = 1.0f;
         scale_r = 1.0f;
@@ -1230,14 +1230,20 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
     rpm_result_r = constrain_float(rpm_result_r, 1000.0f, 6000.0f);
     scale_l = (rpm_hover_l*rpm_hover_l) / (rpm_result_l*rpm_result_l);
     scale_r = (rpm_hover_r*rpm_hover_r) / (rpm_result_r*rpm_result_r);
-    AP::logger().WriteStreaming("RPME", "TimeUS,RPMResultL,RPMResultR,RPMLpfL,RPMLpfR,RPMEstL,RPMEstR,RPMRawL,RPMRawR,scaleL,scaleR",
-        "s---------",
-        "F0000000000",
-        "Qffffffffff",
+    AP::logger().WriteStreaming("RPME", "TimeUS,RPMResultL,RPMResultR,RPMLpfL,RPMLpfR,RPMEstL,RPMEstR",
+        "s------",
+        "F000000",
+        "Qffffff",
         AP_HAL::micros64(),
         rpm_result_l, rpm_result_r,
         rpm_lpf_l, rpm_lpf_r,
         kf_left.x, kf_right.x,
+       );
+        AP::logger().WriteStreaming("RPMF", "TimeUS,RPMRawL,RPMRawR,scaleL,scaleR",
+        "s----",
+        "F0000",
+        "Qffff",
+        AP_HAL::micros64(),
         rpm_l, rpm_r,scale_l,scale_r);
 }
 #endif
