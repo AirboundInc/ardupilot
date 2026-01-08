@@ -1407,7 +1407,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
         AP_HAL::micros64(),
         rpm_result_l, rpm_result_r,
         rpm_lpf_l, rpm_lpf_r,
-        kf_left.x, kf_right.x,
+        kf_left.x, kf_right.x
        );
         AP::logger().WriteStreaming("RPMF", "TimeUS,RPMRawL,RPMRawR,scaleL,scaleR",
         "s----",
