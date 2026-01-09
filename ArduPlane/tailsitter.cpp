@@ -1422,8 +1422,15 @@ void Tailsitter::update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt)
     const float tau  = 0.05f;     // motor time constant (s)
     const float Kpwm = 5.76f;     // PWM -> RPM gain (calculated from motor test data)
     // Noise setup currenly tuned such that we trust meaurements more than model prediction
-    const float Q    = 10000.0f;  // process noise (Need to tune)
-    const float R    = 40000.0f;  // measurement noise
+    const float Q    = 20000.0f;  // process noise (Need to tune)
+    const float R_nom = 10000.0f;  // measurement noise
+
+    // Physical RPM range 0 to 8500 for typical motors used (observed from the ESC telemetry data)
+    const float RPM_MIN  = 0.0f;
+    const float RPM_MAX  = 8500.0f;
+    const float R_high = R_nom*5.0f; // higher measurement noise for out of range RPM
+
+    dt = constrain_float(dt, 1e-4f, 0.02f);
 
     float a = expf(-dt / tau);
     float b = (1.0f - a) * Kpwm;
@@ -1431,17 +1438,22 @@ void Tailsitter::update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt)
     // Prediction
     float x_pred = a * kf.x + b * pwm;
     float P_pred = a * a * kf.P + Q;
+    // Bound prediction
+    x_pred = constrain_float(x_pred, RPM_MIN, RPM_MAX);
+
+    bool meas_valid = (rpm_meas > 300.0f && rpm_meas < 1.2f * RPM_MAX);
+    float R = meas_valid ? R_nom : R_high;
 
     // Update
-    if(rpm_meas < 1000.0f || rpm_meas > 6000.0f){
-        // invalid measurement, skip update use prediction only
-        kf.x = x_pred;
-        kf.P = P_pred;
-        return;
-    }
+    rpm_meas = constrain_float(rpm_meas, RPM_MIN, RPM_MAX);
     float K = P_pred / (P_pred + R);
+
     kf.x = x_pred + K * (rpm_meas - x_pred);
     kf.P = (1.0f - K) * P_pred;
+
+    // Final clamping
+    kf.x = constrain_float(kf.x, RPM_MIN, RPM_MAX);
+    kf.P = constrain_float(kf.P, 100.0f, 1e7f);
 }
 
 
