@@ -1307,7 +1307,10 @@ float Tailsitter::get_rpm_based_throttle_scaler()
 {
     // ESC indices in quadplane motor layout
     static struct RPM_KF rpm_state{0.0f, 1e6f};
-    float rpm_hover = 3500.0f; // set default hover rpm
+    float rpm_hover = hover_rpm_tilt_scale; // set default hover rpm
+    if(hover_rpm_tilt_scale<=0.0f){
+        rpm_hover = 3500.0f; // set default hover rpm as 3500
+    }
     float rpm_result = rpm_state.x; // default to last valid rpm
     float rpm = 1000.0f;
     static float rpm_lpf = 1000.0f;
@@ -1353,7 +1356,11 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
     static struct RPM_KF kf_right {0.0f, 1e6f};
     uint8_t ESC_RIGHT; // ESC index for right motor
     uint8_t ESC_LEFT;  // ESC index for left motor
-    float rpm_l = 1000.0f, rpm_r = 1000.0f, rpm_hover_l = 3500.0f,rpm_hover_r = 3500.0f; // set default hover rpm
+    float tilt_motor_hover_rpm = hover_rpm_tilt_scale;
+    if(hover_rpm_tilt_scale<=0.0f){
+        tilt_motor_hover_rpm = 3500.0f; // set default hover rpm
+    }
+    float rpm_l = 1000.0f, rpm_r = 1000.0f, rpm_hover_l = tilt_motor_hover_rpm, rpm_hover_r = tilt_motor_hover_rpm; // set default hover rpm
     static float rpm_lpf_l = 1000.0f, rpm_lpf_r = 1000.0f;
     uint16_t pwm_l, pwm_r;
     float rpm_result_l = kf_left.x; // default to last valid rpm
