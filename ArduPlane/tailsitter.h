@@ -134,6 +134,7 @@ public:
     AP_Float wvane_pitch_hi;
     AP_Float wvane_pitch_mid;
     AP_Int8 rpm_based_tilt_scaling;
+    AP_Float hover_rpm_tilt_scale;
 
     AP_MotorsTailsitter* tailsitter_motors;
 
