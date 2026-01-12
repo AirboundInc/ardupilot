@@ -220,6 +220,9 @@ public:
     // Return the body-to-NED target attitude used by the quadplane-specific attitude control input methods
     Quaternion get_attitude_target_quat() const { return _attitude_target; }
 
+    // Getter for attitude error rotation vector in radians
+    Vector3f get_att_error_rot_vec_rad() const { return _attitude_error_rot_vec_rad; }
+
     // Return the angular velocity of the target (setpoint) [rad/s] in the target attitude frame
     const Vector3f& get_attitude_target_ang_vel() const { return _ang_vel_target;}
 
@@ -482,6 +485,9 @@ protected:
     // This represents a quaternion rotation in NED frame to the target (setpoint)
     // attitude used in the attitude controller.
     Quaternion          _attitude_target;
+
+    // Attitude error rotation vector in radians
+    Vector3f            _attitude_error_rot_vec_rad;
 
     // This represents the angular velocity of the target (setpoint) attitude used in
     // the attitude controller as an angular velocity vector, in radians per second in
