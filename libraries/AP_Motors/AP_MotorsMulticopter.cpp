@@ -230,6 +230,13 @@ const AP_Param::GroupInfo AP_MotorsMulticopter::var_info[] = {
     // @Increment: 0.001
     // @User: Advanced
     AP_GROUPINFO("SPOOL_TIM_DN", 44, AP_MotorsMulticopter, _spool_down_time, 0),
+    // @Param: NL_MIXER
+    // @DisplayName: Tailsitter Non-Linear Mixer
+    // @Description: Calculates tailsitter motor outputs using a non-linear mixer
+    // @Values: 0: Disabled, 1 : Enabled
+    // @User: Advanced
+    AP_GROUPINFO("NL_MIXER", 45, AP_MotorsMulticopter, _tailsitter_nl_mixer, 0),
+    
 
     AP_GROUPEND
 };

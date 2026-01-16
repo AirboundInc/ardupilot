@@ -176,6 +176,9 @@ protected:
     // scaling for booster motor throttle
     AP_Float            _boost_scale;
 
+    // Tailsitter specific parameters
+    AP_Int8            _tailsitter_nl_mixer; // Non linear mixer for tailsitters
+
     // motor output variables
     bool                motor_enabled[AP_MOTORS_MAX_NUM_MOTORS];    // true if motor is enabled
 

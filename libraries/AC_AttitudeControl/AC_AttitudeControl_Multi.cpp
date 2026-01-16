@@ -356,7 +356,7 @@ void AC_AttitudeControl_Multi::set_throttle_out(float throttle_in, bool apply_an
     if (apply_angle_boost) {
         // Apply angle boost
         if(_ts_enabled) {
-            throttle_in = get_throttle_boosted_ts(throttle_in);
+            throttle_in = get_throttle_boosted(throttle_in);
         }else{
             throttle_in = get_throttle_boosted(throttle_in);
         }   
