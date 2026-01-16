@@ -199,7 +199,7 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     AP_GROUPINFO("RPM_EN", 27, Tailsitter, rpm_based_tilt_scaling, 0),
     // @Param: RPM_HR
     // @DisplayName: Hover RPM tilt scale factor
-    // @Description: Hover RPM vale in rad/sec, used to scale pitch control effort during hover when RPM based tilt scaling is enabled
+    // @Description: Hover RPM value, used to scale pitch control effort during hover when RPM based tilt scaling is enabled
     // @User: Standard
     AP_GROUPINFO("RPM_HR", 28, Tailsitter, hover_rpm_tilt_scale, 4000.0f),
 
