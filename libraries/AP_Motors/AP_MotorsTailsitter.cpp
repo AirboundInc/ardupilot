@@ -23,7 +23,7 @@
 #include "AP_MotorsTailsitter.h"
 #include <GCS_MAVLink/GCS.h>
 #include <SRV_Channel/SRV_Channel.h>
-
+#include <stdio.h>
 extern const AP_HAL::HAL& hal;
 
 #define SERVO_OUTPUT_RANGE  4500
@@ -171,8 +171,38 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     }
 
     // calculate left and right throttle outputs
-    _thrust_left  = throttle_thrust + roll_thrust * 0.5f;
-    _thrust_right = throttle_thrust - roll_thrust * 0.5f;
+    if(_tailsitter_nl_mixer){
+        // non-linear mixer EXPLANATION: https://www.notion.so/airbound/Mixer-for-the-tailsitter-2ea21adf4be980b4bb11f953aeb3d857?source=copy_link
+        const float TL_cos = throttle_thrust + 0.5f * roll_thrust;
+        const float TR_cos = throttle_thrust - 0.5f * roll_thrust;
+        const float TL_sin = 0.5f * (pitch_thrust - yaw_thrust);
+        const float TR_sin = 0.5f * (pitch_thrust + yaw_thrust);
+        const float eps = 1e-6f; // to avoid division by zero
+        if (fabsf(TL_cos) < eps && fabsf(TL_sin) < eps){
+            _thrust_left = 0.0f;
+        } else {
+            _thrust_left = sqrtf(TL_cos * TL_cos + TL_sin * TL_sin);
+        }
+        if(fabsf(TR_cos) < eps && fabsf(TR_sin) < eps){
+            _thrust_right = 0.0f;
+        } else {
+            _thrust_right = sqrtf(TR_cos * TR_cos + TR_sin * TR_sin);
+        }
+        _tilt_left = constrain_float(degrees(atan2f(TL_sin, TL_cos)),-45.0f,45.0f);
+        _tilt_right = constrain_float(degrees(atan2f(TR_sin, TR_cos)),-45.0f,45.0f);
+        _tilt_left  /= 45.0f;
+        _tilt_right /= 45.0f;
+        printf("Tilt L: %.2f, Tilt R: %.2f\n", _tilt_left, _tilt_right);
+        printf("Thrust L: %.2f, Thrust R: %.2f\n", _thrust_left, _thrust_right);
+
+    } else {
+        _thrust_left  = throttle_thrust + roll_thrust * 0.5f;
+        _thrust_right = throttle_thrust - roll_thrust * 0.5f;
+        // Thrust vectoring
+        _tilt_left  = pitch_thrust - yaw_thrust;
+        _tilt_right = pitch_thrust + yaw_thrust;
+        printf("Tilt L: %.2f, Tilt R: %.2f\n", _tilt_left, _tilt_right);
+    }
 
     thrust_max = MAX(_thrust_right,_thrust_left);
     thrust_min = MIN(_thrust_right,_thrust_left);
@@ -208,10 +238,7 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     } else {
         _throttle_out = throttle_thrust / compensation_gain;
     }
-
-    // thrust vectoring
-    _tilt_left  = pitch_thrust - yaw_thrust;
-    _tilt_right = pitch_thrust + yaw_thrust;
+    
 }
 
 // output_test_seq - spin a motor at the pwm value specified
