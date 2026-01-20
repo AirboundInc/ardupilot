@@ -23,6 +23,8 @@
 
 #if HAL_QUADPLANE_ENABLED
 
+float DAFAULT_HOVER_RPM = 3500.0f; // default rpm for motors without telemetry
+
 const AP_Param::GroupInfo Tailsitter::var_info[] = {
 
     // @Param: ENABLE
@@ -855,10 +857,11 @@ void Tailsitter::speed_scaling(void)
         if ((functions[i] == SRV_Channel::Aux_servo_function_t::k_tiltMotorLeft) || (functions[i] == SRV_Channel::Aux_servo_function_t::k_tiltMotorRight)) {
             //always apply throttle scaling to tilts
             if (rpm_based_tilt_scaling) {
-                #ifdef SITL_DEBUG
-                float scaler = get_rpm_based_tilt_scaler();
-                v *= scaler;
-                #else
+#ifdef SITL_DEBUG
+                float scale_l,scale_r;
+                get_rpm_based_tilt_scaler(scale_l,scale_r);
+                v *= scale_l;
+#else
                 float scale_l,scale_r;
                 get_rpm_based_tilt_scaler(scale_l,scale_r);
                 if (functions[i] == SRV_Channel::Aux_servo_function_t::k_tiltMotorLeft) {
@@ -866,7 +869,7 @@ void Tailsitter::speed_scaling(void)
                 } else {
                     v *= scale_r;
                 }
-                #endif
+#endif
             }
             else{
                 v *= throttle_scaler;
@@ -1137,63 +1140,12 @@ MAV_VTOL_STATE Tailsitter_Transition::get_mav_vtol_state() const
 }
 // Commented for the hardware implementation because in real flight only one RPM is available from the ESC telemetry
 // Get RPM based throttle scaler for tilt motors
-#ifdef SITL_DEBUG
-float Tailsitter::get_rpm_based_tilt_scaler()
-{
-    // ESC indices in quadplane motor layout
-    static struct RPM_KF rpm_state{0.0f, 1e6f};
-    float rpm_hover = hover_rpm_tilt_scale; // set default hover rpm
-    if(hover_rpm_tilt_scale<=0.0f){
-        rpm_hover = 3500.0f; // set default hover rpm as 3500
-    }
-    float rpm_result = rpm_state.x; // default to last valid rpm
-    float rpm = 1000.0f;
-    static float rpm_lpf = 1000.0f;
-    uint8_t ESC_INDEX = 1; // Got from Log that only ESC[1] publishing the rpm in realflight
-    if (_esc_telem == nullptr) {
-        _esc_telem = AP_ESC_Telem::get_singleton();
-    }
-    if (_esc_telem != nullptr) {
-        uint16_t pwm;
-        if(!SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, pwm)){
-            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find right motor channel");
-            return 1.0f;
-        }
-        // For real hardware implementation, only use right motor RPM for scaling
-        if (_esc_telem->get_rpm(ESC_INDEX, rpm)) {
-            // _esc_telem->get_rpm(1, rpm); // get right motor RPM
-            if(rpm >= 1000.0f && rpm <= 6000.f){
-                rpm_lpf = rpm * 0.05f + rpm_lpf*0.95f;
-                rpm_result = rpm_lpf;
-            }
-            else{
-                rpm_result = rpm_state.x; // use last valid rpm
-            }
-            // Used raw measurement for Kalman filter update to avoid large delay
-            update_rpm_kalman(rpm_state,pwm,rpm,quadplane.attitude_control->get_dt());
-            // GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Avg RPM LAST: %f", rpm);
-        }
-    }
-    rpm_result = constrain_float(rpm_result, 1000.0f, 6000.0f);
-    float scale = (rpm_hover*rpm_hover) / (rpm_result*rpm_result);
-    AP::logger().WriteStreaming("RPME", "TimeUS,RPMResult,RPMLpf,RPMEst,RPMRaw,RPMScaler",
-        "s-----", // seconds,
-        "F00000", // micro (1e-6), no mult (1e0)
-        "Qfffff", // uint64_t, float
-        AP_HAL::micros64(),
-        rpm_result, rpm_lpf, rpm_state.x, rpm,scale);
-    return scale;
-}
-    #else
 void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
-
     static struct RPM_KF kf_left  {0.0f, 1e6f};
     static struct RPM_KF kf_right {0.0f, 1e6f};
-    uint8_t ESC_RIGHT; // ESC index for right motor
-    uint8_t ESC_LEFT;  // ESC index for left motor
     float tilt_motor_hover_rpm = hover_rpm_tilt_scale;
     if(hover_rpm_tilt_scale<=0.0f){
-        tilt_motor_hover_rpm = 3500.0f; // set default hover rpm
+        tilt_motor_hover_rpm = DAFAULT_HOVER_RPM; // set default hover rpm
     }
     float rpm_l = 1000.0f, rpm_r = 1000.0f, rpm_hover_l = tilt_motor_hover_rpm, rpm_hover_r = tilt_motor_hover_rpm; // set default hover rpm
     static float rpm_lpf_l = 1000.0f, rpm_lpf_r = 1000.0f;
@@ -1203,7 +1155,30 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
     if (_esc_telem == nullptr) {
         _esc_telem = AP_ESC_Telem::get_singleton();
     }
-    if(!(SRV_Channels::find_channel(SRV_Channel::k_throttleLeft, ESC_LEFT) && SRV_Channels::find_channel(SRV_Channel::k_throttleRight, ESC_RIGHT)))
+#ifdef SITL_DEBUG
+    uint8_t ESC_INDEX = 1; // Got from Log that only ESC[1] publishing the rpm in realflight
+    uint16_t pwm;
+    float rpm = 1000.0f;
+        if(!SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, pwm)){
+            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find right motor channel");
+            scale_l = 1.0f;
+            scale_r = 1.0f;
+            return;
+        }
+        if (!_esc_telem->get_rpm(ESC_INDEX, rpm)){
+            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, no valid RPM data");
+            scale_l = 1.0f;
+            scale_r = 1.0f;
+            return;
+        }
+        rpm_l = rpm; // use right motor RPM for both sides in SITL
+        rpm_r = rpm;
+        pwm_l = pwm;
+        pwm_r = pwm;
+#else
+    uint8_t ESC_RIGHT; // ESC index for right motor
+    uint8_t ESC_LEFT;  // ESC index for left motor
+   if(!(SRV_Channels::find_channel(SRV_Channel::k_throttleLeft, ESC_LEFT) && SRV_Channels::find_channel(SRV_Channel::k_throttleRight, ESC_RIGHT)))
     {
         GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find motor channels");
         scale_l = 1.0f;
@@ -1218,6 +1193,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
         scale_r = 1.0f;
         return;
     }
+#endif
     if (_esc_telem != nullptr) {
         if(rpm_l >= 1000.0f && rpm_l <= 6000.0f){
             rpm_lpf_l = rpm_l * 0.05f + rpm_lpf_l*0.95f;
@@ -1258,7 +1234,6 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
         AP_HAL::micros64(),
         rpm_l, rpm_r,scale_l,scale_r);
 }
-#endif
 void Tailsitter::update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt)
 {
     const float tau  = 0.05f;     // motor time constant (s)
