@@ -864,6 +864,13 @@ void Tailsitter::speed_scaling(void)
             //always apply throttle scaling to tilts
             if (rpm_based_tilt_scaling) {
 #ifdef SITL_DEBUG
+<<<<<<< HEAD
+=======
+                float scale_l,scale_r;
+                get_rpm_based_tilt_scaler(scale_l,scale_r);
+                v *= scale_l;
+#else
+>>>>>>> Tailsitter:Did the clean SITL DEBUG
                 float scale_l,scale_r;
                 get_rpm_based_tilt_scaler(scale_l,scale_r, throttle_scaler);
                 v *= scale_l;
@@ -1351,14 +1358,11 @@ float Tailsitter::get_rpm_based_throttle_scaler()
 }
     #else
 void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
-
     static struct RPM_KF kf_left  {0.0f, 1e6f};
     static struct RPM_KF kf_right {0.0f, 1e6f};
-    uint8_t ESC_RIGHT; // ESC index for right motor
-    uint8_t ESC_LEFT;  // ESC index for left motor
     float tilt_motor_hover_rpm = hover_rpm_tilt_scale;
     if(hover_rpm_tilt_scale<=0.0f){
-        tilt_motor_hover_rpm = 3500.0f; // set default hover rpm
+        tilt_motor_hover_rpm = DAFAULT_HOVER_RPM; // set default hover rpm
     }
     float rpm_l = 1000.0f, rpm_r = 1000.0f, rpm_hover_l = tilt_motor_hover_rpm, rpm_hover_r = tilt_motor_hover_rpm; // set default hover rpm
     static float rpm_lpf_l = 1000.0f, rpm_lpf_r = 1000.0f;
@@ -1368,7 +1372,30 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
     if (_esc_telem == nullptr) {
         _esc_telem = AP_ESC_Telem::get_singleton();
     }
-    if(!(SRV_Channels::find_channel(SRV_Channel::k_throttleLeft, ESC_LEFT) && SRV_Channels::find_channel(SRV_Channel::k_throttleRight, ESC_RIGHT)))
+#ifdef SITL_DEBUG
+    uint8_t ESC_INDEX = 1; // Got from Log that only ESC[1] publishing the rpm in realflight
+    uint16_t pwm;
+    float rpm = 1000.0f;
+        if(!SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, pwm)){
+            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find right motor channel");
+            scale_l = 1.0f;
+            scale_r = 1.0f;
+            return;
+        }
+        if (!_esc_telem->get_rpm(ESC_INDEX, rpm)){
+            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, no valid RPM data");
+            scale_l = 1.0f;
+            scale_r = 1.0f;
+            return;
+        }
+        rpm_l = rpm; // use right motor RPM for both sides in SITL
+        rpm_r = rpm;
+        pwm_l = pwm;
+        pwm_r = pwm;
+#else
+    uint8_t ESC_RIGHT; // ESC index for right motor
+    uint8_t ESC_LEFT;  // ESC index for left motor
+   if(!(SRV_Channels::find_channel(SRV_Channel::k_throttleLeft, ESC_LEFT) && SRV_Channels::find_channel(SRV_Channel::k_throttleRight, ESC_RIGHT)))
     {
         GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find motor channels");
         scale_l = 1.0f;
@@ -1383,6 +1410,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
         scale_r = 1.0f;
         return;
     }
+#endif
     if (_esc_telem != nullptr) {
         if(rpm_l >= 1000.0f && rpm_l <= 6000.0f){
             rpm_lpf_l = rpm_l * 0.05f + rpm_lpf_l*0.95f;
@@ -1423,7 +1451,6 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
         AP_HAL::micros64(),
         rpm_l, rpm_r,scale_l,scale_r);
 }
-#endif
 void Tailsitter::update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt)
 {
     const float tau  = 0.05f;     // motor time constant (s)
