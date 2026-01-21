@@ -23,7 +23,7 @@
 
 #if HAL_QUADPLANE_ENABLED
 
-float DAFAULT_HOVER_RPM = 3500.0f; // default rpm for motors without telemetry
+float DEFAULT_HOVER_RPM = 3500.0f; // default rpm for motors without telemetry
 
 const AP_Param::GroupInfo Tailsitter::var_info[] = {
 
@@ -1145,7 +1145,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
     static struct RPM_KF kf_right {0.0f, 1e6f};
     float tilt_motor_hover_rpm = hover_rpm_tilt_scale;
     if(hover_rpm_tilt_scale<=0.0f){
-        tilt_motor_hover_rpm = DAFAULT_HOVER_RPM; // set default hover rpm
+        tilt_motor_hover_rpm = DEFAULT_HOVER_RPM; // set default hover rpm
     }
     float rpm_l = 1000.0f, rpm_r = 1000.0f, rpm_hover_l = tilt_motor_hover_rpm, rpm_hover_r = tilt_motor_hover_rpm; // set default hover rpm
     static float rpm_lpf_l = 1000.0f, rpm_lpf_r = 1000.0f;
@@ -1160,13 +1160,21 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
     uint16_t pwm;
     float rpm = 1000.0f;
         if(!SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, pwm)){
-            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find right motor channel");
+            static uint64_t initial_time = AP_HAL::micros64();
+            if((AP_HAL::micros64() - initial_time)*1e-6 > 1.0f){
+                GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find motor channel"); // wait for 1s before sending message
+                initial_time = AP_HAL::micros64();
+            }
             scale_l = 1.0f;
             scale_r = 1.0f;
             return;
         }
         if (!_esc_telem->get_rpm(ESC_INDEX, rpm)){
-            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, no valid RPM data");
+             static uint64_t initial_time = AP_HAL::micros64();
+            if((AP_HAL::micros64() - initial_time)*1e-6 > 1.0f){
+                GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, no valid RPM data"); // wait for 1s before sending message
+                initial_time = AP_HAL::micros64();
+            }
             scale_l = 1.0f;
             scale_r = 1.0f;
             return;
@@ -1180,7 +1188,11 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
     uint8_t ESC_LEFT;  // ESC index for left motor
    if(!(SRV_Channels::find_channel(SRV_Channel::k_throttleLeft, ESC_LEFT) && SRV_Channels::find_channel(SRV_Channel::k_throttleRight, ESC_RIGHT)))
     {
-        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find motor channels");
+        static uint64_t initial_time = AP_HAL::micros64();
+        if((AP_HAL::micros64() - initial_time)*1e-6 > 1.0f){
+            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find motor channels");
+            initial_time = AP_HAL::micros64();
+        }
         scale_l = 1.0f;
         scale_r = 1.0f;
         return;
@@ -1188,7 +1200,11 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
     bool valid_l = _esc_telem->get_rpm(ESC_LEFT, rpm_l) && SRV_Channels::get_output_pwm(SRV_Channel::k_throttleLeft, pwm_l);
     bool valid_r = _esc_telem->get_rpm(ESC_RIGHT, rpm_r) && SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, pwm_r);
     if(!(valid_l && valid_r)){
-        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, no valid RPM data");
+        static uint64_t initial_time = AP_HAL::micros64();
+        if((AP_HAL::micros64() - initial_time)*1e-6 > 1.0f){
+            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, no valid RPM data");
+            initial_time = AP_HAL::micros64();
+        }
         scale_l = 1.0f;
         scale_r = 1.0f;
         return;
