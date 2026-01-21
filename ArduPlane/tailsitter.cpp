@@ -1265,12 +1265,12 @@ void Tailsitter::update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt)
 
     dt = constrain_float(dt, 1e-4f, 0.02f);
 
-    float a = expf(-dt / tau);
-    float b = (1.0f - a) * Kpwm;
+    float coeff_a = expf(-dt / tau); // State transition coefficient
+    float coeff_b = (1.0f - coeff_a) * Kpwm; // Control input coefficient
 
     // Prediction
-    float x_pred = a * kf.x + b * pwm;
-    float P_pred = a * a * kf.P + Q;
+    float x_pred = coeff_a * kf.x + coeff_b * pwm;
+    float P_pred = coeff_a * coeff_a * kf.P + Q;
     // Bound prediction
     x_pred = constrain_float(x_pred, RPM_MIN, RPM_MAX);
 
