@@ -900,6 +900,7 @@ void AC_AttitudeControl::attitude_controller_run_quat()
 
     // Record error to handle EKF resets
     _attitude_ang_error = attitude_body.inverse() * _attitude_target;
+    _attitude_body = attitude_body;
     // finally update the attitude target
     _ang_vel_body = ang_vel_body;
 }
