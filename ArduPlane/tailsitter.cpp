@@ -878,7 +878,7 @@ void Tailsitter::speed_scaling(void)
 #endif
             }
             else{
-                v *= throttle_scaler;
+                v *= 1;
             }
         } else {
             v *= spd_scaler;

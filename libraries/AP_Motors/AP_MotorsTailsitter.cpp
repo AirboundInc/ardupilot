@@ -24,6 +24,7 @@
 #include <GCS_MAVLink/GCS.h>
 #include <SRV_Channel/SRV_Channel.h>
 #include <stdio.h>
+#include <AP_Logger/AP_Logger.h>
 extern const AP_HAL::HAL& hal;
 
 #define SERVO_OUTPUT_RANGE  4500
@@ -170,32 +171,67 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
         limit.roll = true;
     }
 
-    // calculate left and right throttle outputs
-    if(_tailsitter_nl_mixer){
-        // non-linear mixer EXPLANATION: https://www.notion.so/airbound/Mixer-for-the-tailsitter-2ea21adf4be980b4bb11f953aeb3d857?source=copy_link
-        const float TL_cos = throttle_thrust + 0.5f * roll_thrust;
-        const float TR_cos = throttle_thrust - 0.5f * roll_thrust;
-        const float TL_sin = pitch_thrust - yaw_thrust;
-        const float TR_sin = pitch_thrust + yaw_thrust;
-        const float eps = 1e-6f; // to avoid division by zero
-        if (fabsf(TL_cos) < eps && fabsf(TL_sin) < eps){
-            _thrust_left = 0.0f;
-            _tilt_left = 0.0f;
+    // calculate left and right throttle outputs with non linear mixer
+    if (_tailsitter_nl_mixer) {
+
+        constexpr float alpha_max = radians(45.0f); // maximum tilt angle of the tilt rotors (evaluated compile time)
+        constexpr float eps = 1e-3f;                // small value to avoid division by zero
+
+        /* ---- Vertical thrust + roll demand ---- */
+        float T_L = throttle_thrust + 0.5f * roll_thrust;
+        float T_R = throttle_thrust - 0.5f * roll_thrust;
+
+        /* ---- Lateral force demand (pitch / yaw) ---- */
+        float Fy_L = pitch_thrust - yaw_thrust;
+        float Fy_R = pitch_thrust + yaw_thrust;
+
+        /* ---- Convert lateral force → tilt angle ---- */
+        float alpha_L = 0.0f;
+        float alpha_R = 0.0f;
+
+        if (T_L > eps) {
+            float tan_alpha = Fy_L / T_L;
+            alpha_L = atanf(tan_alpha);
         } else {
-            _thrust_left = constrain_float(sqrtf(TL_cos * TL_cos + TL_sin * TL_sin), 0.0f, 1.0f);
-            _tilt_left = constrain_float(degrees(atan2f(TL_sin, TL_cos)),-45.0f,45.0f);
+            limit.pitch = true;
+            limit.yaw   = true;
         }
-        if(fabsf(TR_cos) < eps && fabsf(TR_sin) < eps){
-            _thrust_right = 0.0f;
-            _tilt_right = 0.0f;
+
+        if (T_R > eps) {
+            float tan_alpha = Fy_R / T_R;
+            alpha_R = atanf(tan_alpha);
         } else {
-            _thrust_right = constrain_float(sqrtf(TR_cos * TR_cos + TR_sin * TR_sin), 0.0f, 1.0f);
-            _tilt_right = constrain_float(degrees(atan2f(TR_sin, TR_cos)),-45.0f,45.0f);
+            limit.pitch = true;
+            limit.yaw   = true;
         }
-        _tilt_left  /= 45.0f;
-        _tilt_right /= 45.0f;
-        printf("Tilt L: %.2f, Tilt R: %.2f\n", _tilt_left, _tilt_right);
-        printf("Thrust L: %.2f, Thrust R: %.2f\n", _thrust_left, _thrust_right);
+
+        /* ---- Preserve vertical thrust ---- */
+        float T_L_n = T_L / cosf(alpha_L);
+        float T_R_n = T_R / cosf(alpha_R);
+
+        /* ---- Final saturation ---- */
+        float Tmax = MAX(T_L_n, T_R_n);
+        if (Tmax > 1.0f) {
+            float scale = 1.0f / Tmax;
+            T_L_n *= scale;
+            T_R_n *= scale;
+            limit.throttle_upper = true;
+        }
+
+        /* ---- Outputs ---- */
+        // Here outputs are multiplied by 0.5f for stability after sitl testing this may or maynot be true in real world testing
+        // This scaling makes the output less aggressive and it avoids the motors saturating too easily. Still the non-linear calculation is valid..
+        _thrust_left  = constrain_float(T_L_n*0.5f, 0.0f, 1.0f);
+        _thrust_right = constrain_float(T_R_n*0.5f, 0.0f, 1.0f);
+
+        _tilt_left  = constrain_float(alpha_L*0.5f / alpha_max, -1.0f, 1.0f);
+        _tilt_right = constrain_float(alpha_R*0.5f / alpha_max, -1.0f, 1.0f);
+        AP::logger().WriteStreaming("NLMI", "TimeUS,TRB,TLB,TRA,TLA,PHLB,PHRB,AL,AR",
+        "s--------", // seconds,
+        "F00000000", // micro (1e-6), no mult (1e0)
+        "Qffffffff", // uint64_t, float
+        AP_HAL::micros64(),
+        T_R, T_L, T_R_n, T_L_n, Fy_L, Fy_R, _tilt_left, _tilt_right);
 
     } else {
         _thrust_left  = throttle_thrust + roll_thrust * 0.5f;
