@@ -87,11 +87,6 @@ public:
     // set the PID notch sample rates
     void set_notch_sample_rate(float sample_rate) override;
 
-    // set tailsitter enabled flag
-    void set_tailsitter_enabled(bool enabled = false) { _ts_enabled = enabled; }
-    
-    void get_tilt_motor_angle(float tilt_angle){_ts_tilt_angle = tilt_angle;}
-
     // user settable parameters
     static const struct AP_Param::GroupInfo var_info[];
 
@@ -157,7 +152,4 @@ protected:
 
     // angle_p/pd boost multiplier
     AP_Float              _throttle_gain_boost;
-
-    bool                _ts_enabled = false;  // tailsitter enabled flag
-    float               _ts_tilt_angle = 0.0f; // tailsitter tilt motor angle
 };
