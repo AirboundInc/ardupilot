@@ -182,14 +182,14 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
             _thrust_left = 0.0f;
             _tilt_left = 0.0f;
         } else {
-            _thrust_left = sqrtf(TL_cos * TL_cos + TL_sin * TL_sin);
+            _thrust_left = constrain_float(sqrtf(TL_cos * TL_cos + TL_sin * TL_sin), 0.0f, 1.0f);
             _tilt_left = constrain_float(degrees(atan2f(TL_sin, TL_cos)),-45.0f,45.0f);
         }
         if(fabsf(TR_cos) < eps && fabsf(TR_sin) < eps){
             _thrust_right = 0.0f;
             _tilt_right = 0.0f;
         } else {
-            _thrust_right = sqrtf(TR_cos * TR_cos + TR_sin * TR_sin);
+            _thrust_right = constrain_float(sqrtf(TR_cos * TR_cos + TR_sin * TR_sin), 0.0f, 1.0f);
             _tilt_right = constrain_float(degrees(atan2f(TR_sin, TR_cos)),-45.0f,45.0f);
         }
         _tilt_left  /= 45.0f;
