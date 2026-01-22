@@ -24,6 +24,7 @@
 #include <GCS_MAVLink/GCS.h>
 #include <SRV_Channel/SRV_Channel.h>
 #include <stdio.h>
+#include <AP_Logger/AP_Logger.h>
 extern const AP_HAL::HAL& hal;
 
 #define SERVO_OUTPUT_RANGE  4500
@@ -182,20 +183,26 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
             _thrust_left = 0.0f;
             _tilt_left = 0.0f;
         } else {
-            _thrust_left = constrain_float(sqrtf(TL_cos * TL_cos + TL_sin * TL_sin), 0.0f, 1.0f);
-            _tilt_left = constrain_float(degrees(atan2f(TL_sin, TL_cos)),-45.0f,45.0f);
+            _thrust_left = constrain_float(sqrtf(TL_cos * TL_cos + TL_sin * TL_sin)*0.5f, 0.0f, 1.0f);
+            _tilt_left = constrain_float(degrees(atan2f(TL_sin, TL_cos))*0.5f,-45.0f,45.0f);
         }
         if(fabsf(TR_cos) < eps && fabsf(TR_sin) < eps){
             _thrust_right = 0.0f;
             _tilt_right = 0.0f;
         } else {
-            _thrust_right = constrain_float(sqrtf(TR_cos * TR_cos + TR_sin * TR_sin), 0.0f, 1.0f);
-            _tilt_right = constrain_float(degrees(atan2f(TR_sin, TR_cos)),-45.0f,45.0f);
+            _thrust_right = constrain_float(sqrtf(TR_cos * TR_cos + TR_sin * TR_sin)*0.5f, 0.0f, 1.0f);
+            _tilt_right = constrain_float(degrees(atan2f(TR_sin, TR_cos))*0.5f,-45.0f,45.0f);
         }
         _tilt_left  /= 45.0f;
         _tilt_right /= 45.0f;
-        printf("Tilt L: %.2f, Tilt R: %.2f\n", _tilt_left, _tilt_right);
-        printf("Thrust L: %.2f, Thrust R: %.2f\n", _thrust_left, _thrust_right);
+        // In this implentation the actuator efforts are multiplied by 0.5f is to keep the max output within [0,1] range
+        // In SITL observed that it is very unstable without this scaling factor
+        AP::logger().WriteStreaming("NLMI", "TimeUS,TRB,TLB,TRA,TLA,PHLB,PHRB,AL,AR",
+        "s--------", // seconds,
+        "F00000000", // micro (1e-6), no mult (1e0)
+        "Qffffffff", // uint64_t, float
+        AP_HAL::micros64(),
+        TR_cos, TL_cos, _thrust_right, _thrust_left, TL_sin, TR_sin, _tilt_left, _tilt_right);
 
     } else {
         _thrust_left  = throttle_thrust + roll_thrust * 0.5f;
@@ -203,7 +210,6 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
         // Thrust vectoring
         _tilt_left  = pitch_thrust - yaw_thrust;
         _tilt_right = pitch_thrust + yaw_thrust;
-        printf("Tilt L: %.2f, Tilt R: %.2f\n", _tilt_left, _tilt_right);
     }
 
     thrust_max = MAX(_thrust_right,_thrust_left);
