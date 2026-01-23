@@ -1358,8 +1358,8 @@ float Tailsitter::get_rpm_based_throttle_scaler()
 }
     #else
 void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
-    static struct RPM_KF kf_left  {0.0f, 1e6f};
-    static struct RPM_KF kf_right {0.0f, 1e6f};
+    static struct RPM_KF kf_left  {0.0f, 0.0f,1e6f,0.0f,1e6f,0.0f};
+    static struct RPM_KF kf_right {0.0f, 0.0f,1e6f,0.0f,1e6f,0.0f};
     float tilt_motor_hover_rpm = hover_rpm_tilt_scale;
     if(hover_rpm_tilt_scale<=0.0f){
         tilt_motor_hover_rpm = DEFAULT_HOVER_RPM; // set default hover rpm
@@ -1367,8 +1367,8 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
     float rpm_l = 1000.0f, rpm_r = 1000.0f, rpm_hover_l = tilt_motor_hover_rpm, rpm_hover_r = tilt_motor_hover_rpm; // set default hover rpm
     static float rpm_lpf_l = 1000.0f, rpm_lpf_r = 1000.0f;
     uint16_t pwm_l, pwm_r;
-    float rpm_result_l = kf_left.x; // default to last valid rpm
-    float rpm_result_r = kf_right.x; // default to last valid rpm
+    float rpm_result_l = kf_left.rpm; // default to last valid rpm
+    float rpm_result_r = kf_right.rpm; // default to last valid rpm
     if (_esc_telem == nullptr) {
         _esc_telem = AP_ESC_Telem::get_singleton();
     }
@@ -1433,7 +1433,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
             rpm_result_l = rpm_lpf_l;
             }
             else{
-                rpm_result_l = kf_left.x; // use last valid rpm
+                rpm_result_l = kf_left.rpm; // use last valid rpm
             }
             // Used raw measurement for Kalman filter update to avoid large delay
             update_rpm_kalman(kf_left,pwm_l,rpm_l,quadplane.attitude_control->get_dt());
@@ -1442,7 +1442,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
             rpm_result_r = rpm_lpf_r;
             }
             else{
-                rpm_result_r = kf_right.x; // use last valid rpm
+                rpm_result_r = kf_right.rpm; // use last valid rpm
             }
             // Used raw measurement for Kalman filter update to avoid large delay
             update_rpm_kalman(kf_right,pwm_r,rpm_r,quadplane.attitude_control->get_dt());
@@ -1458,7 +1458,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
         AP_HAL::micros64(),
         rpm_result_l, rpm_result_r,
         rpm_lpf_l, rpm_lpf_r,
-        kf_left.x, kf_right.x
+        kf_left.rpm, kf_right.rpm
        );
         AP::logger().WriteStreaming("RPMF", "TimeUS,RPMRawL,RPMRawR,scaleL,scaleR",
         "s----",
@@ -1466,13 +1466,20 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
         "Qffff",
         AP_HAL::micros64(),
         rpm_l, rpm_r,scale_l,scale_r);
+        AP::logger().WriteStreaming("RPMG", "TimeUS,InvR,InvL,biaR,biaL",
+        "s----",
+        "F0000",
+        "Qffff",
+        AP_HAL::micros64(), kf_right.innovation, kf_left.innovation,
+        kf_right.bias, kf_left.bias);
 }
 void Tailsitter::update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt)
 {
     const float tau  = 0.05f;     // motor time constant (s)
     const float Kpwm = 5.76f;     // PWM -> RPM gain (calculated from motor test data)
     // Noise setup currenly tuned such that we trust meaurements more than model prediction
-    const float Q    = 20000.0f;  // process noise (Need to tune)
+    const float Q_r    = 20000.0f;  // rpm process noise (Need to tune)
+    const float Q_b   = 1.0f;     // bias process noise (small!)
     const float R_nom = 10000.0f;  // measurement noise
 
     // Physical RPM range 0 to 8500 for typical motors used (observed from the ESC telemetry data)
@@ -1486,24 +1493,42 @@ void Tailsitter::update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt)
     float coeff_b = (1.0f - coeff_a) * Kpwm; // Control input coefficient
 
     // Prediction
-    float x_pred = coeff_a * kf.x + coeff_b * pwm;
-    float P_pred = coeff_a * coeff_a * kf.P + Q;
+    float rpm_pred = coeff_a * kf.rpm + coeff_b * pwm + kf.bias;
+    float bias_pred = kf.bias; // bias assumed constant
+
     // Bound prediction
-    x_pred = constrain_float(x_pred, RPM_MIN, RPM_MAX);
+    rpm_pred = constrain_float(rpm_pred, RPM_MIN, RPM_MAX);
+
+    // Covariance prediction
+    float P_rr = coeff_a * kf.P_rr * coeff_a + Q_r;
+    float P_rb = coeff_a * kf.P_rb;
+    float P_bb = kf.P_bb + Q_b;
 
     bool meas_valid = (rpm_meas > 300.0f && rpm_meas < 1.2f * RPM_MAX);
     float R = meas_valid ? R_nom : R_high;
 
-    // Update
     rpm_meas = constrain_float(rpm_meas, RPM_MIN, RPM_MAX);
-    float K = P_pred / (P_pred + R);
-
-    kf.x = x_pred + K * (rpm_meas - x_pred);
-    kf.P = (1.0f - K) * P_pred;
-
+    // Innovation
+    float innovation = rpm_meas - rpm_pred;
+    // Innovation covariance
+    float S = P_rr + P_bb + 2.0f * P_rb + R;
+    // Kalman gain
+    float K_r = (P_rr + P_rb) / S;
+    float K_b = (P_rb + P_bb) / S;
+    // Update
+    kf.rpm = rpm_pred + K_r * innovation;
+    kf.bias = bias_pred + K_b * innovation;
+    // Covariance update
+    kf.P_rr = P_rr - K_r * (P_rr + P_rb);
+    kf.P_rb = P_rb - K_r * (P_rb + P_bb);
+    kf.P_bb = P_bb - K_b * (P_rb + P_bb);
     // Final clamping
-    kf.x = constrain_float(kf.x, RPM_MIN, RPM_MAX);
-    kf.P = constrain_float(kf.P, 100.0f, 1e7f);
+    kf.rpm  = constrain_float(kf.rpm,  RPM_MIN, RPM_MAX);
+    kf.bias = constrain_float(kf.bias, -2000.0f, 2000.0f);
+
+    kf.P_rr = constrain_float(kf.P_rr, 100.0f, 1e7f);
+    kf.P_bb = constrain_float(kf.P_bb, 1.0f,   1e7f);
+    kf.innovation = innovation;
 }
 
 
