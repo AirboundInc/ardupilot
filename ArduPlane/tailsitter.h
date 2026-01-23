@@ -77,8 +77,12 @@ public:
 
     // Kalman filter for RPM estimation
     struct RPM_KF {
-    float x;   // estimated RPM
-    float P;   // covariance
+    float rpm;   // estimated RPM
+    float bias;   // estimated measurement bias
+    float P_rr;  // covariance of rpm-rpm
+    float P_rb;  // covariance of rpm-bias
+    float P_bb;  // covariance of bias-bias
+    float innovation; // last innovation
     };
 
     // update the rpm kalman filter
