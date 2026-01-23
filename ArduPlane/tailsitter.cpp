@@ -1419,7 +1419,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
     if(!(valid_l && valid_r)){
         static uint64_t initial_time = AP_HAL::micros64();
         if((AP_HAL::micros64() - initial_time)*1e-6 > 1.0f){
-            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, no valid RPM data");
+            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, no valid RPM data or PWM data");
             initial_time = AP_HAL::micros64();
         }
         scale_l = 1.0f;
