@@ -863,7 +863,7 @@ void Tailsitter::speed_scaling(void)
                 v *= scale_l;
 #else
                 float scale_l,scale_r;
-                get_rpm_based_tilt_scaler(scale_l,scale_r);
+                get_rpm_based_tilt_scaler(scale_l,scale_r, throttle_scaler);
                 if (functions[i] == SRV_Channel::Aux_servo_function_t::k_tiltMotorLeft) {
                     v *= scale_l;
                 } else {
