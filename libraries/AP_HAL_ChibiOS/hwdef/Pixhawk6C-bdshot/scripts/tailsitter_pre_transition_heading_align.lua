@@ -145,13 +145,13 @@ function update()
         end
 
         if next_leg_is_fixed_wing() then
-            local heading, idx
+            local heading, idx, _ = get_next_wp_heading()
             if heading and idx ~= last_aligned_wp then
                 target_heading = heading
                 target_wp_idx = idx
                 align_start_time = now
                 state = STATE_ALIGNING
-                gcs:send_text(6, string.format("Aligner: Aligning to %.0f° (WP %d)", heading, idx))
+                gcs:send_text(6, string.format("Aligner: Aligning to %.0f deg (WP %d)", heading, idx))
             end
         end
 
@@ -181,5 +181,5 @@ function update()
     return update, UPDATE_RATE_MS
 end
 
-gcs:send_text(6, "Aligner v9.0 Loaded (NO MODE CHANGES)")
+gcs:send_text(6, "Pre-Transition Heading Aligner Loaded")
 return update()
