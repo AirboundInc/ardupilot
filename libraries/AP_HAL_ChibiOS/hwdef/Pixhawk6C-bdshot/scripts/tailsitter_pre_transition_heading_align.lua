@@ -9,7 +9,6 @@ local MAX_YAW_RATE_DEG_S = 25
 local ALIGN_TIMEOUT_MS = 12000
 local MIN_ALTITUDE_M = 10
 local AUTO_STABLE_TIME_MS = 5000
-local DEBUG_INTERVAL_MS = 3000
 
 -- ================= STATES =================
 local STATE_IDLE = 0
@@ -146,7 +145,7 @@ function update()
         end
 
         if next_leg_is_fixed_wing() then
-            local heading, idx, err = get_next_wp_heading()
+            local heading, idx
             if heading and idx ~= last_aligned_wp then
                 target_heading = heading
                 target_wp_idx = idx
