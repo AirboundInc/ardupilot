@@ -73,7 +73,7 @@ public:
     void write_log();
 
     // get throttle scaler for current flight mode based on motor rpm
-    void get_rpm_based_tilt_scaler(float &scale_l, float &scale_r);
+    void get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float default_throttle_scaler);
 
     // Kalman filter for RPM estimation
     struct RPM_KF {

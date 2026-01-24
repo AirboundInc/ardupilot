@@ -859,7 +859,7 @@ void Tailsitter::speed_scaling(void)
             if (rpm_based_tilt_scaling) {
 #ifdef SITL_DEBUG
                 float scale_l,scale_r;
-                get_rpm_based_tilt_scaler(scale_l,scale_r);
+                get_rpm_based_tilt_scaler(scale_l,scale_r, throttle_scaler);
                 v *= scale_l;
 #else
                 float scale_l,scale_r;
@@ -1140,7 +1140,7 @@ MAV_VTOL_STATE Tailsitter_Transition::get_mav_vtol_state() const
 }
 // Commented for the hardware implementation because in real flight only one RPM is available from the ESC telemetry
 // Get RPM based throttle scaler for tilt motors
-void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
+void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float default_throttle_scaler){
     static struct RPM_KF kf_left  {0.0f, 0.0f,1e6f,0.0f,1e6f,0.0f};
     static struct RPM_KF kf_right {0.0f, 0.0f,1e6f,0.0f,1e6f,0.0f};
     float tilt_motor_hover_rpm = hover_rpm_tilt_scale;
@@ -1165,8 +1165,8 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
                 GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find motor channel"); // wait for 1s before sending message
                 initial_time = AP_HAL::micros64();
             }
-            scale_l = 1.0f;
-            scale_r = 1.0f;
+            scale_l = default_throttle_scaler;
+            scale_r = default_throttle_scaler;
             return;
         }
         if (!_esc_telem->get_rpm(ESC_INDEX, rpm)){
@@ -1175,8 +1175,8 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
                 GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, no valid RPM data"); // wait for 1s before sending message
                 initial_time = AP_HAL::micros64();
             }
-            scale_l = 1.0f;
-            scale_r = 1.0f;
+            scale_l = default_throttle_scaler;
+            scale_r = default_throttle_scaler;
             return;
         }
         rpm_l = rpm; // use right motor RPM for both sides in SITL
@@ -1193,8 +1193,8 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
             GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, can't find motor channels");
             initial_time = AP_HAL::micros64();
         }
-        scale_l = 1.0f;
-        scale_r = 1.0f;
+        scale_l = default_throttle_scaler;
+        scale_r = default_throttle_scaler;
         return;
     }
     bool valid_l = _esc_telem->get_rpm(ESC_LEFT, rpm_l) && SRV_Channels::get_output_pwm(SRV_Channel::k_throttleLeft, pwm_l);
@@ -1205,30 +1205,30 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
             GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, no valid RPM data or PWM data(%d,%d)",valid_l,valid_r);
             initial_time = AP_HAL::micros64();
         }
-        scale_l = 1.0f;
-        scale_r = 1.0f;
+        scale_l = default_throttle_scaler;
+        scale_r = default_throttle_scaler;
         return;
     }
 #endif
     if (_esc_telem != nullptr) {
         if(rpm_l >= 1000.0f && rpm_l <= 6000.0f){
-            rpm_lpf_l = rpm_l * 0.05f + rpm_lpf_l*0.95f;
+            rpm_lpf_l = rpm_l * 0.15f + rpm_lpf_l*0.85f;
             rpm_result_l = rpm_lpf_l;
             }
             else{
                 rpm_result_l = kf_left.rpm; // use last valid rpm
             }
             // Used raw measurement for Kalman filter update to avoid large delay
-            update_rpm_kalman(kf_left,pwm_l,rpm_l,quadplane.attitude_control->get_dt());
+        update_rpm_kalman(kf_left,pwm_l,rpm_l,quadplane.attitude_control->get_dt());
         if(rpm_r >= 1000.0f && rpm_r <= 6000.0f){
-            rpm_lpf_r = rpm_r * 0.05f + rpm_lpf_r*0.95f;
+            rpm_lpf_r = rpm_r * 0.15f + rpm_lpf_r*0.85f;
             rpm_result_r = rpm_lpf_r;
             }
             else{
                 rpm_result_r = kf_right.rpm; // use last valid rpm
             }
             // Used raw measurement for Kalman filter update to avoid large delay
-            update_rpm_kalman(kf_right,pwm_r,rpm_r,quadplane.attitude_control->get_dt());
+        update_rpm_kalman(kf_right,pwm_r,rpm_r,quadplane.attitude_control->get_dt());
         }
     rpm_result_l = constrain_float(rpm_result_l, 1000.0f, 6000.0f);
     rpm_result_r = constrain_float(rpm_result_r, 1000.0f, 6000.0f);
