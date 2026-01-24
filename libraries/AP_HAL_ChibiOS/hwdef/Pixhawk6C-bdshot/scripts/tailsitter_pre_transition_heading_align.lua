@@ -22,8 +22,6 @@ local target_wp_idx = -1
 local last_aligned_wp = -1
 local align_start_time = 0
 local last_auto_time = 0
-local last_debug_time = 0
-
 -- ================= MODES =================
 local MODE_AUTO = 10
 
@@ -161,7 +159,7 @@ function update()
     elseif state == STATE_ALIGNING then
         -- Timeout protection
         if (now - align_start_time) > ALIGN_TIMEOUT_MS then
-            gcs:send_text(4, "Aligner: Timeout → Stop aligning")
+            gcs:send_text(4, "Aligner: Timeout - Stop aligning")
             last_aligned_wp = target_wp_idx
             state = STATE_IDLE
             return update, UPDATE_RATE_MS
