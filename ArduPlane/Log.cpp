@@ -448,16 +448,6 @@ const struct LogStructure Plane::log_structure[] = {
       "TSIT", "Qfff",  "TimeUS,Ts,Ss,Tmin", "s---", "F---" , true },
 #endif
 
-// @LoggerMessage: RENC
-// @Description: Rotary Encoder values for the tailsitter thrust vectors
-// @Field: TimeUS: time of the log
-// @Field: PosL: angle on the left thrust vector
-// @Field: PosR: angle on the right thrust vector
-#if HAL_QUADPLANE_ENABLED
-    { LOG_ROTARYENCODER_MSG, sizeof(log_RotaryEncoder),
-      "RENC", "Qff", "TimeUS,PosL,PosR", "sdd", "F--", true },
-#endif
-
 // @LoggerMessage: PIDG
 // @Description: Plane Proportional/Integral/Derivative gain values for Heading when using COMMAND_INT control.
 // @Field: TimeUS: Time since system startup
