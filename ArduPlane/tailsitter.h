@@ -18,6 +18,7 @@
 #include "transition.h"
 #include <AP_Motors/AP_MotorsTailsitter.h>
 #include <AP_Logger/LogStructure.h>
+#include <AP_RotaryEncoder/AP_RotaryEncoder.h>
 
 class QuadPlane;
 class AP_MotorsMulticopter;
@@ -110,12 +111,22 @@ public:
     AP_Float VTOL_pitch_scale;
     AP_Float VTOL_yaw_scale;
     AP_Float disk_loading_min_outflow;
+    AP_Int8 log_gcs_rotary_encoder;
 
     AP_Float wvane_max_gain;
     AP_Float wvane_pitch_low;
     AP_Float wvane_pitch_hi;
     AP_Float wvane_pitch_mid;
+    
+    // Encoder parameters
+    AP_Int16 encoder1_pin_a;
+    AP_Int16 encoder1_pin_b;
+    AP_Int16 encoder1_cpr;
+    AP_Int16 encoder2_pin_a;
+    AP_Int16 encoder2_pin_b;
+    AP_Int16 encoder2_cpr;
 
+    AP_RotaryEncoder rotary_encoder;
     AP_MotorsTailsitter* tailsitter_motors;
 
 private:
@@ -135,9 +146,9 @@ private:
         float speed_scaler;
         float min_throttle;
     } log_data;
-
-
+    
     bool setup_complete;
+    bool rotary_encoder_zero;
 
     // true when flying a tilt-vectored tailsitter
     bool _is_vectored;

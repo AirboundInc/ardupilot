@@ -190,6 +190,61 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     // @Range: 45 60
     AP_GROUPINFO("WV_MI", 26, Tailsitter, wvane_pitch_mid, 45),
 
+    // @Param: E1A
+    // @DisplayName: Encoder 1 Pin A
+    // @Description: GPIO pin number for encoder 1 channel A input
+    // @Range: -1 255
+    // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
+    // @User: Standard
+    AP_GROUPINFO("E1A", 27, Tailsitter, encoder1_pin_a, -1),
+
+    // @Param: E1B
+    // @DisplayName: Encoder 1 Pin B
+    // @Description: GPIO pin number for encoder 1 channel B input
+    // @Range: -1 255
+    // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
+    // @User: Standard
+    AP_GROUPINFO("E1B", 28, Tailsitter, encoder1_pin_b, -1),
+
+    // @Param: E1CPR
+    // @DisplayName: Encoder 1 Counts Per Revolution
+    // @Description: Number of encoder counts per full 360 degree revolution for encoder 1
+    // @Range: 1 10000
+    // @Increment: 1
+    // @User: Standard
+    AP_GROUPINFO("E1CPR", 29, Tailsitter, encoder1_cpr, 4096),
+
+    // @Param: E2A
+    // @DisplayName: Encoder 2 Pin A
+    // @Description: GPIO pin number for encoder 2 channel A input
+    // @Range: -1 255
+    // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
+    // @User: Standard
+    AP_GROUPINFO("E2A", 30, Tailsitter, encoder2_pin_a, -1),
+    
+    // @Param: E2B
+    // @DisplayName: Encoder 2 Pin B
+    // @Description: GPIO pin number for encoder 2 channel B input
+    // @Range: -1 255
+    // @Values: -1:Disabled,50:AUX1,51:AUX2,52:AUX3,53:AUX4,54:AUX5,55:AUX6
+    // @User: Standard
+    AP_GROUPINFO("E2B", 31, Tailsitter, encoder2_pin_b, -1),
+
+    // @Param: E2CPR
+    // @DisplayName: Encoder 2 Counts Per Revolution
+    // @Description: Number of encoder counts per full 360 degree revolution for encoder 2
+    // @Range: 1 10000
+    // @Increment: 1
+    // @User: Standard
+    AP_GROUPINFO("E2CPR", 32, Tailsitter, encoder2_cpr, 4096),
+
+
+    // @Param: RE_DB
+    // @DisplayName: Tailsitter enable rotary encoder realtime gcs statements
+    // @Description: Make this true to get rotary encoder angles displayed on the GCS logs for both the left and right encoders on the thrust vector.
+    // @Range: 0 1
+    AP_GROUPINFO("RE_DB", 33, Tailsitter, log_gcs_rotary_encoder, 0),
+
     AP_GROUPEND
 };
 
@@ -272,6 +327,7 @@ void Tailsitter::setup()
     }
     quadplane.transition = transition;
 
+    rotary_encoder_zero = true;
     setup_complete = true;
 }
 
@@ -312,6 +368,24 @@ void Tailsitter::output(void)
         return;
     }
 
+    if(rotary_encoder_zero && (AP_HAL::millis() > quadplane.rotary_encoder.get_init_time_ms())) {
+        quadplane.rotary_encoder.set_position_offset(0, quadplane.rotary_encoder.get_angular_position(0,true));
+        quadplane.rotary_encoder.set_position_offset(1, quadplane.rotary_encoder.get_angular_position(1,true));
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "initial offset L:%f R:%f", quadplane.rotary_encoder.get_angular_position(0, true), quadplane.rotary_encoder.get_angular_position(1, true));
+        rotary_encoder_zero = false;
+    }
+
+    // Call rotary_encoder update to refresh encoder values
+    quadplane.rotary_encoder.update();
+
+    // Log on GCS in realtime if demanded by the user
+    if(log_gcs_rotary_encoder) {
+        static uint32_t last_time = 0;
+        if (AP_HAL::millis() - last_time > 1000) {
+            last_time = AP_HAL::millis();
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Thrust Angles L:%f R:%f", quadplane.rotary_encoder.get_angular_position(0, true), quadplane.rotary_encoder.get_angular_position(1, true));
+        }
+    }
     float tilt_left = 0.0f;
     float tilt_right = 0.0f;
 
@@ -871,6 +945,8 @@ void Tailsitter::write_log()
         min_throttle        : log_data.min_throttle,
     };
     plane.logger.WriteBlock(&pkt, sizeof(pkt));
+
+    quadplane.rotary_encoder.Log_Write();
 }
 #endif  // HAL_LOGGING_ENABLED
 
