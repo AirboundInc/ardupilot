@@ -177,15 +177,15 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
         constexpr float alpha_max = radians(45.0f); // maximum tilt angle of the tilt rotors (evaluated compile time)
         constexpr float eps = 1e-3f;                // small value to avoid division by zero
 
-        /* ---- Vertical thrust + roll demand ---- */
+        // Vertical thrust + roll demand 
         float T_L = throttle_thrust + 0.5f * roll_thrust;
         float T_R = throttle_thrust - 0.5f * roll_thrust;
 
-        /* ---- Lateral force demand (pitch / yaw) ---- */
+        // Lateral force demand (pitch / yaw) 
         float Fy_L = pitch_thrust - yaw_thrust;
         float Fy_R = pitch_thrust + yaw_thrust;
 
-        /* ---- Convert lateral force → tilt angle ---- */
+        // Convert lateral force → tilt angle
         float alpha_L = 0.0f;
         float alpha_R = 0.0f;
 
@@ -205,11 +205,11 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
             limit.yaw   = true;
         }
 
-        /* ---- Preserve vertical thrust ---- */
+        // Preserve vertical thrust
         float T_L_n = T_L / cosf(alpha_L);
         float T_R_n = T_R / cosf(alpha_R);
 
-        /* ---- Final saturation ---- */
+        // Final saturation
         float Tmax = MAX(T_L_n, T_R_n);
         if (Tmax > 1.0f) {
             float scale = 1.0f / Tmax;
@@ -218,7 +218,7 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
             limit.throttle_upper = true;
         }
 
-        /* ---- Outputs ---- */
+        // Outputs
         // Here outputs are multiplied by 0.5f for stability after sitl testing this may or maynot be true in real world testing
         // This scaling makes the output less aggressive and it avoids the motors saturating too easily. Still the non-linear calculation is valid..
         _thrust_left  = constrain_float(T_L_n*0.5f, 0.0f, 1.0f);
@@ -239,7 +239,6 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
         // Thrust vectoring
         _tilt_left  = pitch_thrust - yaw_thrust;
         _tilt_right = pitch_thrust + yaw_thrust;
-        printf("Tilt L: %.2f, Tilt R: %.2f\n", _tilt_left, _tilt_right);
     }
 
     thrust_max = MAX(_thrust_right,_thrust_left);
