@@ -4,7 +4,7 @@
 #include <GCS_MAVLink/GCS.h>
 #include "AP_CustomStorage/AP_CustomStorage.h"
 
-#define MAX_AB_PARAM_SIZE 37
+#define MAX_AB_PARAM_SIZE MAVLINK_MSG_AIRBOUND_PARAMETER_GETSET_FIELD_DATA_VALUE_LEN
 
 class AP_CustomMavlinkHandler
 {
