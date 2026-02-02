@@ -1357,8 +1357,8 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
     if(hover_rpm_tilt_scale<=0.0f){
         tilt_motor_hover_rpm = DEFAULT_HOVER_RPM; // set default hover rpm
     }
-    float rpm_l = 1000.0f, rpm_r = 1000.0f, rpm_hover_l = tilt_motor_hover_rpm, rpm_hover_r = tilt_motor_hover_rpm; // set default hover rpm
-    static float rpm_lpf_l = 1000.0f, rpm_lpf_r = 1000.0f;
+    float rpm_l = 2500.0f, rpm_r = 2500.0f, rpm_hover_l = tilt_motor_hover_rpm, rpm_hover_r = tilt_motor_hover_rpm; // set default hover rpm
+    static float rpm_lpf_l = 2500.0f, rpm_lpf_r = 2500.0f;
     uint16_t pwm_l, pwm_r;
     float rpm_result_l = kf_left.rpm; // default to last valid rpm
     float rpm_result_r = kf_right.rpm; // default to last valid rpm
@@ -1368,7 +1368,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
 #ifdef SITL_DEBUG
     uint8_t ESC_INDEX = 1; // Got from Log that only ESC[1] publishing the rpm in realflight
     uint16_t pwm;
-    float rpm = 1000.0f;
+    float rpm = 2500.0f;
         if(!SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, pwm)){
             static uint64_t initial_time = AP_HAL::micros64();
             if((AP_HAL::micros64() - initial_time)*1e-6 > 1.0f){
@@ -1421,27 +1421,27 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r){
     }
 #endif
     if (_esc_telem != nullptr) {
-        if(rpm_l >= 1000.0f && rpm_l <= 6000.0f){
+        if(rpm_l >= 2500.0f && rpm_l <= 6000.0f){
             rpm_lpf_l = rpm_l * 0.15f + rpm_lpf_l*0.85f;
             rpm_result_l = rpm_lpf_l;
             }
-            else{
-                rpm_result_l = kf_left.rpm; // use last valid rpm
-            }
-            // Used raw measurement for Kalman filter update to avoid large delay
+        else{
+            rpm_result_l = kf_left.rpm; // use last valid rpm
+        }
+        // Used raw measurement for Kalman filter update to avoid large delay
         update_rpm_kalman(kf_left,pwm_l,rpm_l,quadplane.attitude_control->get_dt());
-        if(rpm_r >= 1000.0f && rpm_r <= 6000.0f){
+        if(rpm_r >= 2500.0f && rpm_r <= 6000.0f){
             rpm_lpf_r = rpm_r * 0.15f + rpm_lpf_r*0.85f;
             rpm_result_r = rpm_lpf_r;
-            }
-            else{
-                rpm_result_r = kf_right.rpm; // use last valid rpm
-            }
+        }
+        else{
+            rpm_result_r = kf_right.rpm; // use last valid rpm
+        }
             // Used raw measurement for Kalman filter update to avoid large delay
         update_rpm_kalman(kf_right,pwm_r,rpm_r,quadplane.attitude_control->get_dt());
         }
-    rpm_result_l = constrain_float(rpm_result_l, 1000.0f, 6000.0f);
-    rpm_result_r = constrain_float(rpm_result_r, 1000.0f, 6000.0f);
+    rpm_result_l = constrain_float(rpm_result_l, 2500.0f, 6000.0f);
+    rpm_result_r = constrain_float(rpm_result_r, 2500.0f, 6000.0f);
     scale_l = (rpm_hover_l*rpm_hover_l) / (rpm_result_l*rpm_result_l);
     scale_r = (rpm_hover_r*rpm_hover_r) / (rpm_result_r*rpm_result_r);
     AP::logger().WriteStreaming("RPME", "TimeUS,RPMResultL,RPMResultR,RPMLpfL,RPMLpfR,RPMEstL,RPMEstR",
