@@ -454,6 +454,22 @@ void AC_AttitudeControl_Multi::rate_controller_run()
     _motors.set_roll(get_rate_roll_pid().update_all(_ang_vel_body.x, gyro_latest.x,  _dt, _motors.limit.roll, _pd_scale.x) + _actuator_sysid.x);
     _motors.set_roll_ff(get_rate_roll_pid().get_ff());
 
+    if (is_positive(_dt)) {
+        float roll_rate = _ang_vel_body.x;
+        static float roll_rate_last = _ang_vel_body.x;
+
+        float roll_accel = (roll_rate - roll_rate_last) / _dt;
+
+        // Add logging for desired thrust vectoring angles
+        AP::logger().WriteStreaming("RLLA", "TimeUS,RllAcc",
+            "sd", // seconds, degrees
+            "F0", // micro (1e-6), no mult (1e0)
+            "Qf", // uint64_t, float
+            AP_HAL::micros64(), roll_accel);
+
+        roll_rate_last = roll_rate;
+    }
+
     _motors.set_pitch(get_rate_pitch_pid().update_all(_ang_vel_body.y, gyro_latest.y,  _dt, _motors.limit.pitch, _pd_scale.y) + _actuator_sysid.y);
     _motors.set_pitch_ff(get_rate_pitch_pid().get_ff());
 
