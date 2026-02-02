@@ -9,15 +9,13 @@ void AP_CustomMavlinkHandler::init(void){
 }
 void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, const mavlink_message_t &msg)
 {
-    // printf("AP_CustomMavlinkHandler: %s\n", "got message");
     if (msg.msgid != CUSTOM_MSG_ID)
         return;
 
     // Manual message decoding
     uuid_update_t packet;
     memcpy(&packet, msg.payload64, sizeof(packet));
-    packet.value[36] = '\0'; // Ensure null termination
-    // printf("payload64: %s\n", packet.value);
+    packet.value[MAX_AB_PARAM_SIZE - 1] = '\0'; // Ensure null termination
 
     switch (packet.param)
     {
@@ -26,7 +24,7 @@ void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, cons
         {
         case AIRBOUND_PARAMETER_ACTION_GET: // read
         {
-            char uuid[37] = {0};
+            char uuid[MAX_AB_PARAM_SIZE] = {0};
             g_custom_storage.get_uuid(uuid, sizeof(uuid));
             gcs().send_text(MAV_SEVERITY_INFO, "uuid:%s", uuid);
             mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_UUID, (const char *)uuid, AIRBOUND_PARAMETER_RESULT_OK);
@@ -34,7 +32,7 @@ void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, cons
         }
         case AIRBOUND_PARAMETER_ACTION_SET: // write
         {
-            char uuid[37] = {0};
+            char uuid[MAX_AB_PARAM_SIZE] = {0};
             g_custom_storage.set_uuid(packet.value);
             g_custom_storage.get_uuid(uuid, sizeof(uuid));
             gcs().send_text(MAV_SEVERITY_INFO, "uuid updated : %s", uuid);
@@ -43,7 +41,7 @@ void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, cons
             break;
         }
         default:
-            char buf[37] = {0};
+            char buf[MAX_AB_PARAM_SIZE] = {0};
             mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_UUID, (const char *)buf, AIRBOUND_PARAMETER_RESULT_UNSUPPORTED);
             break;
         }
@@ -54,14 +52,14 @@ void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, cons
         {
         case AIRBOUND_PARAMETER_ACTION_GET: // read
         {
-            char pass[37] = {0};
+            char pass[MAX_AB_PARAM_SIZE] = {0};
             g_custom_storage.get_password(pass, sizeof(pass));
             mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_PASS, (const char *)pass, AIRBOUND_PARAMETER_RESULT_OK);
             break;
         }
         case AIRBOUND_PARAMETER_ACTION_SET: // write
         {
-            char pass[37] = {0};
+            char pass[MAX_AB_PARAM_SIZE] = {0};
             g_custom_storage.set_password(packet.value);
             g_custom_storage.get_password(pass, sizeof(pass));
             mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_PASS, (const char *)pass, AIRBOUND_PARAMETER_RESULT_OK);
@@ -69,7 +67,7 @@ void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, cons
         }
         default:
         {
-            char buf[37] = {0};
+            char buf[MAX_AB_PARAM_SIZE] = {0};
             mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_PASS, (const char *)buf, AIRBOUND_PARAMETER_RESULT_UNSUPPORTED);
             break;
         }
@@ -78,7 +76,7 @@ void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, cons
 
     default:
     {
-        char buf[37] = {0};
+        char buf[MAX_AB_PARAM_SIZE] = {0};
         mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_PASS, (const char *)buf, AIRBOUND_PARAMETER_RESULT_UNSUPPORTED);
         break;
     }

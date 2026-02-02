@@ -4,6 +4,8 @@
 #include <GCS_MAVLink/GCS.h>
 #include "AP_CustomStorage/AP_CustomStorage.h"
 
+#define MAX_AB_PARAM_SIZE 37
+
 class AP_CustomMavlinkHandler
 {
 public:
@@ -17,7 +19,7 @@ public:
         uint8_t target_compid;
         uint8_t param;
         uint8_t action;
-        char value[37];
+        char value[MAX_AB_PARAM_SIZE];
     } uuid_update_t;
 #pragma pack(pop)
     static const uint16_t CUSTOM_MSG_ID = 15222;
