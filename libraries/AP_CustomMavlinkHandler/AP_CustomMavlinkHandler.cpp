@@ -25,19 +25,34 @@ void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, cons
         case AIRBOUND_PARAMETER_ACTION_GET: // read
         {
             char uuid[MAX_AB_PARAM_SIZE] = {0};
-            g_custom_storage.get_uuid(uuid, sizeof(uuid));
-            gcs().send_text(MAV_SEVERITY_INFO, "uuid:%s", uuid);
-            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_UUID, (const char *)uuid, AIRBOUND_PARAMETER_RESULT_OK);
+            AIRBOUND_PARAMETER_RESULT result = AIRBOUND_PARAMETER_RESULT_FAILED;
+            if(g_custom_storage.get_uuid(uuid, sizeof(uuid)))
+            {
+                result = AIRBOUND_PARAMETER_RESULT_OK;
+                gcs().send_text(MAV_SEVERITY_INFO, "AB:UUID:%s", uuid);
+            }
+            else
+            {
+                gcs().send_text(MAV_SEVERITY_WARNING, "AB:Failed to fetch UUID");
+            }
+            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_UUID, (const char *)uuid, result);
             break;
         }
         case AIRBOUND_PARAMETER_ACTION_SET: // write
         {
             char uuid[MAX_AB_PARAM_SIZE] = {0};
-            g_custom_storage.set_uuid(packet.value);
+            AIRBOUND_PARAMETER_RESULT result = AIRBOUND_PARAMETER_RESULT_FAILED;
+            if(g_custom_storage.set_uuid(packet.value))
+            {
+                gcs().send_text(MAV_SEVERITY_INFO, "AB:UUID updated");
+                result = AIRBOUND_PARAMETER_RESULT_OK;
+            }
+            else
+            {
+                gcs().send_text(MAV_SEVERITY_WARNING, "AB:Failed to update UUID");
+            }
             g_custom_storage.get_uuid(uuid, sizeof(uuid));
-            gcs().send_text(MAV_SEVERITY_INFO, "uuid updated : %s", uuid);
-            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_UUID, (const char *)uuid, AIRBOUND_PARAMETER_RESULT_OK);
-
+            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_UUID, (const char *)uuid, result);
             break;
         }
         default:
@@ -53,16 +68,33 @@ void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, cons
         case AIRBOUND_PARAMETER_ACTION_GET: // read
         {
             char pass[MAX_AB_PARAM_SIZE] = {0};
-            g_custom_storage.get_password(pass, sizeof(pass));
-            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_PASS, (const char *)pass, AIRBOUND_PARAMETER_RESULT_OK);
+            AIRBOUND_PARAMETER_RESULT result = AIRBOUND_PARAMETER_RESULT_FAILED;
+            if(g_custom_storage.get_password(pass, sizeof(pass)))
+            {
+                result = AIRBOUND_PARAMETER_RESULT_OK;
+            }
+            else
+            {
+                gcs().send_text(MAV_SEVERITY_WARNING, "AB:Failed to fetch password");
+            }
+            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_PASS, (const char *)pass, result);
             break;
         }
         case AIRBOUND_PARAMETER_ACTION_SET: // write
         {
             char pass[MAX_AB_PARAM_SIZE] = {0};
-            g_custom_storage.set_password(packet.value);
+            AIRBOUND_PARAMETER_RESULT result = AIRBOUND_PARAMETER_RESULT_FAILED;
+            if(g_custom_storage.set_password(packet.value))
+            {
+                gcs().send_text(MAV_SEVERITY_INFO, "AB:Updated password");
+                result = AIRBOUND_PARAMETER_RESULT_OK;
+            }
+            else
+            {
+                gcs().send_text(MAV_SEVERITY_WARNING, "AB:Failed to update password");
+            }
             g_custom_storage.get_password(pass, sizeof(pass));
-            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_PASS, (const char *)pass, AIRBOUND_PARAMETER_RESULT_OK);
+            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_PASS, (const char *)pass, result);
             break;
         }
         default:
