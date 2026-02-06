@@ -232,8 +232,11 @@ static const struct AP_Param::defaults_table_struct defaults_table_tailsitter[] 
     
 };
 
-Tailsitter::Tailsitter(QuadPlane& _quadplane, AP_MotorsMulticopter*& _motors):quadplane(_quadplane),motors(_motors),_esc_telem(nullptr)
+Tailsitter::Tailsitter(QuadPlane& _quadplane, AP_MotorsMulticopter*& _motors):quadplane(_quadplane),motors(_motors)
 {
+#if HAL_WITH_ESC_TELEM
+    _esc_telem = nullptr;
+#endif
     AP_Param::setup_object_defaults(this, var_info);
 }
 
@@ -1141,6 +1144,8 @@ MAV_VTOL_STATE Tailsitter_Transition::get_mav_vtol_state() const
 // Commented for the hardware implementation because in real flight only one RPM is available from the ESC telemetry
 // Get RPM based throttle scaler for tilt motors
 void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float default_throttle_scaler){
+
+#if HAL_WITH_ESC_TELEM
     static struct RPM_KF kf_left  {0.0f, 0.0f,1e6f,0.0f,1e6f,0.0f};
     static struct RPM_KF kf_right {0.0f, 0.0f,1e6f,0.0f,1e6f,0.0f};
     float tilt_motor_hover_rpm = hover_rpm_tilt_scale;
@@ -1183,7 +1188,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
         rpm_r = rpm;
         pwm_l = pwm;
         pwm_r = pwm;
-#else
+#else // SITL_DEBUG
     uint8_t ESC_RIGHT; // ESC index for right motor
     uint8_t ESC_LEFT;  // ESC index for left motor
    if(!(SRV_Channels::find_channel(SRV_Channel::k_throttleLeft, ESC_LEFT) && SRV_Channels::find_channel(SRV_Channel::k_throttleRight, ESC_RIGHT)))
@@ -1209,7 +1214,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
         scale_r = default_throttle_scaler;
         return;
     }
-#endif
+#endif // SITL_DEBUG
     if (_esc_telem != nullptr) {
         if(rpm_l >= 2500.0f && rpm_l <= 6000.0f){
             rpm_lpf_l = rpm_l * 0.15f + rpm_lpf_l*0.85f;
@@ -1255,6 +1260,11 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
         "Qffff",
         AP_HAL::micros64(), kf_right.innovation, kf_left.innovation,
         kf_right.bias, kf_left.bias);
+
+#else //HAL_WITH_ESC_TELEM
+    scale_l = default_throttle_scaler;
+    scale_r = default_throttle_scaler;
+#endif //HAL_WITH_ESC_TELEM
 }
 void Tailsitter::update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt)
 {
