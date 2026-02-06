@@ -176,8 +176,11 @@ private:
     // transition logic
     Tailsitter_Transition* transition;
 
+#if HAL_WITH_ESC_TELEM
+
     // ESC Telemetry
     AP_ESC_Telem* _esc_telem;
+#endif
 
 };
 
