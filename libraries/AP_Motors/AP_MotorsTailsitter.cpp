@@ -274,7 +274,6 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     } else {
         _throttle_out = throttle_thrust / compensation_gain;
     }
-    
 }
 
 // output_test_seq - spin a motor at the pwm value specified
