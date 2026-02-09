@@ -84,6 +84,7 @@ public:
     float P_bb;  // covariance of bias-bias
     float innovation; // last innovation
     };
+    
     // update the rpm kalman filter
     void update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt);
 

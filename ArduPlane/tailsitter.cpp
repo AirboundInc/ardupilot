@@ -874,7 +874,7 @@ void Tailsitter::speed_scaling(void)
 #endif
             }
             else{
-                v *= 1;
+                v *= throttle_scaler;
             }
         } else {
             v *= spd_scaler;
@@ -1297,6 +1297,8 @@ void Tailsitter::update_rpm_kalman(RPM_KF &kf,float pwm,float rpm_meas,float dt)
     kf.P_bb = constrain_float(kf.P_bb, 1.0f,   1e7f);
     kf.innovation = innovation;
 }
+
+
 // only allow to weathervane once transition is complete and desired pitch has been reached
 bool Tailsitter_Transition::allow_weathervane()
 {
