@@ -23,8 +23,6 @@ void AP_CustomStorage::init()
         // Critical check - must match hwdef.dat storage allocation
     if (_storage.size() < sizeof(_data))
     {
-        gcs().send_text(MAV_SEVERITY_INFO,"CustomStorage: Allocated size (%u) is less than buffer size (%u)!",
-               (unsigned int)_storage.size(), (unsigned int)sizeof(_data));
         _initialized = true;  // Prevent repeated initialization attempts
         return;
     }
