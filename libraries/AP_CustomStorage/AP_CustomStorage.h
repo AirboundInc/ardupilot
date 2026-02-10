@@ -3,6 +3,7 @@
 #pragma once
 #include <AP_HAL/AP_HAL.h>
 #include <StorageManager/StorageManager.h>
+#include <GCS_MAVLink/GCS.h>
 
 // Constants for storage configuration
 #define DATA_BUFFER_SIZE 127           ///< Size of data buffer (excluding null terminator)

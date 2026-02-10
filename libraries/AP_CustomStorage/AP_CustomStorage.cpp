@@ -20,19 +20,16 @@ void AP_CustomStorage::init()
     {
         return;
     }
-    printf("CustomStorage: Initializing...%d\n", _storage.size());  // Debug log
-    
-    // Critical check - must match hwdef.dat storage allocation
+        // Critical check - must match hwdef.dat storage allocation
     if (_storage.size() < sizeof(_data))
     {
-        printf("CustomStorage ERROR: Allocated size (%u) is less than buffer size (%u)!\n",
+        gcs().send_text(MAV_SEVERITY_INFO,"CustomStorage: Allocated size (%u) is less than buffer size (%u)!",
                (unsigned int)_storage.size(), (unsigned int)sizeof(_data));
         _initialized = true;  // Prevent repeated initialization attempts
         return;
     }
 
-    if (load_from_flash())
-    {
+    if (load_from_flash()){
         StorageHeader header;
         memcpy(&header, _data, sizeof(header));
 
@@ -47,12 +44,8 @@ void AP_CustomStorage::init()
             load_from_flash();
             memcpy(&header, _data, sizeof(header));
         }
-        printf("CustomStorage: Loaded: '%s'\n", _data);  // Show loaded data
-        printf("magic : %d\n", header.magic == HEADER_MAGIC);  // Header validation debug
     }
-    else
-    {
-        printf("CustomStorage: No Storage found, initializing default.\n");  // First-run case
+    else{
         memset(_data, 0, sizeof(_data));
         save_to_flash();
     }
@@ -133,14 +126,11 @@ bool AP_CustomStorage::load_from_flash()
 bool AP_CustomStorage::save_to_flash()
 {
 
-    if (_storage.write_block(0, _data, sizeof(_data)))
-    {
-        printf("CustomStorage: Storage saved successfully.\n");  // Debug confirmation
+    if (_storage.write_block(0, _data, sizeof(_data))){
         return true;
     }
-    else
-    {
-        printf("CustomStorage ERROR: Failed to save Storage to flash!\n");  // Critical error
+    else{
+        gcs().send_text(MAV_SEVERITY_ERROR,"CustomStorage: Failed to save data to flash!");  // Critical error
         return false;
     }
 }
@@ -151,19 +141,19 @@ bool AP_CustomStorage::save_to_flash()
 
 const char *AP_CustomStorage::get_storage() const
 {
-    return _data;  // Direct access - caller manages buffer size
+    // Direct access - caller manages buffer size
+    return _data;  
 }
 
 void AP_CustomStorage::set_storage(const char *new_data)
 {
     if (!_initialized)
     {
-        printf("CustomStorage: Not initialized, cannot set string.\n");  // State warning
+        gcs().send_text(MAV_SEVERITY_ERROR,"CustomStorage: Not initialized, cannot set string.");
         return;
     }
 
     strncpy(_data, new_data, DATA_BUFFER_SIZE);
-    printf("CustomStorage: Setting and saving: '%s'\n", _data);  // Debug log
     save_to_flash();
 }
 
