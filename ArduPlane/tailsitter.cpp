@@ -540,7 +540,7 @@ void Tailsitter::output(void)
     tilt_before_right /= 100.f;
     tilt_before_left /= 100.f;
     // Add logging for desired thrust vectoring angles
-    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,AhrsPitch,WVGain,WVGainS","DesLB","DesRB",
+    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,AhrsP,WGa,WGaS,DesLB,DesRB",
             "sddd--dd", // seconds, degrees
             "F0000000", // micro (1e-6), no mult (1e0)
             "Qfffffff", // uint64_t, float
