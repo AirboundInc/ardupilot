@@ -275,6 +275,22 @@ void AC_AttitudeControl::input_euler_angle_roll_pitch_euler_rate_yaw(float euler
     float euler_roll_angle = radians(euler_roll_angle_cd * 0.01f);
     float euler_pitch_angle = radians(euler_pitch_angle_cd * 0.01f);
     float euler_yaw_rate = radians(euler_yaw_rate_cds * 0.01f);
+    bool pit_step = _step_pit_enabled;
+    if(pit_step){
+        // Step signal generation for tuning 
+        if(_first_time_step_pitch)
+        {
+        	start_time = AP_HAL::millis();
+            _step_size = _step_duration / 2.0f;
+            _first_time_step_pitch = false;
+        }
+        const float step_signal = radians(getStep(AP_HAL::millis()));
+        euler_pitch_angle = step_signal;
+
+    }
+    else{
+        _first_time_step_pitch = true;
+    }
 
     // calculate the attitude target euler angles
     _attitude_target.to_euler(_euler_angle_target);
@@ -326,6 +342,22 @@ void AC_AttitudeControl::input_euler_angle_roll_pitch_yaw(float euler_roll_angle
     float euler_roll_angle = radians(euler_roll_angle_cd * 0.01f);
     float euler_pitch_angle = radians(euler_pitch_angle_cd * 0.01f);
     float euler_yaw_angle = radians(euler_yaw_angle_cd * 0.01f);
+    bool pit_step = _step_pit_enabled;
+    if(pit_step){
+        // Step signal generation for tuning 
+        if(_first_time_step_pitch)
+        {
+        	start_time = AP_HAL::millis();
+            _step_size = _step_duration / 2.0f;
+            _first_time_step_pitch = false;
+        }
+        const float step_signal = radians(getStep(AP_HAL::millis()));
+        euler_pitch_angle = step_signal;
+
+    }
+    else{
+        _first_time_step_pitch = true;
+    }
 
     // calculate the attitude target euler angles
     _attitude_target.to_euler(_euler_angle_target);
@@ -713,25 +745,6 @@ void AC_AttitudeControl::attitude_controller_run_quat()
     // This represents a quaternion rotation in NED frame to the body
     Quaternion attitude_body;
     _ahrs.get_quat_body_to_ned(attitude_body);
-    bool pit_step = _step_pit_enabled;
-    if(pit_step){
-        // Step signal generation for tuning 
-        if(_first_time_step_pitch)
-        {
-        	start_time = AP_HAL::millis();
-            _step_size = _step_duration / 2.0f;
-            _first_time_step_pitch = false;
-        }
-        Vector3f euler;
-        _attitude_target.to_euler(euler);
-        const float step_signal = radians(getStep(AP_HAL::millis()));
-        euler.y = step_signal;
-        _attitude_target.from_euler(euler);
-
-    }
-    else{
-        _first_time_step_pitch = true;
-    }
 
     // This vector represents the angular error to rotate the thrust vector using x and y and heading using z
     Vector3f attitude_error;
