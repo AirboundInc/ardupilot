@@ -19,7 +19,7 @@
 #include <AP_Motors/AP_MotorsTailsitter.h>
 #include <AP_Logger/LogStructure.h>
 #include <AP_ESC_Telem/AP_ESC_Telem.h>
-#define SITL_DEBUG
+// #define SITL_DEBUG
 
 class QuadPlane;
 class AP_MotorsMulticopter;
