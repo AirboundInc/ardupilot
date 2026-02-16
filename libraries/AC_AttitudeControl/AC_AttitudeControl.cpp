@@ -150,7 +150,7 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("INPUT_TC", 20, AC_AttitudeControl, _input_tc, AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT),
     AP_GROUPINFO("_STEP_EN", 21, AC_AttitudeControl, _step_pit_enabled, 0),
-    AP_GROUPINFO("_STEP_MAG", 22, AC_AttitudeControl, _step_amplitude, 5.0f),
+    AP_GROUPINFO("_STEP_MAG", 22, AC_AttitudeControl, _step_amplitude, 15.0f),
     AP_GROUPINFO("_STEP_DUR", 23, AC_AttitudeControl, _step_duration, 2.0f),
 
     AP_GROUPEND
@@ -626,7 +626,7 @@ void AC_AttitudeControl::input_thrust_vector_heading(const Vector3f& thrust_vect
     _attitude_target.to_euler(_euler_angle_target);
 
     // convert thrust vector and heading to a quaternion attitude
-    const Quaternion desired_attitude_quat = attitude_from_thrust_vector(thrust_vector, heading_angle);
+    Quaternion desired_attitude_quat = attitude_from_thrust_vector(thrust_vector, heading_angle);
 
     if (_rate_bf_ff_enabled) {
         // calculate the angle error in x and y.
@@ -713,6 +713,25 @@ void AC_AttitudeControl::attitude_controller_run_quat()
     // This represents a quaternion rotation in NED frame to the body
     Quaternion attitude_body;
     _ahrs.get_quat_body_to_ned(attitude_body);
+    bool pit_step = _step_pit_enabled;
+    if(pit_step){
+        // Step signal generation for tuning 
+        if(_first_time_step_pitch)
+        {
+        	start_time = AP_HAL::millis();
+            _step_size = _step_duration / 2.0f;
+            _first_time_step_pitch = false;
+        }
+        Vector3f euler;
+        _attitude_target.to_euler(euler);
+        const float step_signal = radians(getStep(AP_HAL::millis()));
+        euler.y = step_signal;
+        _attitude_target.from_euler(euler);
+
+    }
+    else{
+        _first_time_step_pitch = true;
+    }
 
     // This vector represents the angular error to rotate the thrust vector using x and y and heading using z
     Vector3f attitude_error;
@@ -761,7 +780,7 @@ void AC_AttitudeControl::attitude_controller_run_quat()
 
 // thrust_heading_rotation_angles - calculates two ordered rotations to move the attitude_body quaternion to the attitude_target quaternion.
 // The maximum error in the yaw axis is limited based on static output saturation.
-void AC_AttitudeControl::thrust_heading_rotation_angles(Quaternion& attitude_target, const Quaternion& attitude_body, Vector3f& attitude_error, float& thrust_angle, float& thrust_error_angle) const
+void AC_AttitudeControl::thrust_heading_rotation_angles(Quaternion& attitude_target, const Quaternion& attitude_body, Vector3f& attitude_error, float& thrust_angle, float& thrust_error_angle)
 {
     Quaternion thrust_vector_correction;
     thrust_vector_rotation_angles(attitude_target, attitude_body, thrust_vector_correction, attitude_error, thrust_angle, thrust_error_angle);
@@ -784,15 +803,12 @@ void AC_AttitudeControl::thrust_heading_rotation_angles(Quaternion& attitude_tar
 
 // thrust_vector_rotation_angles - calculates two ordered rotations to move the attitude_body quaternion to the attitude_target quaternion.
 // The first rotation corrects the thrust vector and the second rotation corrects the heading vector.
-void AC_AttitudeControl::thrust_vector_rotation_angles(const Quaternion& attitude_target, const Quaternion& attitude_body, Quaternion& thrust_vector_correction, Vector3f& attitude_error, float& thrust_angle, float& thrust_error_angle) const
+void AC_AttitudeControl::thrust_vector_rotation_angles(Quaternion& attitude_target, const Quaternion& attitude_body, Quaternion& thrust_vector_correction, Vector3f& attitude_error, float& thrust_angle, float& thrust_error_angle)
 {
     // The direction of thrust is [0,0,-1] is any body-fixed frame, inc. body frame and target frame.
     const Vector3f thrust_vector_up{0.0f, 0.0f, -1.0f};
 
     // attitude_target and attitude_body are passive rotations from target / body frames to the NED frame
-    static float _step_size = _step_duration/2.0f;
-    static uint32_t start_time = AP_HAL::millis();
-    const float step_signal = getStep(AP_HAL::millis());
     
     // Rotating [0,0,-1] by attitude_target expresses (gets a view of) the target thrust vector in the inertial frame
     Vector3f att_target_thrust_vec = attitude_target * thrust_vector_up; // target thrust vector
@@ -1199,7 +1215,7 @@ void AC_AttitudeControl::get_rpy_srate(float &roll_srate, float &pitch_srate, fl
     pitch_srate = get_rate_pitch_pid().get_pid_info().slew_rate;
     yaw_srate = get_rate_yaw_pid().get_pid_info().slew_rate;
 }
-float AC_AttitudeControl::getStep(uint32_t now) const // generate a step signal for z-axis tuning
+float AC_AttitudeControl::getStep(uint32_t now) // generate a step signal for z-axis tuning
 {
 	float dT = (now - start_time) / 1000.0f; // convert to seconds
 	if (dT >= _step_size)
@@ -1208,6 +1224,6 @@ float AC_AttitudeControl::getStep(uint32_t now) const // generate a step signal 
 		start_time = now;
         _step_size = _step_duration;
 	}
-	const float step = float(_signal_sign) *_step_amplitude*100.0f;
+	const float step = float(_signal_sign) *_step_amplitude;
     return step;
 }

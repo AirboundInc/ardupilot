@@ -120,6 +120,7 @@ void AC_AttitudeControl_TS::input_euler_rate_yaw_euler_angle_pitch_bf_roll(bool 
     // Compute attitude error
     error_quat = attitude_body.inverse() * _attitude_target;
     error_quat.to_axis_angle(att_error);
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Attitude error after input: rol");
 
     // Compute the angular velocity target from the attitude error
     _ang_vel_body = update_ang_vel_target_from_att_error(att_error);

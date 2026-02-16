@@ -339,11 +339,11 @@ public:
 
     // thrust_heading_rotation_angles - calculates two ordered rotations to move the attitude_body quaternion to the attitude_target quaternion.
     // The maximum error in the yaw axis is limited based on the angle yaw P value and acceleration.
-    void thrust_heading_rotation_angles(Quaternion& attitude_target, const Quaternion& attitude_body, Vector3f& attitude_error, float& thrust_angle, float& thrust_error_angle) const;
+    void thrust_heading_rotation_angles(Quaternion& attitude_target, const Quaternion& attitude_body, Vector3f& attitude_error, float& thrust_angle, float& thrust_error_angle);
 
     // thrust_vector_rotation_angles - calculates two ordered rotations to move the attitude_body quaternion to the attitude_target quaternion.
     // The first rotation corrects the thrust vector and the second rotation corrects the heading vector.
-    void thrust_vector_rotation_angles(const Quaternion& attitude_target, const Quaternion& attitude_body, Quaternion& thrust_vector_correction, Vector3f& attitude_error, float& thrust_angle, float& thrust_error_angle) const;
+    void thrust_vector_rotation_angles(Quaternion& attitude_target, const Quaternion& attitude_body, Quaternion& thrust_vector_correction, Vector3f& attitude_error, float& thrust_angle, float& thrust_error_angle);
 
     // sanity check parameters.  should be called once before take-off
     virtual void parameter_sanity_check() {}
@@ -420,8 +420,11 @@ public:
     static const struct AP_Param::GroupInfo var_info[];
 
     static constexpr Vector3f VECTORF_111{1.0f,1.0f,1.0f};
-    float getStep(uint32_t now) const;
-    int16_t _signal_sign;
+    float getStep(uint32_t now);
+    int16_t _signal_sign = 1;
+    bool _first_time_step_pitch;
+    uint32_t start_time;
+    float _step_size;
 
 protected:
 
