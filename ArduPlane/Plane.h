@@ -29,6 +29,8 @@
 #include <stdarg.h>
 #include <stdio.h>
 
+#include <AP_LTE/AP_LTE.h>
+
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Common/AP_Common.h>
 #include <AP_Airspeed/AP_Airspeed.h>
@@ -182,6 +184,8 @@ private:
 
     // key aircraft parameters passed to multiple libraries
     AP_FixedWing aparm;
+
+    
 
     // Global parameters are all contained within the 'g' and 'g2' classes.
     Parameters g;
@@ -1268,8 +1272,12 @@ public:
     bool set_land_descent_rate(float descent_rate) override;
 #endif // AP_SCRIPTING_ENABLED
 
-};
+    AP_LTE lte;
+    void init_lte();
+    void update_lte();
 
+
+};
 extern Plane plane;
 
 using AP_HAL::millis;

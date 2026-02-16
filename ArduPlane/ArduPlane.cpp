@@ -71,6 +71,8 @@ const AP_Scheduler::Task Plane::scheduler_tasks[] = {
     SCHED_TASK(calc_airspeed_errors,   10,    100,  42),
     SCHED_TASK(update_alt,             10,    200,  45),
     SCHED_TASK(adjust_altitude_target, 10,    200,  48),
+    // SCHED_TASK_CLASS(AP_LTE, &plane.lte, update, 10, 300, 170),
+
 #if AP_ADVANCEDFAILSAFE_ENABLED
     SCHED_TASK(afs_fs_check,           10,    100,  51),
 #endif
@@ -386,8 +388,13 @@ void Plane::three_hz_loop()
 #if AP_FENCE_ENABLED
     fence_check();
 #endif
-}
 
+    if (!lte.is_initialized())
+        lte.init();
+    else 
+        lte.update();
+
+}
 void Plane::compass_save()
 {
     if (AP::compass().available() &&
