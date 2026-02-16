@@ -149,6 +149,9 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @Values: 0.5:Very Soft, 0.2:Soft, 0.15:Medium, 0.1:Crisp, 0.05:Very Crisp
     // @User: Standard
     AP_GROUPINFO("INPUT_TC", 20, AC_AttitudeControl, _input_tc, AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT),
+    AP_GROUPINFO("_STEP_EN", 21, AC_AttitudeControl, _step_pit_enabled, 0),
+    AP_GROUPINFO("_STEP_MAG", 22, AC_AttitudeControl, _step_amplitude, 5.0f),
+    AP_GROUPINFO("_STEP_DUR", 23, AC_AttitudeControl, _step_duration, 2.0f),
 
     AP_GROUPEND
 };
@@ -787,6 +790,9 @@ void AC_AttitudeControl::thrust_vector_rotation_angles(const Quaternion& attitud
     const Vector3f thrust_vector_up{0.0f, 0.0f, -1.0f};
 
     // attitude_target and attitude_body are passive rotations from target / body frames to the NED frame
+    static float _step_size = _step_duration/2.0f;
+    static uint32_t start_time = AP_HAL::millis();
+    const float step_signal = getStep(AP_HAL::millis());
     
     // Rotating [0,0,-1] by attitude_target expresses (gets a view of) the target thrust vector in the inertial frame
     Vector3f att_target_thrust_vec = attitude_target * thrust_vector_up; // target thrust vector
@@ -1192,4 +1198,16 @@ void AC_AttitudeControl::get_rpy_srate(float &roll_srate, float &pitch_srate, fl
     roll_srate = get_rate_roll_pid().get_pid_info().slew_rate;
     pitch_srate = get_rate_pitch_pid().get_pid_info().slew_rate;
     yaw_srate = get_rate_yaw_pid().get_pid_info().slew_rate;
+}
+float AC_AttitudeControl::getStep(uint32_t now) const // generate a step signal for z-axis tuning
+{
+	float dT = (now - start_time) / 1000.0f; // convert to seconds
+	if (dT >= _step_size)
+	{
+		_signal_sign *= -1.0f;
+		start_time = now;
+        _step_size = _step_duration;
+	}
+	const float step = float(_signal_sign) *_step_amplitude*100.0f;
+    return step;
 }

@@ -420,6 +420,8 @@ public:
     static const struct AP_Param::GroupInfo var_info[];
 
     static constexpr Vector3f VECTORF_111{1.0f,1.0f,1.0f};
+    float getStep(uint32_t now) const;
+    int16_t _signal_sign;
 
 protected:
 
@@ -466,6 +468,10 @@ protected:
 
     // rate controller input smoothing time constant
     AP_Float            _input_tc;
+
+    AP_Int8            _step_pit_enabled;
+    AP_Float           _step_amplitude;
+    AP_Float           _step_duration;
 
     // Intersampling period in seconds
     float               _dt;
