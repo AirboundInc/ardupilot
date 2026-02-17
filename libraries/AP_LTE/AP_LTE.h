@@ -25,17 +25,14 @@ private:
         WAIT_SIM_OK,
         CHECK_NETWORK,
         WAIT_NETWORK,
-        SETUP_APN,
-        WAIT_APN_OK,
-        ACTIVATE_CONTEXT,
-        WAIT_CONTEXT_OK,
-        OPEN_UDP,
-        WAIT_UDP_OK,
-        ENABLE_TRANSPARENT,
-        WAIT_TRANSPARENT_OK,
+        OPEN_SOCKET,
+        WAIT_SOCKET,
+        SET_TRANSPARENT,
+        WAIT_TRANSPARENT,
         CONNECTED,
         ERROR
     };
+
 
     AP_HAL::UARTDriver *_uart_modem;
     AP_HAL::UARTDriver *_uart_mavlink;

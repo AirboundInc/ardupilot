@@ -26,40 +26,43 @@ void AP_LTE::init()
     if (!_enabled) {
         return;
     }
+    if (_initialized)
+        return;
+
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: starting");
 
     _uart_modem = AP::serialmanager().find_serial(
         AP_SerialManager::SerialProtocol_Scripting, 0);
 
     if (!_uart_modem) {
-        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "LTE: No modem UART");
+        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "LTE_modem: no modem UART");
         _state = State::ERROR;
         return;
     }
 
     _uart_modem->begin(115200);
 
-    _uart_mavlink = AP::serialmanager().find_serial(
-        AP_SerialManager::SerialProtocol_MAVLink2, 0);
+    // _uart_mavlink = AP::serialmanager().find_serial(
+    //     AP_SerialManager::SerialProtocol_MAVLink2, 1);
 
-    if (!_uart_mavlink) {
-        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "LTE: No MAVLink UART");
-        _state = State::ERROR;
-        return;
-    }
+    // if (!_uart_mavlink) {
+    //     GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "LTE_modem: no MAVLink UART");
+    //     _state = State::ERROR;
+    //     return;
+    // }
 
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: Init OK");
     change_state(State::WAIT_BOOT);
     _initialized=true;
 }
 
 void AP_LTE::update()
 {
-    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE update running");
     if (!_enabled || _state == State::ERROR) {
         return;
     }
 
     if (_state == State::CONNECTED) {
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: Bridging data");
         bridge_data();
     } else {
         handle_state_machine();
@@ -71,219 +74,163 @@ void AP_LTE::handle_state_machine()
     uint32_t now = AP_HAL::millis();
     uint32_t elapsed = now - _state_start_ms;
 
-    // Read modem
-    while (_uart_modem->available() && _rx_idx < sizeof(_rx_buf)-1) {
+    while (_uart_modem->available() && _rx_idx < sizeof(_rx_buf) - 1) {
         _rx_buf[_rx_idx++] = _uart_modem->read();
         _rx_buf[_rx_idx] = 0;
     }
 
     switch (_state)
     {
-        case State::SEND_AT:
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: Sending AT");
-            send_at("AT\r\n");
-            change_state(State::WAIT_AT_OK);    
-            break;
 
-        case State::WAIT_AT_OK:
+    case State::WAIT_BOOT:
 
-            // Print whatever we received from modem
-            if (_rx_idx > 0) {
-                char temp[100];
-                uint16_t copy_len = MIN(_rx_idx, (uint16_t)(sizeof(temp) - 1));
-                memcpy(temp, _rx_buf, copy_len);
-                temp[copy_len] = '\0';
+        if (strstr(_rx_buf, "CPIN: READY") ||
+            strstr(_rx_buf, "CFUN: 1")) {
 
-                GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE RX: %s", temp);
-            }
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: found modem");
+            change_state(State::SEND_AT);
+        }
 
-            if (check_response("OK")) {
-                GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: AT OK received");
-                change_state(State::CHECK_SIM);
-            } 
-            else if (elapsed > 3000) {
-                GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE: AT timeout, retrying");
-                change_state(State::WAIT_BOOT);
-            }
+        if (elapsed > 8000) {
+            change_state(State::SEND_AT);
+        }
+        break;
 
-            break;
+    case State::SEND_AT:
+        send_at("AT\r\n");
+        change_state(State::WAIT_AT_OK);
+        break;
 
-        case State::CHECK_SIM:
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: Checking SIM");
-            send_at("AT+CPIN?\r\n");
-            change_state(State::WAIT_SIM_OK);
-            break;
+    case State::WAIT_AT_OK:
 
+        if (check_response("OK")) {
+            change_state(State::CHECK_SIM);
+        } 
+        else if (elapsed > 3000) {
+            GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE_modem: timeout");
+            change_state(State::SEND_AT);
+        }
+        break;
 
-        case State::WAIT_SIM_OK:
-            // if (check_response("READY")) {
-            //     change_state(State::CHECK_NETWORK);
-            // } else if (elapsed > 5000) {
-            //     change_state(State::CHECK_SIM);
-            // }
-            // break;
-            if (_rx_idx > 0) {
-                GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE RX: %s", _rx_buf);
-            }
+    case State::CHECK_SIM:
+        send_at("AT+CPIN?\r\n");
+        change_state(State::WAIT_SIM_OK);
+        break;
 
-            if (check_response("READY")) {
-                GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: SIM READY");
-                change_state(State::CHECK_NETWORK);
-            } 
-            else if (elapsed > 5000) {
-                GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE: SIM timeout");
-                change_state(State::CHECK_SIM);
-            }
+    case State::WAIT_SIM_OK:
 
-            break;
+        if (check_response("READY")) {
+            change_state(State::CHECK_NETWORK);
+        } 
+        else if (elapsed > 5000) {
+            GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE_modem: timeout");
+            change_state(State::CHECK_SIM);
+        }
+        break;
 
-        case State::CHECK_NETWORK:
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: Checking Network");
-            send_at("AT+CEREG?\r\n");
-            change_state(State::WAIT_NETWORK);
-            break;
+    case State::CHECK_NETWORK:
+        send_at("AT+CEREG?\r\n");
+        change_state(State::WAIT_NETWORK);
+        break;
 
-        case State::WAIT_NETWORK:
+    case State::WAIT_NETWORK:
 
-            if (_rx_idx > 0) {
-                char temp[120];
-                uint16_t copy_len = MIN(_rx_idx, (uint16_t)(sizeof(temp) - 1));
-                memcpy(temp, _rx_buf, copy_len);
-                temp[copy_len] = '\0';
+        if (strstr(_rx_buf, "+CEREG: 0,1") ||
+            strstr(_rx_buf, "+CEREG: 0,5")) {
 
-                GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE RX: %s", temp);
-            }
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: CREG OK");
+            change_state(State::OPEN_SOCKET);
+        }
+        else if (elapsed > 10000) {
+            GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE_modem: timeout");
+            change_state(State::CHECK_NETWORK);
+        }
+        break;
 
-            if (strstr(_rx_buf, "+CEREG: 0,1") ||
-                strstr(_rx_buf, "+CEREG: 0,5")) {
+    case State::OPEN_SOCKET:
 
-                GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: Network Registered!");
-                change_state(State::SETUP_APN);
-            }
-            else if (elapsed > 10000) {
-                GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE: Network timeout, retrying");
-                change_state(State::CHECK_NETWORK);
-            }
+        send_at("AT+QIOPEN=1,0,\"UDP\",\"15.207.104.210\",16550,6001,2\r\n");
+        change_state(State::WAIT_SOCKET);
+        break;
 
-            break;
+    case State::WAIT_SOCKET:
 
+        if (check_response("+QIOPEN: 0,0")) {
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: network opened");
+            change_state(State::SET_TRANSPARENT);
+        }
+        else if (strstr(_rx_buf, "+QIOPEN: 0,")) {
+            GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "LTE_modem: error response from modem");
+            change_state(State::OPEN_SOCKET);
+        }
+        else if (check_response("CONNECT")){
+            GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "LTE_modem: network opened 2");
+            change_state(State::CONNECTED);
+            _connected = true;
+        }
+        break;
 
-        case State::SETUP_APN:
-            send_at("AT+QICSGP=1,1,\"cmnet\",\"\",\"\",0\r\n");
-            change_state(State::WAIT_APN_OK);
-            break;
+    case State::SET_TRANSPARENT:
 
-        case State::WAIT_APN_OK:
-            if (check_response("OK")) {
-                change_state(State::ACTIVATE_CONTEXT);
-            } else if (elapsed > 5000) {
-                change_state(State::SETUP_APN);
-            }
-            break;
+        send_at("AT+QISWTMD=0,1\r\n");
+        change_state(State::WAIT_TRANSPARENT);
+        break;
 
-        case State::ACTIVATE_CONTEXT:
-            send_at("AT+QIACT=1\r\n");
-            change_state(State::WAIT_CONTEXT_OK);
-            break;
+    case State::WAIT_TRANSPARENT:
 
-        case State::WAIT_CONTEXT_OK:
-            if (check_response("OK")) {
-                change_state(State::OPEN_UDP);
-            } else if (elapsed > 10000) {
-                change_state(State::ACTIVATE_CONTEXT);
-            }
-            break;
+        if (check_response("CONNECT")) {
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: transparent mode set");
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: connected");
+            _connected = true;
+            change_state(State::CONNECTED);
+        }
+        break;
 
-        case State::OPEN_UDP:
-            send_at("AT+QIOPEN=1,0,\"UDP\",\"13.203.94.240\",16550,6001,0\r\n");
-            change_state(State::WAIT_UDP_OK);
-            break;
+    case State::CONNECTED:
+        break;
 
-        case State::WAIT_UDP_OK:
-            if (check_response("+QIOPEN: 0,0")) {
-                change_state(State::ENABLE_TRANSPARENT);
-            } else if (elapsed > 15000) {
-                change_state(State::OPEN_UDP);
-            }
-            break;
-
-        case State::ENABLE_TRANSPARENT:
-            send_at("AT+QISWTMD=0,1\r\n");
-            change_state(State::WAIT_TRANSPARENT_OK);
-            break;
-
-        case State::WAIT_TRANSPARENT_OK:
-            if (check_response("OK")) {
-                GCS_SEND_TEXT(MAV_SEVERITY_NOTICE, "LTE: CONNECTED");
-                _connected = true;
-                change_state(State::CONNECTED);
-            } else if (elapsed > 5000) {
-                change_state(State::ENABLE_TRANSPARENT);
-            }
-            break;
-
-        case State::CONNECTED:
-            break;
-
-        case State::INIT:
-        case State::ERROR:
-            break;
-
-        case State::WAIT_BOOT:
-
-            if (_rx_idx > 0) {
-                GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE RX: %s", _rx_buf);
-            }
-
-            // If modem indicates SIM ready or full function
-            if (strstr(_rx_buf, "CPIN: READY") ||
-                strstr(_rx_buf, "CFUN: 1")) {
-
-                GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: Modem boot complete");
-                change_state(State::SEND_AT);
-            }
-
-            // Safety fallback: after 8 seconds try AT anyway
-            if (elapsed > 8000) {
-                GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: Boot wait timeout, sending AT");
-                change_state(State::SEND_AT);
-            }
-
-            break;
-
+    case State::ERROR:
+    case State::INIT:
+        break;
     }
 }
 
 void AP_LTE::bridge_data()
 {
     if (!_connected) return;
+    // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: entered bridge");
+    // if (_uart_mavlink->available()) {
+    //     // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: entered bridge");
+    //     uint8_t buf[256];
+    //     int16_t n = _uart_mavlink->read(buf, sizeof(buf));
+    //     if (n > 0) {
+    //         _uart_modem->write(buf, n);
+    //     }
+    // }
+    // else
+    //     GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: no mavlink data");
+ 
 
-    // MAVLink → LTE
-    if (_uart_mavlink->available()) {
-        uint8_t buf[256];
-        int16_t n = _uart_mavlink->read(buf, sizeof(buf));
-        if (n > 0) {
-            _uart_modem->write(buf, n);
-        }
-    }
-
-    // LTE → MAVLink
     if (_uart_modem->available()) {
         uint8_t buf[256];
         int16_t n = _uart_modem->read(buf, sizeof(buf));
         if (n > 0) {
 
-            // detect disconnect
             if (memmem(buf, n, "QIURC: \"closed\"", 15)) {
-                GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE: Disconnected");
+                GCS_SEND_TEXT(MAV_SEVERITY_WARNING,
+                              "LTE_modem: connection closed, reconnecting");
+
                 _connected = false;
-                change_state(State::OPEN_UDP);
+                change_state(State::OPEN_SOCKET);
                 return;
             }
 
-            _uart_mavlink->write(buf, n);
+            // _uart_mavlink->write(buf, n);
         }
     }
+    else
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: no modem data");
+
 }
 
 void AP_LTE::send_at(const char *cmd)
