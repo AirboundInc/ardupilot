@@ -2,6 +2,8 @@
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Vehicle/AP_Vehicle_Type.h>
 #include <AP_Scheduler/AP_Scheduler.h>
+#include <RC_Channel/RC_Channel.h>
+
 
 extern const AP_HAL::HAL& hal;
 
@@ -276,7 +278,16 @@ void AC_AttitudeControl::input_euler_angle_roll_pitch_euler_rate_yaw(float euler
     float euler_pitch_angle = radians(euler_pitch_angle_cd * 0.01f);
     float euler_yaw_rate = radians(euler_yaw_rate_cds * 0.01f);
     bool pit_step = _step_pit_enabled;
-    if(pit_step){
+    RC_Channel *ch = RC_Channels::rc_channel(6);
+    bool rc_trigger_step = false;
+    if (ch != nullptr) {
+        uint16_t PWM;
+        PWM = ch->get_radio_in();
+        if (PWM > 1700) {
+            rc_trigger_step = true;
+        }
+    }
+    if(pit_step && rc_trigger_step){
         // Step signal generation for tuning 
         if(_first_time_step_pitch)
         {
@@ -343,7 +354,16 @@ void AC_AttitudeControl::input_euler_angle_roll_pitch_yaw(float euler_roll_angle
     float euler_pitch_angle = radians(euler_pitch_angle_cd * 0.01f);
     float euler_yaw_angle = radians(euler_yaw_angle_cd * 0.01f);
     bool pit_step = _step_pit_enabled;
-    if(pit_step){
+    RC_Channel *ch = RC_Channels::rc_channel(6);
+    bool rc_trigger_step = false;
+    if (ch != nullptr) {
+        uint16_t PWM;
+        PWM = ch->get_radio_in();
+        if (PWM > 1700) {
+            rc_trigger_step = true;
+        }
+    }
+    if(pit_step && rc_trigger_step){
         // Step signal generation for tuning 
         if(_first_time_step_pitch)
         {
