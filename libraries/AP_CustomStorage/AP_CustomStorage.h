@@ -18,19 +18,18 @@
  * Provides persistent storage for custom parameters including:
  * - UUID (Universally Unique Identifier)
  * - Password/authentication tokens
- * 
+ *
  * Data is stored in flash memory with a header structure for validation.
  */
-class AP_CustomStorage
-{
+class AP_CustomStorage {
 public:
     AP_CustomStorage();
-    
+
     bool _initialized = false;  ///< Tracks whether storage system has been initialized
 
     /**
      * @brief Initialize the storage system
-     * 
+     *
      * Verifies storage allocation and loads existing data from flash.
      * Initializes default header if none exists.
      */
@@ -43,7 +42,7 @@ public:
     bool is_initialized();
 
     // Parameter operations
-    
+
     /**
      * @brief Store a UUID string
      * @param uuid Null-terminated UUID string (must be 36 chars or less)
@@ -80,7 +79,7 @@ private:
 
     /**
      * @brief Storage header structure
-     * 
+     *
      * Packed to ensure consistent layout in flash memory
      */
     struct PACKED StorageHeader {
@@ -97,7 +96,7 @@ private:
 
     /**
      * @brief Layout definition for parameter storage
-     * 
+     *
      * Defines the memory layout of parameters within the storage area
      */
     struct {
@@ -120,7 +119,7 @@ private:
     void set_storage(const char *new_string);
 
     // Helper methods
-    
+
     /**
      * @brief Load data from flash storage
      * @return true if successful, false on error

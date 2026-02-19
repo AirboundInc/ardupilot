@@ -16,24 +16,21 @@ AP_CustomStorage::AP_CustomStorage()
 
 void AP_CustomStorage::init()
 {
-    if (_initialized)
-    {
+    if (_initialized) {
         return;
     }
-        // Critical check - must match hwdef.dat storage allocation
-    if (_storage.size() < sizeof(_data))
-    {
+    // Critical check - must match hwdef.dat storage allocation
+    if (_storage.size() < sizeof(_data)) {
         _initialized = true;  // Prevent repeated initialization attempts
         return;
     }
 
-    if (load_from_flash()){
+    if (load_from_flash()) {
         StorageHeader header;
         memcpy(&header, _data, sizeof(header));
 
         // Initialize header if missing/corrupt (first boot)
-        if (header.magic != HEADER_MAGIC)
-        {
+        if (header.magic != HEADER_MAGIC) {
             header.magic = HEADER_MAGIC;
             header.version = 1;
             memset(_data, 0, CUSTOM_PARAM_DATA_SIZE);
@@ -42,8 +39,7 @@ void AP_CustomStorage::init()
             load_from_flash();
             memcpy(&header, _data, sizeof(header));
         }
-    }
-    else{
+    } else {
         memset(_data, 0, sizeof(_data));
         save_to_flash();
     }
@@ -57,13 +53,11 @@ void AP_CustomStorage::init()
 
 bool AP_CustomStorage::set_uuid(const char *uuid)
 {
-    if (!_initialized || uuid == nullptr)
-    {
+    if (!_initialized || uuid == nullptr) {
         return false;  // Prevents operations on uninitialized storage
     }
 
-    if (strlen(uuid) > _layout.uuid_length)
-    {
+    if (strlen(uuid) > _layout.uuid_length) {
         return false;  // Length enforcement
     }
 
@@ -73,8 +67,7 @@ bool AP_CustomStorage::set_uuid(const char *uuid)
 
 bool AP_CustomStorage::get_uuid(char *buf, uint8_t len) const
 {
-    if (!_initialized || buf == nullptr || len <= _layout.uuid_length)
-    {
+    if (!_initialized || buf == nullptr || len <= _layout.uuid_length) {
         return false;  // Buffer safety check
     }
 
@@ -85,13 +78,11 @@ bool AP_CustomStorage::get_uuid(char *buf, uint8_t len) const
 
 bool AP_CustomStorage::set_password(const char *pass)
 {
-    if (!_initialized || pass == nullptr)
-    {
+    if (!_initialized || pass == nullptr) {
         return false;
     }
 
-    if (strlen(pass) > _layout.pass_length)
-    {
+    if (strlen(pass) > _layout.pass_length) {
         return false;
     }
 
@@ -101,8 +92,7 @@ bool AP_CustomStorage::set_password(const char *pass)
 
 bool AP_CustomStorage::get_password(char *buf, uint8_t len) const
 {
-    if (!_initialized || buf == nullptr || len <= _layout.pass_length)
-    {
+    if (!_initialized || buf == nullptr || len <= _layout.pass_length) {
         return false;
     }
 
@@ -123,11 +113,9 @@ bool AP_CustomStorage::load_from_flash()
 
 bool AP_CustomStorage::save_to_flash()
 {
-
-    if (_storage.write_block(0, _data, sizeof(_data))){
+    if (_storage.write_block(0, _data, sizeof(_data))) {
         return true;
-    }
-    else{
+    } else {
         gcs().send_text(MAV_SEVERITY_ERROR,"CustomStorage: Failed to save data to flash!");  // Critical error
         return false;
     }
@@ -140,13 +128,12 @@ bool AP_CustomStorage::save_to_flash()
 const char *AP_CustomStorage::get_storage() const
 {
     // Direct access - caller manages buffer size
-    return _data;  
+    return _data;
 }
 
 void AP_CustomStorage::set_storage(const char *new_data)
 {
-    if (!_initialized)
-    {
+    if (!_initialized) {
         gcs().send_text(MAV_SEVERITY_ERROR,"CustomStorage: Not initialized, cannot set string.");
         return;
     }
