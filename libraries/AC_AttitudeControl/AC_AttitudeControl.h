@@ -421,7 +421,7 @@ public:
 
     static constexpr Vector3f VECTORF_111{1.0f,1.0f,1.0f};
     float getStep(uint32_t now);
-    int16_t _signal_sign = 1;
+    int16_t _step_state = 1;
     bool _first_time_step_pitch;
     uint32_t start_time;
     float _step_size;

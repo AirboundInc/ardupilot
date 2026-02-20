@@ -1248,15 +1248,37 @@ void AC_AttitudeControl::get_rpy_srate(float &roll_srate, float &pitch_srate, fl
     pitch_srate = get_rate_pitch_pid().get_pid_info().slew_rate;
     yaw_srate = get_rate_yaw_pid().get_pid_info().slew_rate;
 }
-float AC_AttitudeControl::getStep(uint32_t now) // generate a step signal for z-axis tuning
+float AC_AttitudeControl::getStep(uint32_t now)
 {
-	float dT = (now - start_time) / 1000.0f; // convert to seconds
-	if (dT >= _step_size)
-	{
-		_signal_sign *= -1.0f;
-		start_time = now;
+    float dT = (now - start_time) / 1000.0f;  // convert to seconds
+
+    if (dT >= _step_size)
+    {
+        _step_state = (_step_state + 1) % 4;  // cycle through 0→1→2→3→0
+        start_time = now;
         _step_size = _step_duration;
-	}
-	const float step = float(_signal_sign) *_step_amplitude;
+    }
+
+    float step = 0.0f;
+
+    switch (_step_state)
+    {
+        case 0:
+            step = _step_amplitude;   // +A
+            break;
+
+        case 1:
+            step = 0.0f;              // 0
+            break;
+
+        case 2:
+            step = -_step_amplitude;  // -A
+            break;
+
+        case 3:
+            step = 0.0f;              // 0
+            break;
+    }
+
     return step;
 }
