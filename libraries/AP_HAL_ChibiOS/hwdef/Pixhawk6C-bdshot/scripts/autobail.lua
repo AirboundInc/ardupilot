@@ -1,7 +1,6 @@
 -- Tailsitter Recovery Loop Script (Fixed for Firmware Compatibility)
 -- Logic: Bad Pitch -> Save Mode -> GUIDED (Auto-Hover) -> Wait -> Return to Saved Mode
 
-local SCRIPT_NAME = "QREC"
 local LOOP_MS = 100 -- Run at 10Hz
 
 -- 1. SETUP PARAMETER TABLE
@@ -9,10 +8,10 @@ local KEY = 75
 assert(param:add_table(KEY, "QREC_", 20), "QREC table failed")
 
 -- 2. ADD PARAMETERS
-param:add_param(KEY, 2,  "MIN_BAD_PIT", 70)    -- Pitch limit
+param:add_param(KEY, 2,  "MIN_BAD_PIT", 40)    -- Pitch limit
 param:add_param(KEY, 10, "ENABLE",      1)    -- 1 = Enabled
 param:add_param(KEY, 11, "MODE_DLY",    1000) -- Delay (ms) before checking pitch
-param:add_param(KEY, 12, "BAD_CNT",     5)    -- Bad ticks required
+param:add_param(KEY, 12, "BAD_CNT",     3)    -- Bad ticks required
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
@@ -29,27 +28,12 @@ local p_mode_dly    = bind_param("QREC_MODE_DLY")
 local p_bad_req     = bind_param("QREC_BAD_CNT")
 
 -- 4. MODE DEFINITIONS (ArduPlane)
-local MODE_AUTO = 10
 local MODE_QLOITER = 19 -- Auto-Hover (Functionally same as QLoiter 50% Thr)
 local MODE_QLAND  = 20
-local MODE_QRTL   = 21
-
-local MAV_SEVERITY_ALERT = 1
-
-
-local NAV_CMD = {
-    MAV_CMD_NAV_VTOL_LAND = 85
-}
-
-local MONITOR_MODES = {
-    [MODE_QLAND] = true,
-    [MODE_QRTL]  = true
-}
 
 -- 5. STATE VARIABLES
 local active = false
 local bad_count = 0
-local guided_start_time = 0
 local last_mode_idx = 0
 local mode_entry_time = 0
 
@@ -60,12 +44,6 @@ function is_vehicle_landing()
     local current_mode = vehicle:get_mode()
     if current_mode == MODE_QLAND then
         return true
-    elseif current_mode == MODE_AUTO then
-        local nav_cmd = mission:get_current_nav_id()
-        if nav_cmd == NAV_CMD.MAV_CMD_NAV_VTOL_LAND then
-            -- valid command for landing phase
-            return true
-        end
     elseif quadplane:in_vtol_land_descent() then
         return true
     else
@@ -112,7 +90,6 @@ function update()
                     end
 
                     if bad_count >= required_count then
-                        -- SWITCH TO GUIDED (Auto-Hover)
                         if vehicle:set_mode(MODE_QLOITER) then
                             active = true
                             bad_count = 0
