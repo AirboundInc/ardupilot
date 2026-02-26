@@ -220,8 +220,8 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
         // Outputs
         // Here outputs are multiplied by 0.5f for stability after sitl testing this may or maynot be true in real world testing
         // This scaling makes the output less aggressive and it avoids the motors saturating too easily. Still the non-linear calculation is valid..
-        _thrust_left  = constrain_float(T_L_n*0.5f, 0.0f, 1.0f);
-        _thrust_right = constrain_float(T_R_n*0.5f, 0.0f, 1.0f);
+        _thrust_left  = constrain_float(T_L_n, 0.0f, 1.0f);
+        _thrust_right = constrain_float(T_R_n, 0.0f, 1.0f);
 
         _tilt_left  = constrain_float(alpha_L*0.5f / alpha_max, -1.0f, 1.0f);
         _tilt_right = constrain_float(alpha_R*0.5f / alpha_max, -1.0f, 1.0f);
