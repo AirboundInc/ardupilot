@@ -11,7 +11,7 @@ assert(param:add_table(KEY, "AUTOB_", 20), "AUTOB table failed")
 param:add_param(KEY, 2,  "PIT_LIM", 40)    -- Pitch limit
 param:add_param(KEY, 10, "ENABLE",      1)    -- 1 = Enabled
 param:add_param(KEY, 11, "MODE_DLY",    1000) -- Delay (ms) before checking pitch
-param:add_param(KEY, 12, "BAD_CNT",     3)    -- Bad ticks required
+param:add_param(KEY,12,"PIT_TOUT", 500)
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
@@ -22,10 +22,10 @@ local function bind_param(name)
     return p
 end
 
-local p_enable      = bind_param("AUTOB_ENABLE")
+local p_enable = bind_param("AUTOB_ENABLE")
 local p_pit_lim = bind_param("AUTOB_PIT_LIM")
-local p_mode_dly    = bind_param("AUTOB_MODE_DLY")
-local p_bad_req     = bind_param("AUTOB_BAD_CNT")
+local p_mode_dly = bind_param("AUTOB_MODE_DLY")
+local p_pitch_timeout = bind_param("AUTOB_PIT_TOUT")
 
 -- 4. MODE DEFINITIONS (ArduPlane)
 local MODE_QLOITER = 19 -- Auto-Hover (Functionally same as QLoiter 50% Thr)
@@ -33,9 +33,9 @@ local MODE_QLAND  = 20
 
 -- 5. STATE VARIABLES
 local active = false
-local bad_count = 0
 local last_mode_idx = 0
 local mode_entry_time = 0
+local first_pitch_exceeded_t = nil
 
 -- Helper: Radians to Degrees
 local function rad2deg(r) return r * 57.2958 end
@@ -66,7 +66,7 @@ function update()
     if current_mode ~= last_mode_idx then
         last_mode_idx = current_mode
         mode_entry_time = now
-        bad_count = 0
+        first_pitch_exceeded_t = nil
     end
 
     -- ==========================================================
@@ -77,26 +77,24 @@ function update()
             -- Wait for Delay (settle time)
             local delay_ms = p_mode_dly:get() or 1000
             if (now - mode_entry_time) > delay_ms then
-
                 local pitch_deg = rad2deg(ahrs:get_pitch() or 0)
                 local threshold = p_pit_lim:get() or 0
+                local pitch_timeout = p_pitch_timeout:get() or 0
                 if pitch_deg < threshold then
-                    bad_count = bad_count + 1
-                    local required_count = p_bad_req:get() or 1
-                    
-                    if bad_count % 10 == 0 then
-                        gcs:send_text(6, string.format("AUTOB: Bad Pitch %.1f < %.1f", pitch_deg, threshold))
-                    end
-
-                    if bad_count >= required_count then
-                        if vehicle:set_mode(MODE_QLOITER) then
-                            active = true
-                            bad_count = 0
-                            gcs:send_text(2, "AUTOB: Switching to QLoiter" )
+                    if first_pitch_exceeded_t == nil then
+                        first_pitch_exceeded_t = millis()
+                    else
+                        if millis() - first_pitch_exceeded_t > pitch_timeout then
+                            -- gcs:send_text(5, "Should switch to  Qloiter")
+                            if vehicle:set_mode(MODE_QLOITER) then
+                                first_pitch_exceeded_t = nil
+                                active = true
+                                gcs:send_text(2, "AUTOB: Switching to QLoiter" )
+                            end
                         end
                     end
                 else
-                    bad_count = 0
+                    first_pitch_exceeded_t = nil
                 end
             end
         end
