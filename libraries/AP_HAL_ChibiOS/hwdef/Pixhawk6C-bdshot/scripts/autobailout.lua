@@ -4,14 +4,14 @@
 local LOOP_MS = 100 -- Run at 10Hz
 
 -- 1. SETUP PARAMETER TABLE
-local KEY = 75
-assert(param:add_table(KEY, "AUTOB_", 20), "AUTOB table failed")
+local KEY = 110
+assert(param:add_table(KEY, "AUTOB_", 4), "AUTOB table failed")
 
 -- 2. ADD PARAMETERS
-param:add_param(KEY, 2,  "PIT_LIM", 40)    -- Pitch limit
-param:add_param(KEY, 10, "ENABLE",      1)    -- 1 = Enabled
-param:add_param(KEY, 11, "MODE_DLY",    1000) -- Delay (ms) before checking pitch
-param:add_param(KEY,12,"PIT_TOUT", 500)
+assert(param:add_param(KEY, 1,  "PIT_LIM", 40),'could not add AUTOB_PIT_LIM')    -- Pitch limit
+assert(param:add_param(KEY, 2, "ENABLE", 1),'could not add AUTOB_ENABLE')    -- 1 = Enabled
+assert(param:add_param(KEY, 3, "MODE_DLY", 1000), 'could not add AUTOB_MODE_DLY') -- Delay (ms) before checking pitch
+assert(param:add_param(KEY, 4,"PIT_TOUT", 500),'could not add AUTOB_PIT_TOUT')
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
@@ -70,7 +70,7 @@ function update()
     end
 
     -- ==========================================================
-    -- LOGIC 1: MONITORING (Checking Pitch)
+    -- LOGIC: MONITORING (Checking Pitch)
     -- ==========================================================
     if not active then
         if is_vehicle_landing() then
