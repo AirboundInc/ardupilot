@@ -69,9 +69,10 @@ void Plane::init_ardupilot()
 #endif
 
     // setup telem slots with serial ports
+    lte.pre_init();
+
     gcs().setup_uarts();
-
-
+    
 #if OSD_ENABLED == ENABLED
     osd.init();
 #endif

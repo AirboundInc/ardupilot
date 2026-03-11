@@ -2,13 +2,66 @@
 
 #include <AP_Param/AP_Param.h>
 #include <AP_SerialManager/AP_SerialManager.h>
+#include <AP_HAL/AP_HAL.h>
+#include <AP_HAL/utility/RingBuffer.h>
+#include <AP_HAL/AP_HAL_Boards.h>
 
+// ─────────────────────────────────────────────────────────────────────────────
+// AP_LTE_VirtualPort
+//
+// writebuffer: ArduPlane GCS _write() → vport_read()  (uplink: Pixhawk → modem)
+// readbuffer:  vport_write()          → GCS _read()   (downlink: modem → Pixhawk)
+// ─────────────────────────────────────────────────────────────────────────────
+class AP_LTE_VirtualPort : public AP_SerialManager::RegisteredPort {
+public:
+    AP_LTE_VirtualPort() {}
+    bool     init_buffers(uint32_t rxS, uint32_t txS);
+    void     begin(uint32_t baud, uint16_t rxS, uint16_t txS) {
+        _begin(baud, rxS, txS);
+    }
+    uint32_t vport_available();
+    ssize_t  vport_read(uint8_t *buf, uint16_t count);
+    size_t   vport_write(const uint8_t *buf, size_t size);
+
+private:
+    bool     is_initialized() override { return true; }
+    bool     tx_pending()     override { return false; }
+    uint32_t txspace()        override;
+    void     _begin(uint32_t b, uint16_t rxS, uint16_t txS) override;
+    size_t   _write(const uint8_t *buffer, size_t size) override;
+    ssize_t  _read(uint8_t *buffer, uint16_t count) override;
+    uint32_t _available() override;
+    void     _end()   override {}
+    void     _flush() override {}
+    bool     _discard_input() override;
+
+    ByteBuffer   *writebuffer{nullptr};
+    ByteBuffer   *readbuffer{nullptr};
+    uint32_t      last_size_tx{0};
+    uint32_t      last_size_rx{0};
+    HAL_Semaphore sem;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AP_LTE — EC200UCN driver (no CMUX, buffer access mode)
+//
+// State machine:
+//   WAIT_BOOT → SEND_AT → WAIT_AT_OK → DISABLE_ECHO → WAIT_ECHO
+//   → CHECK_SIM → WAIT_SIM_OK → CHECK_NETWORK → WAIT_NETWORK
+//   → CLOSE_SOCKET → WAIT_CLOSE → OPEN_SOCKET → WAIT_SOCKET → CONNECTED
+//
+// Data flow when CONNECTED:
+//   Uplink:   vport (GCS MAVLink) → AT+QISEND=0,N → modem UART → relay → MP
+//   Downlink: AT+QIRD=0,512 poll (200ms) → modem UART → vport (GCS MAVLink)
+// ─────────────────────────────────────────────────────────────────────────────
 class AP_LTE {
 public:
     AP_LTE();
 
+    void pre_init();   // call BEFORE gcs().setup_uarts()
     void init();
     void update();
+
     bool is_initialized() const { return _initialized; }
     bool is_connected()   const { return _connected; }
 
@@ -25,11 +78,6 @@ public:
         WAIT_SIM_OK,
         CHECK_NETWORK,
         WAIT_NETWORK,
-        ACTIVATE_PDP,
-        WAIT_PDP,
-        WAIT_ACT,
-        CHECK_ACT,
-        WAIT_ACT_CHECK,
         CLOSE_SOCKET,
         WAIT_CLOSE,
         OPEN_SOCKET,
@@ -39,49 +87,33 @@ public:
     };
 
 private:
-    enum class BridgeState : uint8_t {
-        IDLE = 0,
-        SEND,
-        READ,
-    };
+    void  handle_state_machine();
+    void  bridge_data();
+    void  send_at(const char *cmd);
+    bool  check_response(const char *expected);
+    void  change_state(State s);
 
-    void     handle_state_machine();
-    void     bridge_data();
-    uint16_t build_mavlink_packet(uint8_t *buf, uint16_t buflen, uint32_t now);
-    void     send_at(const char *cmd);
-    bool     check_response(const char *expected);
-    void     change_state(State new_state);
-
-    // ── UARTs ──────────────────────────────────────────────────
     AP_HAL::UARTDriver *_uart_modem{nullptr};
-    AP_HAL::UARTDriver *_uart_telem{nullptr};  // SERIAL2 MAVLink2 (downlink only)
+    AP_LTE_VirtualPort  _vport;
 
-    // ── State ──────────────────────────────────────────────────
     State    _state{State::INIT};
     uint32_t _state_start_ms{0};
-    uint32_t _last_poll_ms{0};
 
     bool     _connected{false};
     bool     _initialized{false};
+    bool     _vport_registered{false};
 
-    // ── MAVLink packet generation timers ───────────────────────
-    uint32_t _mav_last_hb_ms{0};
-    uint32_t _mav_last_att_ms{0};
-    uint32_t _mav_last_pos_ms{0};
-    uint32_t _mav_last_sys_ms{0};
-    uint8_t  _mav_seq{0};
+    bool     _tx_pending{false};
 
-    // ── Bridge ─────────────────────────────────────────────────
-    BridgeState _bridge_state{BridgeState::IDLE};
-    uint32_t    _bridge_state_ms{0};
-    uint8_t     _pending_tx_buf[512];
-    uint16_t    _pending_tx_len{0};
+    uint32_t _tx_pending_ms{0};
 
-    // ── Shared RX buffer ───────────────────────────────────────
-    char     _rx_buf[512];
+    static constexpr uint16_t RX_BUF_SIZE = 2048;
+    uint8_t  _rx_buf[RX_BUF_SIZE];
     uint16_t _rx_idx{0};
 
-    // ── Parameters ─────────────────────────────────────────────
+    uint8_t  _tx_buf[512];
+    uint16_t _tx_len{0};
+
     AP_Int8  _enabled;
     AP_Int8  _debug_level;
 };
