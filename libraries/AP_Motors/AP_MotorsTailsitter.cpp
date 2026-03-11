@@ -174,6 +174,7 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     if (_tailsitter_nl_mixer) {
 
         constexpr float alpha_max = radians(45.0f); // maximum tilt angle of the tilt rotors (evaluated compile time)
+        constexpr float alpha_safe = radians(89.0f);
         constexpr float eps = 1e-3f;                // small value to avoid division by zero
 
         // Vertical thrust + roll demand 
@@ -189,22 +190,30 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
         float alpha_R = 0.0f;
 
         if (T_L > eps) {
-            float tan_alpha = Fy_L / T_L;
-            alpha_L = atanf(tan_alpha);
+            alpha_L = atanf(Fy_L / T_L);
+            if (fabsf(alpha_L) > alpha_max) {
+                limit.pitch = true;
+                limit.yaw   = true;
+            }
         } else {
             limit.pitch = true;
             limit.yaw   = true;
         }
 
         if (T_R > eps) {
-            float tan_alpha = Fy_R / T_R;
-            alpha_R = atanf(tan_alpha);
+            alpha_R = atanf(Fy_R / T_R);
+            if (fabsf(alpha_R) > alpha_max) {
+                limit.pitch = true;
+                limit.yaw   = true;
+            }
         } else {
             limit.pitch = true;
             limit.yaw   = true;
         }
 
         // Preserve vertical thrust
+        alpha_L = constrain_float(alpha_L, -alpha_safe, alpha_safe);
+        alpha_R = constrain_float(alpha_R, -alpha_safe, alpha_safe);
         float T_L_n = T_L / cosf(alpha_L);
         float T_R_n = T_R / cosf(alpha_R);
 
@@ -215,6 +224,7 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
             T_L_n *= scale;
             T_R_n *= scale;
             limit.throttle_upper = true;
+            limit.roll = true;
         }
 
         // Outputs
@@ -225,54 +235,60 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
 
         _tilt_left  = constrain_float(alpha_L*0.5f / alpha_max, -1.0f, 1.0f);
         _tilt_right = constrain_float(alpha_R*0.5f / alpha_max, -1.0f, 1.0f);
+#if HAL_LOGGING_ENABLED
         AP::logger().WriteStreaming("NLMI", "TimeUS,TRB,TLB,TRA,TLA,PHLB,PHRB,AL,AR",
         "s--------", // seconds,
         "F00000000", // micro (1e-6), no mult (1e0)
         "Qffffffff", // uint64_t, float
         AP_HAL::micros64(),
         T_R, T_L, T_R_n, T_L_n, Fy_L, Fy_R, _tilt_left, _tilt_right);
+#endif
 
     } else {
         _thrust_left  = throttle_thrust + roll_thrust * 0.5f;
         _thrust_right = throttle_thrust - roll_thrust * 0.5f;
+
         // Thrust vectoring
         _tilt_left  = pitch_thrust - yaw_thrust;
         _tilt_right = pitch_thrust + yaw_thrust;
-    }
 
-    thrust_max = MAX(_thrust_right,_thrust_left);
-    thrust_min = MIN(_thrust_right,_thrust_left);
-    if (thrust_max > 1.0f) {
-        // if max thrust is more than one reduce average throttle
-        thr_adj = 1.0f - thrust_max;
-        limit.throttle_upper = true;
-    } else if (thrust_min < 0.0) {
-        // if min thrust is less than 0 increase average throttle
-        // but never above max boost
-        thr_adj = -thrust_min;
-        if ((throttle_thrust + thr_adj) > max_boost_throttle) {
-            thr_adj = MAX(max_boost_throttle - throttle_thrust, 0.0);
-            // in this case we throw away some roll output, it will be uneven
-            // constraining the lower motor more than the upper
-            // this unbalances torque, but motor torque should have significantly less control power than tilts / control surfaces
-            // so its worth keeping the higher roll control power at a minor cost to yaw
-            limit.roll = true;
+        thrust_max = MAX(_thrust_right, _thrust_left);
+        thrust_min = MIN(_thrust_right, _thrust_left);
+
+        if (thrust_max > 1.0f) {
+            // if max thrust is more than one reduce average throttle
+            thr_adj = 1.0f - thrust_max;
+            limit.throttle_upper = true;
+        } else if (thrust_min < 0.0f) {
+            // if min thrust is less than 0 increase average throttle
+            // but never above max boost
+            thr_adj = -thrust_min;
+            if ((throttle_thrust + thr_adj) > max_boost_throttle) {
+                thr_adj = MAX(max_boost_throttle - throttle_thrust, 0.0f);
+                // in this case we throw away some roll output, it will be uneven
+                // constraining the lower motor more than the upper
+                // this unbalances torque, but motor torque should have significantly
+                // less control power than tilts / control surfaces
+                // so its worth keeping the higher roll control power at a minor cost to yaw
+                limit.roll = true;
+            }
+            limit.throttle_lower = true;
         }
-        limit.throttle_lower = true;
-    }
 
-    // Add adjustment to reduce average throttle
-    _thrust_left  = constrain_float(_thrust_left  + thr_adj, 0.0f, 1.0f);
-    _thrust_right = constrain_float(_thrust_right + thr_adj, 0.0f, 1.0f);
+        // Add adjustment to reduce average throttle
+        _thrust_left  = constrain_float(_thrust_left  + thr_adj, 0.0f, 1.0f);
+        _thrust_right = constrain_float(_thrust_right + thr_adj, 0.0f, 1.0f);
 
-    _throttle = throttle_thrust;
+        _throttle = throttle_thrust;
 
-    // compensation_gain can never be zero
-    // ensure accurate representation of average throttle output, this value is used for notch tracking and control surface scaling
-    if (_has_diff_thrust) {
-        _throttle_out = (throttle_thrust + thr_adj) / compensation_gain;
-    } else {
-        _throttle_out = throttle_thrust / compensation_gain;
+        // compensation_gain can never be zero
+        // ensure accurate representation of average throttle output,
+        // this value is used for notch tracking and control surface scaling
+        if (_has_diff_thrust) {
+            _throttle_out = (throttle_thrust + thr_adj) / compensation_gain;
+        } else {
+            _throttle_out = throttle_thrust / compensation_gain;
+        }
     }
 }
 
