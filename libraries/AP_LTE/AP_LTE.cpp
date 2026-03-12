@@ -6,18 +6,74 @@
 
 extern const AP_HAL::HAL& hal;
 
-// Server config — must match mavrelay.py
-#define LTE_SERVER_IP    "15.207.104.210"
-#define LTE_SERVER_PORT   16550
-#define LTE_LOCAL_PORT    6001
-
 #define LTE_VPORT_TXSIZE  4096
 #define LTE_VPORT_RXSIZE  2048
 
 // ─────────────────────────────────────────────────────────────────────────────
 const AP_Param::GroupInfo AP_LTE::var_info[] = {
-    AP_GROUPINFO("ENABLE", 1, AP_LTE, _enabled,     0),
-    AP_GROUPINFO("DEBUG",  2, AP_LTE, _debug_level, 1),
+    // @Param: ENABLE
+    // @DisplayName: LTE enable
+    // @Description: Enable LTE modem driver
+    // @Values: 0:Disabled,1:Enabled
+    // @User: Standard
+    AP_GROUPINFO("ENABLE",      1, AP_LTE, _enabled,     0),
+
+    // @Param: DEBUG
+    // @DisplayName: LTE debug level
+    // @Description: Enable debug GCS messages from LTE driver
+    // @Values: 0:Disabled,1:Enabled
+    // @User: Advanced
+    AP_GROUPINFO("DEBUG",       2, AP_LTE, _debug_level, 1),
+
+    // @Param: SERVER_IP0
+    // @DisplayName: LTE relay server IP octet 0
+    // @Description: First octet of relay server IP address (e.g. 15 for 15.207.104.210)
+    // @Range: 0 255
+    // @User: Standard
+    AP_GROUPINFO("SERVER_IP0",  3, AP_LTE, _ip0,         15),
+
+    // @Param: SERVER_IP1
+    // @DisplayName: LTE relay server IP octet 1
+    // @Description: Second octet of relay server IP address
+    // @Range: 0 255
+    // @User: Standard
+    AP_GROUPINFO("SERVER_IP1",  4, AP_LTE, _ip1,         207),
+
+    // @Param: SERVER_IP2
+    // @DisplayName: LTE relay server IP octet 2
+    // @Description: Third octet of relay server IP address
+    // @Range: 0 255
+    // @User: Standard
+    AP_GROUPINFO("SERVER_IP2",  5, AP_LTE, _ip2,         104),
+
+    // @Param: SERVER_IP3
+    // @DisplayName: LTE relay server IP octet 3
+    // @Description: Fourth octet of relay server IP address
+    // @Range: 0 255
+    // @User: Standard
+    AP_GROUPINFO("SERVER_IP3",  6, AP_LTE, _ip3,         210),
+
+    // @Param: SERVER_PORT
+    // @DisplayName: LTE relay server UDP port
+    // @Description: UDP port on the relay server to connect to
+    // @Range: 1 65535
+    // @User: Standard
+    AP_GROUPINFO("SERVER_PORT", 7, AP_LTE, _server_port, 16550),
+
+    // @Param: LOCAL_PORT
+    // @DisplayName: LTE modem local UDP port
+    // @Description: Local UDP port used by the modem for the connection
+    // @Range: 1 65535
+    // @User: Advanced
+    AP_GROUPINFO("LOCAL_PORT",  8, AP_LTE, _local_port,  6001),
+
+    // @Param: BAUDRATE
+    // @DisplayName: LTE modem UART baud rate
+    // @Description: Baud rate for communication with the LTE modem
+    // @Values: 9600:9600,19200:19200,38400:38400,57600:57600,115200:115200
+    // @User: Advanced
+    AP_GROUPINFO("BAUDRATE",    9, AP_LTE, _baudrate,    115200),
+
     AP_GROUPEND
 };
 
@@ -98,6 +154,14 @@ AP_LTE::AP_LTE()
     AP_Param::setup_object_defaults(this, var_info);
 }
 
+// Build dotted-decimal IP string from the 4 octet params
+void AP_LTE::build_server_ip(char *buf, uint8_t buflen) const
+{
+    hal.util->snprintf(buf, buflen, "%u.%u.%u.%u",
+                       (unsigned)_ip0, (unsigned)_ip1,
+                       (unsigned)_ip2, (unsigned)_ip3);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // pre_init / init / update
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,7 +180,11 @@ void AP_LTE::pre_init()
 void AP_LTE::init()
 {
     if (!_enabled || _initialized) return;
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: starting");
+
+    char ip[20];
+    build_server_ip(ip, sizeof(ip));
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO,
+                  "LTE_modem: starting -> %s:%u", ip, (unsigned)_server_port);
 
     _uart_modem = AP::serialmanager().find_serial(
         AP_SerialManager::SerialProtocol_Scripting, 0);
@@ -126,7 +194,7 @@ void AP_LTE::init()
         _state = State::ERROR;
         return;
     }
-    _uart_modem->begin(115200);
+    _uart_modem->begin((uint32_t)_baudrate);
 
     // Verify vport was picked up by GCS
     bool found = false;
@@ -219,9 +287,6 @@ void AP_LTE::handle_state_machine()
         break;
 
     case State::DISABLE_ECHO:
-        // ATE0      = disable echo
-        // ATS2=255  = disable +++ escape sequence (prevents modem entering AT mode)
-        // AT+QIEXTSEND=0 = disable extended send mode
         _uart_modem->write((const uint8_t*)"ATE0\r\n", 6);
         _rx_idx = 0;
         memset(_rx_buf, 0, sizeof(_rx_buf));
@@ -232,7 +297,7 @@ void AP_LTE::handle_state_machine()
         if (elapsed < 500) break;
         if (check_response("OK") || elapsed > 3000) {
             // Disable +++ escape to prevent MAVLink bytes triggering AT mode
-            _uart_modem->write((const uint8_t*)"ATS2=255\r\n", 11);
+            _uart_modem->write((const uint8_t*)"ATS2=255\r\n", 10);
             _rx_idx = 0;
             memset(_rx_buf, 0, sizeof(_rx_buf));
             change_state(State::CHECK_SIM);
@@ -284,15 +349,16 @@ void AP_LTE::handle_state_machine()
 
     case State::OPEN_SOCKET:
         {
+            char ip[20];
+            build_server_ip(ip, sizeof(ip));
             char cmd[96];
             hal.util->snprintf(cmd, sizeof(cmd),
                                "AT+QIOPEN=1,0,\"UDP\",\"%s\",%u,%u,2\r\n",
-                               LTE_SERVER_IP,
-                               (unsigned)LTE_SERVER_PORT,
-                               (unsigned)LTE_LOCAL_PORT);
+                               ip,
+                               (unsigned)_server_port,
+                               (unsigned)_local_port);
             GCS_SEND_TEXT(MAV_SEVERITY_INFO,
-                          "LTE_modem: opening UDP %s:%u",
-                          LTE_SERVER_IP, (unsigned)LTE_SERVER_PORT);
+                          "LTE_modem: opening UDP %s:%u", ip, (unsigned)_server_port);
             _uart_modem->write((const uint8_t*)cmd, strlen(cmd));
         }
         change_state(State::WAIT_SOCKET);
@@ -370,7 +436,7 @@ void AP_LTE::bridge_data()
         return;
     }
 
-    // ── Downlink: transparent mode — raw bytes arrive directly on UART ─────────
+    // ── Downlink: transparent mode — raw bytes arrive directly on UART ────────
     if (_rx_idx > 0) {
         size_t written = _vport.vport_write(_rx_buf, _rx_idx);
         if (written != _rx_idx) {
@@ -383,7 +449,6 @@ void AP_LTE::bridge_data()
     }
 
     // ── Uplink: read vport and write raw bytes directly to UART ──────────────
-    // In transparent mode no AT+QISEND needed — just write raw bytes
     uint32_t avail = _vport.vport_available();
     if (avail > 0) {
         uint16_t n = (avail > 100) ? 100 : (uint16_t)avail;

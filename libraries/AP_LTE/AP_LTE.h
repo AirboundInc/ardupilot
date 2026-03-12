@@ -39,7 +39,6 @@ private:
     ByteBuffer   *readbuffer{nullptr};
     uint32_t      last_size_tx{0};
     uint32_t      last_size_rx{0};
-
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,6 +52,14 @@ private:
 // Data flow when CONNECTED (transparent mode — raw byte passthrough):
 //   Uplink:   vport (GCS MAVLink) → raw bytes → modem UART → relay → MP
 //   Downlink: raw bytes from modem UART → vport (GCS MAVLink)
+//
+// Parameters (visible in full parameter list):
+//   LTE_ENABLE       - Enable LTE driver (0=off, 1=on)
+//   LTE_DEBUG        - Debug verbosity (0=off, 1=on)
+//   LTE_SERVER_IP0-3 - Relay server IP address octets (e.g. 15.207.104.210)
+//   LTE_SERVER_PORT  - Relay server UDP port (default 16550)
+//   LTE_LOCAL_PORT   - Local UDP port on modem (default 6001)
+//   LTE_BAUDRATE     - Modem UART baud rate (default 115200)
 // ─────────────────────────────────────────────────────────────────────────────
 class AP_LTE {
 public:
@@ -92,6 +99,7 @@ private:
     void  send_at(const char *cmd);
     bool  check_response(const char *expected);
     void  change_state(State s);
+    void  build_server_ip(char *buf, uint8_t buflen) const;
 
     AP_HAL::UARTDriver *_uart_modem{nullptr};
     AP_LTE_VirtualPort  _vport;
@@ -109,6 +117,14 @@ private:
 
     uint8_t  _tx_buf[256];  // uplink chunk buffer
 
+    // Parameters
     AP_Int8  _enabled;
     AP_Int8  _debug_level;
+    AP_Int16  _ip0;          // server IP octet 0 (default 15)
+    AP_Int16 _ip1;          // server IP octet 1 (default 207)
+    AP_Int16 _ip2;          // server IP octet 2 (default 104)
+    AP_Int16 _ip3;          // server IP octet 3 (default 210)
+    AP_Int32 _server_port;  // relay server UDP port (default 16550)
+    AP_Int32 _local_port;   // modem local UDP port (default 6001)
+    AP_Int32 _baudrate;     // modem UART baud rate (default 115200)
 };
