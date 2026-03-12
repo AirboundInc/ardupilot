@@ -1,11 +1,8 @@
 #include "AP_LTE.h"
 #include <AP_HAL/AP_HAL.h>
-#include <AP_HAL/utility/RingBuffer.h>
 #include <GCS_MAVLink/GCS.h>
-#include <inttypes.h>
 #include <new>
 #include <string.h>
-#include <stdio.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -54,7 +51,6 @@ static const char *state_name(AP_LTE::State s)
 bool AP_LTE_VirtualPort::init_buffers(uint32_t rxS, uint32_t txS)
 {
     if (txS == last_size_tx && rxS == last_size_rx) return true;
-    WITH_SEMAPHORE(sem);
     if (!writebuffer) writebuffer = new (std::nothrow) ByteBuffer(txS);
     else              writebuffer->set_size_best(txS);
     if (!readbuffer)  readbuffer  = new (std::nothrow) ByteBuffer(rxS);
@@ -70,28 +66,28 @@ void AP_LTE_VirtualPort::_begin(uint32_t, uint16_t rxS, uint16_t txS)
 }
 
 size_t   AP_LTE_VirtualPort::_write(const uint8_t *b, size_t s)
-{ WITH_SEMAPHORE(sem); return writebuffer ? writebuffer->write(b, s) : 0; }
+{ return writebuffer ? writebuffer->write(b, s) : 0; }
 
 ssize_t  AP_LTE_VirtualPort::_read(uint8_t *b, uint16_t c)
-{ WITH_SEMAPHORE(sem); return readbuffer ? readbuffer->read(b, c) : -1; }
+{ return readbuffer ? readbuffer->read(b, c) : -1; }
 
 uint32_t AP_LTE_VirtualPort::_available()
-{ WITH_SEMAPHORE(sem); return readbuffer ? readbuffer->available() : 0; }
+{ return readbuffer ? readbuffer->available() : 0; }
 
 uint32_t AP_LTE_VirtualPort::txspace()
-{ WITH_SEMAPHORE(sem); return writebuffer ? writebuffer->space() : 0; }
+{ return writebuffer ? writebuffer->space() : 0; }
 
 bool AP_LTE_VirtualPort::_discard_input()
-{ WITH_SEMAPHORE(sem); if (readbuffer) readbuffer->clear(); return true; }
+{ if (readbuffer) readbuffer->clear(); return true; }
 
 uint32_t AP_LTE_VirtualPort::vport_available()
-{ WITH_SEMAPHORE(sem); return writebuffer ? writebuffer->available() : 0; }
+{ return writebuffer ? writebuffer->available() : 0; }
 
 ssize_t  AP_LTE_VirtualPort::vport_read(uint8_t *buf, uint16_t count)
-{ WITH_SEMAPHORE(sem); return writebuffer ? writebuffer->read(buf, count) : -1; }
+{ return writebuffer ? writebuffer->read(buf, count) : -1; }
 
 size_t   AP_LTE_VirtualPort::vport_write(const uint8_t *buf, size_t size)
-{ WITH_SEMAPHORE(sem); return readbuffer ? readbuffer->write(buf, size) : 0; }
+{ return readbuffer ? readbuffer->write(buf, size) : 0; }
 
 // ═════════════════════════════════════════════════════════════════════════════
 // AP_LTE
@@ -100,8 +96,6 @@ size_t   AP_LTE_VirtualPort::vport_write(const uint8_t *buf, size_t size)
 AP_LTE::AP_LTE()
 {
     AP_Param::setup_object_defaults(this, var_info);
-    memset(_rx_buf, 0, sizeof(_rx_buf));
-    memset(_tx_buf, 0, sizeof(_tx_buf));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -228,7 +222,7 @@ void AP_LTE::handle_state_machine()
         // ATE0      = disable echo
         // ATS2=255  = disable +++ escape sequence (prevents modem entering AT mode)
         // AT+QIEXTSEND=0 = disable extended send mode
-        _uart_modem->write((const uint8_t*)"ATE0\r\n", 7);
+        _uart_modem->write((const uint8_t*)"ATE0\r\n", 6);
         _rx_idx = 0;
         memset(_rx_buf, 0, sizeof(_rx_buf));
         change_state(State::WAIT_ECHO);
@@ -345,15 +339,12 @@ void AP_LTE::handle_state_machine()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// bridge_data  (access mode 2 — direct push, same as Lua 4.6.3)
-//   Uplink:   vport → AT+QISEND → modem → relay → MP
-//   Downlink: modem pushes data directly to UART as raw bytes (no QIRD needed)
-//             Unsolicited: +QIURC: "recv",0\r\n<len>\r\n<data>
+// bridge_data  (transparent access mode 2)
+//   Uplink:   vport → raw bytes → modem UART → relay → MP
+//   Downlink: raw bytes from modem UART → vport
 // ─────────────────────────────────────────────────────────────────────────────
 void AP_LTE::bridge_data()
 {
-    uint32_t now = AP_HAL::millis();
-
     // ── Drain modem UART into rx_buf ─────────────────────────────────────────
     while (_uart_modem->available() && _rx_idx < RX_BUF_SIZE - 1) {
         _rx_buf[_rx_idx++] = (uint8_t)_uart_modem->read();
@@ -364,7 +355,6 @@ void AP_LTE::bridge_data()
     if (strstr((char*)_rx_buf, "PB DONE")) {
         GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE_modem: modem reboot -> reconnect");
         _connected = false;
-        _tx_pending = false;
         _rx_idx = 0;
         memset(_rx_buf, 0, sizeof(_rx_buf));
         change_state(State::WAIT_BOOT);
@@ -374,50 +364,14 @@ void AP_LTE::bridge_data()
         strstr((char*)_rx_buf, "\r\nCLOSED\r\n")) {
         GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: connection closed, reconnecting");
         _connected = false;
-        _tx_pending = false;
         _rx_idx = 0;
         memset(_rx_buf, 0, sizeof(_rx_buf));
         change_state(State::CLOSE_SOCKET);
         return;
     }
 
-    // ── Uplink diagnostics every 3s ──────────────────────────────────────────
-    {
-        static uint32_t _last_diag_ms = 0;
-        if (now - _last_diag_ms > 3000) {
-            _last_diag_ms = now;
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO,
-                          "LTE_modem: vport_avail=%u",
-                          (unsigned)_vport.vport_available());
-        }
-    }
-
     // ── Downlink: transparent mode — raw bytes arrive directly on UART ─────────
-    // No AT framing, no QIURC, no QIRD — just pass bytes straight to vport
-    // Only skip bytes if we're mid-uplink (waiting for QISEND prompt)
     if (_rx_idx > 0) {
-        // Log if looks like MAVLink
-        if (_rx_buf[0] == 0xFD || _rx_buf[0] == 0xFE) {
-            char hex[52] = {};
-            uint8_t hn = (uint8_t)MIN((int)_rx_idx, 16);
-            for (uint8_t i = 0; i < hn; i++) {
-                hal.util->snprintf(hex + i*3, 4, "%02X ", _rx_buf[i]);
-            }
-            uint32_t msgid = 0;
-            const char *mav_type = "RAW";
-            if (_rx_idx >= 10 && _rx_buf[0] == 0xFD) {
-                msgid = (uint32_t)_rx_buf[7] |
-                        ((uint32_t)_rx_buf[8] << 8) |
-                        ((uint32_t)_rx_buf[9] << 16);
-                mav_type = "MAV2";
-            } else if (_rx_idx >= 6 && _rx_buf[0] == 0xFE) {
-                msgid = _rx_buf[5];
-                mav_type = "MAV1";
-            }
-            GCS_SEND_TEXT(MAV_SEVERITY_WARNING,
-                          "MP->PX %s msgid=%u len=%u: %s",
-                          mav_type, (unsigned)msgid, (unsigned)_rx_idx, hex);
-        }
         size_t written = _vport.vport_write(_rx_buf, _rx_idx);
         if (written != _rx_idx) {
             GCS_SEND_TEXT(MAV_SEVERITY_WARNING,
@@ -432,10 +386,10 @@ void AP_LTE::bridge_data()
     // In transparent mode no AT+QISEND needed — just write raw bytes
     uint32_t avail = _vport.vport_available();
     if (avail > 0) {
-        uint16_t n = (uint16_t)MIN(avail, (uint32_t)100U);
+        uint16_t n = (avail > 100) ? 100 : (uint16_t)avail;
         ssize_t got = _vport.vport_read(_tx_buf, n);
         if (got > 0) {
-            _uart_modem->write(_tx_buf, (uint16_t)got);
+            _uart_modem->write(_tx_buf, (size_t)got);
         }
     }
 }

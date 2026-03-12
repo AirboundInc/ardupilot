@@ -39,20 +39,20 @@ private:
     ByteBuffer   *readbuffer{nullptr};
     uint32_t      last_size_tx{0};
     uint32_t      last_size_rx{0};
-    HAL_Semaphore sem;
+
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AP_LTE — EC200UCN driver (no CMUX, buffer access mode)
+// AP_LTE — EC200UCN driver (no CMUX, transparent access mode 2)
 //
 // State machine:
 //   WAIT_BOOT → SEND_AT → WAIT_AT_OK → DISABLE_ECHO → WAIT_ECHO
 //   → CHECK_SIM → WAIT_SIM_OK → CHECK_NETWORK → WAIT_NETWORK
 //   → CLOSE_SOCKET → WAIT_CLOSE → OPEN_SOCKET → WAIT_SOCKET → CONNECTED
 //
-// Data flow when CONNECTED:
-//   Uplink:   vport (GCS MAVLink) → AT+QISEND=0,N → modem UART → relay → MP
-//   Downlink: AT+QIRD=0,512 poll (200ms) → modem UART → vport (GCS MAVLink)
+// Data flow when CONNECTED (transparent mode — raw byte passthrough):
+//   Uplink:   vport (GCS MAVLink) → raw bytes → modem UART → relay → MP
+//   Downlink: raw bytes from modem UART → vport (GCS MAVLink)
 // ─────────────────────────────────────────────────────────────────────────────
 class AP_LTE {
 public:
@@ -103,16 +103,11 @@ private:
     bool     _initialized{false};
     bool     _vport_registered{false};
 
-    bool     _tx_pending{false};
-
-    uint32_t _tx_pending_ms{0};
-
     static constexpr uint16_t RX_BUF_SIZE = 2048;
     uint8_t  _rx_buf[RX_BUF_SIZE];
     uint16_t _rx_idx{0};
 
-    uint8_t  _tx_buf[512];
-    uint16_t _tx_len{0};
+    uint8_t  _tx_buf[256];  // uplink chunk buffer
 
     AP_Int8  _enabled;
     AP_Int8  _debug_level;
