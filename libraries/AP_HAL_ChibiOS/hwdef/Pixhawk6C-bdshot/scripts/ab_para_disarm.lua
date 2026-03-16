@@ -19,9 +19,8 @@ assert(param:add_param(PARAM_TABLE_KEY, 2, "TRIG_CH", 11), "Failed to create Par
 assert(param:add_param(PARAM_TABLE_KEY, 3, "PWM_HOLD", 1900), "Failed to create Param3")
 assert(param:add_param(PARAM_TABLE_KEY, 4, "PWM_RELEASE", 1100), "Failed to create Param4")
 assert(param:add_param(PARAM_TABLE_KEY, 5, "TILT_MAX", 80), "Failed to create Param5")
-assert(param:add_param(PARAM_TABLE_KEY, 6, "ALT_MIN", 20), "Failed to create Param6")
+assert(param:add_param(PARAM_TABLE_KEY, 6, "ALT_MIN", 35), "Failed to create Param6")
 assert(param:add_param(PARAM_TABLE_KEY, 7, "HOLD_MS", 1500), "Failed to create Param7")
-assert(param:add_param(PARAM_TABLE_KEY, 8, "SINK_MIN", 1.0), "Failed to create Param8")
 
 local PARA_DELAY_MS = Parameter()
 PARA_DELAY_MS:init("PARA_DELAY_MS")
@@ -37,8 +36,6 @@ local PARA_ALTMIN = Parameter()
 PARA_ALTMIN:init("PARA_ALT_MIN")
 local PARA_HOLD_MS = Parameter()
 PARA_HOLD_MS:init("PARA_HOLD_MS")
-local PARA_SINK_MIN = Parameter()
-PARA_SINK_MIN:init("PARA_SINK_MIN")
 
 -- STATE VARIABLES
 local last_pressed = false
@@ -88,10 +85,6 @@ function update()
 
         -- Check if it is in a quadplane mode and the altitude is above minimum
         if (PARA_DEPLOY_MODES[mode] and (altitude < -PARA_ALTMIN:get())) then
-            -- Get descent rate
-            local vel = ahrs:get_velocity_NED()
-            local sink_rate = vel and vel:z() or 0
-
             -- Calculate tilt from quaternion
             local q1 = quat:q1()
             local q2 = quat:q2()
@@ -101,7 +94,7 @@ function update()
             local tilt = math.acos(cos_tilt) * 180/math.pi
             if debug then gcs:send_text(GCS_SEVERITY_INFO, ">> Tilt: " .. tilt) end
 
-            if (tilt > PARA_TILTMAX:get()) and (sink_rate > PARA_SINK_MIN:get()) then
+            if (tilt > PARA_TILTMAX:get()) then
                 -- Start timing if this is the first exceedance
                 if tilt_exceed_start == 0 then
                     tilt_exceed_start = millis()
@@ -111,6 +104,7 @@ function update()
                     waiting_disarm_delay = true
                     parachute_triggered = true
                     tilt_exceed_start = 0
+                    gcs:send_text(GCS_SEVERITY_INFO, "Parachute triggered. Disarming. Waiting " .. delay_ms .. " ms.")
                 end
             else
                 tilt_exceed_start = 0
