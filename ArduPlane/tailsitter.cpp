@@ -24,6 +24,9 @@
 #if HAL_QUADPLANE_ENABLED
 
 float DEFAULT_HOVER_RPM = 3500.0f; // default rpm for motors without telemetry
+const float RPM_DIFF_THRESHOLD     = 300.0f; // scaler fully active below this
+const float RPM_DIFF_BLEND_LIMIT   = 600.0f; // scaler fully removed above this
+
 
 const AP_Param::GroupInfo Tailsitter::var_info[] = {
 
@@ -1174,7 +1177,6 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
         tilt_motor_hover_rpm = DEFAULT_HOVER_RPM; // set default hover rpm
     }
     float rpm_l = 2500.0f, rpm_r = 2500.0f, rpm_hover_l = tilt_motor_hover_rpm, rpm_hover_r = tilt_motor_hover_rpm; // set default hover rpm
-    static float rpm_lpf_l = 2500.0f, rpm_lpf_r = 2500.0f;
     uint16_t pwm_l, pwm_r;
     float rpm_result_l = kf_left.rpm; // default to last valid rpm
     float rpm_result_r = kf_right.rpm; // default to last valid rpm
@@ -1195,20 +1197,14 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
             scale_r = default_throttle_scaler;
             return;
         }
-        if (!_esc_telem->get_rpm(ESC_INDEX, rpm)){
-             static uint64_t initial_time = AP_HAL::micros64();
-            if((AP_HAL::micros64() - initial_time)*1e-6 > 1.0f){
-                GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, no valid RPM data"); // wait for 1s before sending message
-                initial_time = AP_HAL::micros64();
-            }
-            scale_l = default_throttle_scaler;
-            scale_r = default_throttle_scaler;
-            return;
-        }
-        rpm_l = rpm; // use right motor RPM for both sides in SITL
-        rpm_r = rpm;
         pwm_l = pwm;
         pwm_r = pwm;
+        bool valid_l = _esc_telem->get_rpm(ESC_INDEX, rpm);
+        bool valid_r = valid_l;
+        if(valid_l){
+            rpm_l = rpm;
+            rpm_r = rpm;
+        }
 #else // SITL_DEBUG
     uint8_t ESC_RIGHT; // ESC index for right motor
     uint8_t ESC_LEFT;  // ESC index for left motor
@@ -1223,58 +1219,40 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
         scale_r = default_throttle_scaler;
         return;
     }
-    bool valid_l = _esc_telem->get_rpm(ESC_LEFT, rpm_l) && SRV_Channels::get_output_pwm(SRV_Channel::k_throttleLeft, pwm_l);
-    bool valid_r = _esc_telem->get_rpm(ESC_RIGHT, rpm_r) && SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, pwm_r);
-    if(!(valid_l && valid_r)){
-        static uint64_t initial_time = AP_HAL::micros64();
-        if((AP_HAL::micros64() - initial_time)*1e-6 > 1.0f){
-            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Not working, no valid RPM data or PWM data(%d,%d)",valid_l,valid_r);
-            initial_time = AP_HAL::micros64();
-        }
-        scale_l = default_throttle_scaler;
-        scale_r = default_throttle_scaler;
-        return;
-    }
+    // PWM always available.
+    SRV_Channels::get_output_pwm(SRV_Channel::k_throttleLeft,  pwm_l);
+    SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, pwm_r);
+    bool valid_l = _esc_telem->get_rpm(ESC_LEFT, rpm_l);
+    bool valid_r = _esc_telem->get_rpm(ESC_RIGHT, rpm_r);
 #endif // SITL_DEBUG
     if (_esc_telem != nullptr) {
-        if(rpm_l >= 2500.0f && rpm_l <= 6000.0f){
-            rpm_lpf_l = rpm_l * 0.15f + rpm_lpf_l*0.85f;
-            rpm_result_l = rpm_lpf_l;
-            }
-        else{
-            rpm_result_l = kf_left.rpm; // use last valid rpm
-        }
-        // Used raw measurement for Kalman filter update to avoid large delay
-        update_rpm_kalman(kf_left,pwm_l,rpm_l,quadplane.attitude_control->get_dt());
-        if(rpm_r >= 2500.0f && rpm_r <= 6000.0f){
-            rpm_lpf_r = rpm_r * 0.15f + rpm_lpf_r*0.85f;
-            rpm_result_r = rpm_lpf_r;
-        }
-        else{
-            rpm_result_r = kf_right.rpm; // use last valid rpm
-        }
-            // Used raw measurement for Kalman filter update to avoid large delay
-        update_rpm_kalman(kf_right,pwm_r,rpm_r,quadplane.attitude_control->get_dt());
-        }
+        update_rpm_kalman(kf_left,  pwm_l, valid_l ? rpm_l : kf_left.rpm,  quadplane.attitude_control->get_dt());
+        update_rpm_kalman(kf_right, pwm_r, valid_l ? rpm_r : kf_right.rpm, quadplane.attitude_control->get_dt());
+    }
     rpm_result_l = constrain_float(rpm_result_l, 2500.0f, 6000.0f);
     rpm_result_r = constrain_float(rpm_result_r, 2500.0f, 6000.0f);
     scale_l = (rpm_hover_l*rpm_hover_l) / (rpm_result_l*rpm_result_l);
     scale_r = (rpm_hover_r*rpm_hover_r) / (rpm_result_r*rpm_result_r);
-    AP::logger().WriteStreaming("RPME", "TimeUS,RPMResultL,RPMResultR,RPMLpfL,RPMLpfR,RPMEstL,RPMEstR",
-        "s------",
-        "F000000",
-        "Qffffff",
-        AP_HAL::micros64(),
-        rpm_result_l, rpm_result_r,
-        rpm_lpf_l, rpm_lpf_r,
-        kf_left.rpm, kf_right.rpm
-       );
-        AP::logger().WriteStreaming("RPMF", "TimeUS,RPMRawL,RPMRawR,scaleL,scaleR",
+    float rpm_diff = fabsf(rpm_result_l - rpm_result_r);
+    float blend = 1.0f - constrain_float((rpm_diff - RPM_DIFF_THRESHOLD) / (RPM_DIFF_BLEND_LIMIT - RPM_DIFF_THRESHOLD),0.0f, 1.0f);
+
+    // Apply blend of default scaler and RPM based scaler, to avoid aggressive scaling when the RPMM differene is too large
+    scale_l = blend * scale_l + (1.0f - blend) * default_throttle_scaler;
+    scale_r = blend * scale_r + (1.0f - blend) * default_throttle_scaler;
+    AP::logger().WriteStreaming("RPME", "TimeUS,RPMResultL,RPMResultR,RPMEstL,RPMEstR",
         "s----",
         "F0000",
         "Qffff",
         AP_HAL::micros64(),
-        rpm_l, rpm_r,scale_l,scale_r);
+        rpm_result_l, rpm_result_r,
+        kf_left.rpm, kf_right.rpm
+       );
+        AP::logger().WriteStreaming("RPMF", "TimeUS,RPMRawL,RPMRawR,scaleL,scaleR,valL,valR",
+        "s------",
+        "F000000",
+        "QffffBB",
+        AP_HAL::micros64(),
+        rpm_l, rpm_r,scale_l,scale_r,valid_l,valid_r);
         AP::logger().WriteStreaming("RPMG", "TimeUS,InvR,InvL,biaR,biaL",
         "s----",
         "F0000",
