@@ -29,9 +29,11 @@ def configure(conf):
     # Check if the custom line currently exists
     line_exists = any(custom_dialect_path in line for line in original_lines)
     needs_write = False
-    
-    if conf.options.enable_custom_storage:
-        # Flag is ON: We want the line to EXIST
+
+    # Include custom dialect XML when either custom storage or 
+    # AIRBOUND_FLIGHT_INFORMATION is enabled
+    if (conf.options.enable_custom_storage or
+        conf.env.ENABLE_AIRBOUND_FLIGHT_INFORMATION):
         if not line_exists:
             insert_index = -1
             for i, line in enumerate(original_lines):
@@ -46,15 +48,22 @@ def configure(conf):
             original_lines.insert(insert_index, include_line_to_add)
             needs_write = True
             conf.to_log(f"-> Adding custom dialect to {all_xml_path}")
-        print('Custom Storage Setting                         : Enabled')
-    
     else:
-        # Flag is OFF: We want the line to be REMOVED
+        # Neither flag is set: remove the line if present
         if line_exists:
             original_lines = [line for line in original_lines if custom_dialect_path not in line]
             needs_write = True
             conf.to_log(f"-> Removing custom dialect from {all_xml_path}")
-        print('Custom Storage Setting                         : Disabled')
+
+    if conf.options.enable_custom_storage:
+        print('Custom Storage                                 : Enabled')    
+    else:   
+        print('Custom Storage                                 : Disabled')
+
+    if conf.env.ENABLE_AIRBOUND_FLIGHT_INFORMATION:
+        print('Airbound Flight Information                    : Enabled')
+    else:
+        print('Airbound Flight Information                    : Disabled')
 
     # If a change was made, write the new content back to the file
     if needs_write:
