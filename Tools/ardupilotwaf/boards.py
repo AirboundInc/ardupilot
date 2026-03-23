@@ -196,7 +196,11 @@ class Board:
             
             # Set the preprocessor macro to 0 when disabled
             env.DEFINES.update(AP_ENABLE_CUSTOM_STORAGE = 0)
-            
+
+        # AIRBOUND_FLIGHT_INFORMATION enabled by default
+        env.ENABLE_AIRBOUND_FLIGHT_INFORMATION = True
+        env.DEFINES.update(AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED = 1)
+
         d = env.get_merged_dict()
         # Always prepend so that arguments passed in the command line get
         # the priority.
