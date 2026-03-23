@@ -304,6 +304,12 @@ bool AP_Arming_Plane::arm(const AP_Arming::Method method, const bool do_arming_c
         return false;
     }
 
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+    // Setting the takeoff and landing timestamps to 0 on arming
+    plane.takeoff_time_boot_us = 0;
+    plane.landing_time_boot_us = 0;
+#endif
+
     if (plane.update_home()) {
         // after update_home the home position could still be
         // different from the current_loc if the EKF refused the

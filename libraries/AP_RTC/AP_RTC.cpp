@@ -94,6 +94,14 @@ bool AP_RTC::get_utc_usec(uint64_t &usec) const
     return true;
 }
 
+uint64_t AP_RTC::boot_us_to_utc_us(uint64_t boot_us) const
+{
+    if (boot_us == 0 || rtc_source_type == SOURCE_NONE) {
+        return 0;
+    }
+    return boot_us + rtc_shift;
+}
+
 void AP_RTC::clock_ms_to_hms_fields(const uint64_t time_ms, uint8_t &hour, uint8_t &min, uint8_t &sec, uint16_t &ms) const
 {
     // separate time into ms, sec, min, hour and days but all expressed in milliseconds

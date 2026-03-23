@@ -147,6 +147,10 @@ void Plane::update_is_flying_5Hz(void)
         if (!previous_is_flying) {
             // just started flying in any mode
             started_flying_ms = now_ms;
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+            takeoff_time_boot_us = AP_HAL::micros64();
+            landing_time_boot_us = 0;
+#endif
         }
 
         if ((control_mode == &mode_auto) &&
@@ -155,6 +159,11 @@ void Plane::update_is_flying_5Hz(void)
             // We just started flying, note that time also
             auto_state.started_flying_in_auto_ms = now_ms;
         }
+    } else if (previous_is_flying) {
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+        // just landed
+        landing_time_boot_us = AP_HAL::micros64();
+#endif
     }
     previous_is_flying = new_is_flying;
 #if HAL_ADSB_ENABLED
