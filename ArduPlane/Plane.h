@@ -624,6 +624,8 @@ private:
     // boot-relative timestamps for flight information message
     uint64_t takeoff_time_boot_us;
     uint64_t landing_time_boot_us;
+    bool has_taken_off;
+    void update_flight_information_timestamps();
 #endif
 
     // ground mode is true when disarmed and not flying

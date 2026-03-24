@@ -3653,6 +3653,11 @@ bool QuadPlane::check_land_complete(void)
     if (land_detector()) {
         poscontrol.set_state(QPOS_LAND_COMPLETE);
         gcs().send_text(MAV_SEVERITY_INFO,"Land complete");
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+        plane.has_taken_off = false;
+        plane.landing_time_boot_us = AP_HAL::micros64();
+        gcs().send_message(MSG_AIRBOUND_FLIGHT_INFORMATION);
+#endif
 
         if (plane.in_auto_mission_id(MAV_CMD_NAV_PAYLOAD_PLACE)) {
             // for payload place with full landing we shutdown motors
