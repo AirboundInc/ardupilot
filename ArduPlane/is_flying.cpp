@@ -159,10 +159,6 @@ void Plane::update_is_flying_5Hz(void)
         }
     }
     previous_is_flying = new_is_flying;
-
-#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
-    update_flight_information_timestamps();
-#endif
 #if HAL_ADSB_ENABLED
     adsb.set_is_flying(new_is_flying);
 #endif
@@ -348,29 +344,3 @@ bool Plane::in_preLaunch_flight_stage(void)
             flight_stage == AP_FixedWing::FlightStage::NORMAL &&
             mission.get_current_nav_cmd().id == MAV_CMD_NAV_TAKEOFF);
 }
-
-#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
-/*
-  detect takeoff using relative altitude and climb rate.
-  landing is detected in QuadPlane::check_land_complete().
-  called from update_is_flying_5Hz at 5Hz.
- */
-void Plane::update_flight_information_timestamps()
-{
-    if (!arming.is_armed()) {
-        has_taken_off = false;
-        return;
-    }
-
-    if (!has_taken_off) {
-        // detect takeoff: altitude above threshold and positive climb rate
-        if (relative_altitude > g2.takeoff_detect_alt &&
-            quadplane.inertial_nav.get_velocity_z_up_cms() > g2.takeoff_detect_crt * 100.0f) {
-            has_taken_off = true;
-            takeoff_time_boot_us = AP_HAL::micros64();
-            landing_time_boot_us = 0;
-            gcs().send_message(MSG_AIRBOUND_FLIGHT_INFORMATION);
-        }
-    }
-}
-#endif  // AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
