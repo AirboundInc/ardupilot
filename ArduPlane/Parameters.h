@@ -580,6 +580,11 @@ public:
     
     AP_Int8         axis_bitmask; // axes to be autotuned
 
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+    AP_Float        takeoff_detect_alt;
+    AP_Float        takeoff_detect_crt;
+#endif
+
     // just to make compilation easier when all things are compiled out...
     uint8_t unused_integer;
 

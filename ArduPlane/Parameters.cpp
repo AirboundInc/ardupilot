@@ -1302,7 +1302,27 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @Path: systemid.cpp
     AP_SUBGROUPINFO(systemid, "SID", 38, ParametersG2, AP_SystemID),
 #endif
-    
+
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+    // @Param: TOFF_DET_ALT
+    // @DisplayName: Takeoff detection altitude
+    // @Description: Minimum relative altitude above home for takeoff to be detected. Checked along with TOFF_DET_CRT
+    // @Range: 0.5 10
+    // @Units: m
+    // @Increment: 0.1
+    // @User: Standard
+    AP_GROUPINFO("TOFF_DET_ALT", 39, ParametersG2, takeoff_detect_alt, 5.0),
+
+    // @Param: TOFF_DET_CRT
+    // @DisplayName: Takeoff detection climb rate
+    // @Description: Minimum climb rate for takeoff to be detected. Checked along with TOFF_DET_ALT
+    // @Range: 0.1 2
+    // @Units: m/s
+    // @Increment: 0.1
+    // @User: Standard
+    AP_GROUPINFO("TOFF_DET_CRT", 40, ParametersG2, takeoff_detect_crt, 0.5),
+    #endif
+
     AP_GROUPEND
 };
 
