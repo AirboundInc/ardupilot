@@ -56,14 +56,14 @@ def configure(conf):
             conf.to_log(f"-> Removing custom dialect from {all_xml_path}")
 
     if conf.options.enable_custom_storage:
-        print('Custom Storage                                 : Enabled')    
+        print('Custom Storage                                 : enabled')
     else:   
-        print('Custom Storage                                 : Disabled')
+        print('Custom Storage                                 : disabled')
 
     if conf.env.ENABLE_AIRBOUND_FLIGHT_INFORMATION:
-        print('Airbound Flight Information                    : Enabled')
+        print('Airbound Flight Information                    : enabled')
     else:
-        print('Airbound Flight Information                    : Disabled')
+        print('Airbound Flight Information                    : disabled')
 
     # If a change was made, write the new content back to the file
     if needs_write:
