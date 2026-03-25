@@ -1574,6 +1574,11 @@ MAV_LANDED_STATE GCS_MAVLINK_Plane::landed_state() const
 }
 
 #if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+uint64_t GCS_MAVLINK_Plane::arming_time_boot_us() const
+{
+    return plane.arming_time_boot_us;
+}
+
 uint64_t GCS_MAVLINK_Plane::takeoff_time_boot_us() const
 {
     return plane.takeoff_time_boot_us;

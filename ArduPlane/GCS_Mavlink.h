@@ -106,6 +106,7 @@ private:
     MAV_LANDED_STATE landed_state() const override;
 
 #if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+    uint64_t arming_time_boot_us() const override;
     uint64_t takeoff_time_boot_us() const override;
     uint64_t landing_time_boot_us() const override;
 #endif
