@@ -5497,13 +5497,11 @@ void GCS_MAVLINK::send_extended_sys_state() const
 void GCS_MAVLINK::send_airbound_flight_information()
 {
     const AP_RTC &rtc = AP::rtc();
-    const AP_Arming *arming = AP_Arming::get_singleton();
-    const uint64_t arm_boot_us = arming ? arming->get_arm_time_boot_us() : 0;
 
     mavlink_msg_airbound_flight_information_send(
         chan,
         AP_HAL::millis(),
-        rtc.boot_us_to_utc_us(arm_boot_us),
+        rtc.boot_us_to_utc_us(arming_time_boot_us()),
         rtc.boot_us_to_utc_us(takeoff_time_boot_us()),
         rtc.boot_us_to_utc_us(landing_time_boot_us()));
 }

@@ -622,6 +622,7 @@ private:
 
 #if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
     // boot-relative timestamps for flight information message
+    uint64_t arming_time_boot_us;
     uint64_t takeoff_time_boot_us;
     uint64_t landing_time_boot_us;
     bool has_taken_off;

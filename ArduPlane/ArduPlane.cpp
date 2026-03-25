@@ -391,7 +391,7 @@ void Plane::three_hz_loop()
 #if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
     // detect takeoff using relative altitude and climb rate
     if (arming.is_armed() && !has_taken_off) {
-        if (relative_ground_altitude(g.rangefinder_landing) > g2.takeoff_detect_alt &&
+        if (relative_ground_altitude(RangeFinderUse::TAKEOFF_LANDING) > g2.takeoff_detect_alt &&
             quadplane.inertial_nav.get_velocity_z_up_cms() > g2.takeoff_detect_crt * 100.0f) {
             has_taken_off = true;
             takeoff_time_boot_us = AP_HAL::micros64();

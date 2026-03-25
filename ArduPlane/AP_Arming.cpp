@@ -305,6 +305,7 @@ bool AP_Arming_Plane::arm(const AP_Arming::Method method, const bool do_arming_c
     }
 
 #if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+    plane.arming_time_boot_us = AP_HAL::micros64();
     plane.takeoff_time_boot_us = 0;
     plane.landing_time_boot_us = 0;
     plane.has_taken_off = false;
