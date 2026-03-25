@@ -140,10 +140,7 @@ public:
     // method that was last used for arm; invalid unless the
     // vehicle has been disarmed at least once.
     Method last_arm_method() const { return _last_arm_method; }
-
-    // return boot-relative timestamp of last arming event (0 if never armed)
-    uint64_t get_arm_time_boot_us() const { return last_arm_time_us; }
-
+    
     // enum for ARMING_OPTIONS parameter
     enum class Option : int32_t {
         DISABLE_PREARM_DISPLAY             = (1U << 0),
@@ -319,7 +316,6 @@ private:
     // vehicle has been disarmed at least once.
     Method _last_disarm_method = Method::UNKNOWN;
     Method _last_arm_method = Method::UNKNOWN;
-    uint64_t last_arm_time_us = 0;
 
     uint32_t last_prearm_display_ms;  // last time we send statustexts for prearm failures
     bool running_arming_checks;  // true if the arming checks currently being performed are being done because the vehicle is trying to arm the vehicle

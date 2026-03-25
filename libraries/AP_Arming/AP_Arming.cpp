@@ -1797,7 +1797,6 @@ bool AP_Arming::arm(AP_Arming::Method method, const bool do_arming_checks)
 
     if ((!do_arming_checks && mandatory_checks(true)) || (pre_arm_checks(true) && arm_checks(method))) {
         armed = true;
-        last_arm_time_us = AP_HAL::micros64();
 
         _last_arm_method = method;
 
@@ -1858,7 +1857,6 @@ bool AP_Arming::disarm(const AP_Arming::Method method, bool do_disarm_checks)
         return false;
     }
     armed = false;
-    last_arm_time_us = 0;
     _last_disarm_method = method;
 
 #if HAL_LOGGING_ENABLED
