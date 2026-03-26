@@ -35,11 +35,12 @@
       <field name="result" type="uint8_t" enum="AIRBOUND_PARAMETER_RESULT">Result of the operation.</field>
     </message>
     <message id="15224" name="AIRBOUND_FLIGHT_INFORMATION">
-      <description>Flight timing information with UTC timestamps for arming, takeoff, and landing events.</description>
+      <description>Flight timing information with UTC timestamps for arming, takeoff, landing, and disarming events.</description>
       <field type="uint32_t" name="time_boot_ms" units="ms">Timestamp (time since system boot).</field>
       <field type="uint64_t" name="arming_time_utc" units="us">UTC timestamp of last arming event (0 if not armed).</field>
       <field type="uint64_t" name="takeoff_time_utc" units="us">UTC timestamp of last takeoff (0 if not taken off).</field>
-      <field type="uint64_t" name="landing_time_utc" units="us">UTC timestamp of last landing (0 if not landed).</field>
+      <field type="uint64_t" name="landing_time_utc" units="us">UTC timestamp of last landing (0 if not landed). Only set by the landing detector during auto-mission VTOL landings.</field>
+      <field type="uint64_t" name="disarming_time_utc" units="us">UTC timestamp of last disarming event (0 if not disarmed).</field>
     </message>
     <!-- custom messages END -->
   </messages>

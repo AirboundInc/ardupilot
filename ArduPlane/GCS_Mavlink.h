@@ -109,6 +109,7 @@ private:
     uint64_t arming_time_boot_us() const override;
     uint64_t takeoff_time_boot_us() const override;
     uint64_t landing_time_boot_us() const override;
+    uint64_t disarm_time_boot_us() const override;
 #endif
 
 };
