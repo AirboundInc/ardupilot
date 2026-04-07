@@ -173,8 +173,7 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     // calculate left and right throttle outputs with non linear mixer
     if (_tailsitter_nl_mixer) {
 
-        constexpr float alpha_max = radians(45.0f); // maximum tilt angle of the tilt rotors (evaluated compile time)
-        constexpr float alpha_safe = radians(89.0f);
+        constexpr float alpha_max = radians(45.0f); // maximum tilt angle of the tilt rotors
         constexpr float eps = 1e-3f;                // small value to avoid division by zero
 
         // Vertical thrust + roll demand 
@@ -212,10 +211,8 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
         }
 
         // Preserve vertical thrust
-        alpha_L = constrain_float(alpha_L, -alpha_safe, alpha_safe);
-        alpha_R = constrain_float(alpha_R, -alpha_safe, alpha_safe);
-        float T_L_n = T_L / cosf(alpha_L);
-        float T_R_n = T_R / cosf(alpha_R);
+        float T_L_n = T_L / cosf(constrain_float(alpha_L, -alpha_max, alpha_max));
+        float T_R_n = T_R / cosf(constrain_float(alpha_R, -alpha_max, alpha_max));
 
         // Final saturation
         float Tmax = MAX(T_L_n, T_R_n);
