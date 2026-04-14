@@ -85,10 +85,9 @@ jobs:
           add-to-path: false
 
       - name: Setup ccache
-        env:
-          PATH: /usr/bin:$(cygpath ${SYSTEMROOT})/system32
         shell: C:\cygwin\bin\bash.exe -eo pipefail '{0}'
         run: >-
+          export PATH=/usr/local/bin:/usr/bin:$(cygpath ${SYSTEMROOT})/system32 &&
           mkdir -p /cygdrive/d/a/ardupilot/ardupilot/ccache &&
           mkdir -p /usr/local/etc &&
           echo "export CCACHE_SLOPPINESS=file_stat_matches" >> ~/ccache.conf &&
@@ -108,10 +107,9 @@ jobs:
           restore-keys: ${{github.workflow}}-ccache-sitl-
 
       - name: Prepare Python environment
-        env:
-          PATH: /usr/bin:$(cygpath ${SYSTEMROOT})/system32
         shell: C:\cygwin\bin\bash.exe -eo pipefail '{0}'
         run: >-
+          export PATH=/usr/local/bin:/usr/bin:$(cygpath ${SYSTEMROOT})/system32 &&
           ln -sf /usr/bin/python3.7 /usr/bin/python && ln -sf /usr/bin/pip3.7 /usr/bin/pip &&
           python -m pip install --progress-bar off empy==3.3.4 pexpect &&
           python -m pip install --progress-bar off dronecan --upgrade &&
@@ -122,8 +120,6 @@ jobs:
           ln -s ccache /usr/local/bin/x86_64-pc-cygwin-g++
 
       - name: Build SITL
-        env:
-          PATH: /usr/bin:$(cygpath ${SYSTEMROOT})/system32
         shell: C:\cygwin\bin\bash.exe -eo pipefail '{0}'
         run: >-
           export PATH=/usr/local/bin:/usr/bin:$(cygpath ${SYSTEMROOT})/system32 &&
@@ -134,10 +130,9 @@ jobs:
           ccache -s
 
       - name: Prepare SITL artifacts
-        env:
-          PATH: /usr/bin:$(cygpath ${SYSTEMROOT})/system32
         shell: C:\cygwin\bin\bash.exe -eo pipefail '{0}'
         run: >-
+          export PATH=/usr/local/bin:/usr/bin:$(cygpath ${SYSTEMROOT})/system32 &&
           mkdir -p sitl_output &&
           cp build/sitl/bin/arduplane sitl_output/arduplane.exe &&
           for dll in $(cygcheck sitl_output/arduplane.exe | grep -oP 'cyg[^\s\\]+\.dll'); do
