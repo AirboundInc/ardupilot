@@ -68,7 +68,7 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: 'recursive'
 
@@ -79,20 +79,22 @@ jobs:
           NOW=$(date -u +"%F-%T")
           echo "timestamp=${NOW}" >> $GITHUB_OUTPUT
 
-      - uses: cygwin/cygwin-install-action@master
+      - uses: cygwin/cygwin-install-action@v6
         with:
-          packages: cygwin64 gcc-g++=10.2.0-1 ccache python37 python37-future python37-lxml python37-pip python37-setuptools python37-wheel git procps gettext
+          packages: cygwin64 gcc-g++=13.4.0-1 ccache python312 python312-pip git procps gettext
           add-to-path: false
 
       - name: Setup ccache
+        env:
+          PATH: /usr/bin:$(cygpath ${SYSTEMROOT})/system32
         shell: C:\cygwin\bin\bash.exe -eo pipefail '{0}'
         run: >-
-          export PATH=/usr/local/bin:/usr/bin:$(cygpath ${SYSTEMROOT})/system32 &&
-          mkdir -p /cygdrive/d/a/ardupilot/ardupilot/ccache &&
+          CYGPATH_GITHUB_WORKSPACE=$(cygpath -u "$GITHUB_WORKSPACE") &&
+          mkdir -p "${CYGPATH_GITHUB_WORKSPACE}/ccache" &&
           mkdir -p /usr/local/etc &&
           echo "export CCACHE_SLOPPINESS=file_stat_matches" >> ~/ccache.conf &&
-          echo "export CCACHE_DIR=/cygdrive/d/a/ardupilot/ardupilot/ccache" >> ~/ccache.conf &&
-          echo "export CCACHE_BASEDIR=/cygdrive/d/a/ardupilot/ardupilot" >> ~/ccache.conf &&
+          echo "export CCACHE_DIR=${CYGPATH_GITHUB_WORKSPACE}/ccache" >> ~/ccache.conf &&
+          echo "export CCACHE_BASEDIR=${CYGPATH_GITHUB_WORKSPACE}" >> ~/ccache.conf &&
           echo "export CCACHE_COMPRESS=1" >> ~/ccache.conf &&
           echo "export CCACHE_COMPRESSLEVEL=6" >> ~/ccache.conf &&
           echo "export CCACHE_MAXSIZE=400M" >> ~/ccache.conf &&
@@ -100,19 +102,20 @@ jobs:
           ccache -s
 
       - name: ccache cache files
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: D:/a/ardupilot/ardupilot/ccache
           key: ${{github.workflow}}-ccache-sitl-${{steps.ccache_cache_timestamp.outputs.timestamp}}
           restore-keys: ${{github.workflow}}-ccache-sitl-
 
       - name: Prepare Python environment
+        env:
+          PATH: /usr/bin:$(cygpath ${SYSTEMROOT})/system32
         shell: C:\cygwin\bin\bash.exe -eo pipefail '{0}'
         run: >-
-          export PATH=/usr/local/bin:/usr/bin:$(cygpath ${SYSTEMROOT})/system32 &&
-          ln -sf /usr/bin/python3.7 /usr/bin/python && ln -sf /usr/bin/pip3.7 /usr/bin/pip &&
-          python -m pip install --progress-bar off empy==3.3.4 pexpect &&
-          python -m pip install --progress-bar off dronecan --upgrade &&
+          python3 --version &&
+          python3 -m pip install --progress-bar off empy==3.3.4 pexpect future &&
+          python3 -m pip install --progress-bar off dronecan --upgrade &&
           cp /usr/bin/ccache /usr/local/bin/ &&
           cd /usr/local/bin && ln -s ccache /usr/local/bin/gcc &&
           ln -s ccache /usr/local/bin/g++ &&
@@ -120,19 +123,23 @@ jobs:
           ln -s ccache /usr/local/bin/x86_64-pc-cygwin-g++
 
       - name: Build SITL
+        env:
+          PATH: /usr/bin:$(cygpath ${SYSTEMROOT})/system32
         shell: C:\cygwin\bin\bash.exe -eo pipefail '{0}'
         run: >-
+          CYGPATH_GITHUB_WORKSPACE=$(cygpath -u "$GITHUB_WORKSPACE") &&
+          git config --global --add safe.directory "${CYGPATH_GITHUB_WORKSPACE}" &&
           export PATH=/usr/local/bin:/usr/bin:$(cygpath ${SYSTEMROOT})/system32 &&
           source ~/ccache.conf &&
-          git config --global --add safe.directory /cygdrive/d/a/ardupilot/ardupilot &&
-          python ./waf --color yes --toolchain x86_64-pc-cygwin --board sitl configure &&
-          python ./waf plane &&
+          python3 ./waf --color yes --toolchain x86_64-pc-cygwin --board sitl configure &&
+          python3 ./waf plane &&
           ccache -s
 
       - name: Prepare SITL artifacts
+        env:
+          PATH: /usr/bin:$(cygpath ${SYSTEMROOT})/system32
         shell: C:\cygwin\bin\bash.exe -eo pipefail '{0}'
         run: >-
-          export PATH=/usr/local/bin:/usr/bin:$(cygpath ${SYSTEMROOT})/system32 &&
           mkdir -p sitl_output &&
           cp build/sitl/bin/arduplane sitl_output/arduplane.exe &&
           for dll in $(cygcheck sitl_output/arduplane.exe | grep -oP 'cyg[^\s\\]+\.dll'); do
@@ -141,7 +148,7 @@ jobs:
           ls -lh sitl_output/
 
       - name: Upload SITL artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: firmware-sitl
           path: sitl_output/
