@@ -155,7 +155,7 @@ jobs:
           retention-days: 90
 
   upload-to-drive:
-    needs: [build-chibios, build-sitl]
+    needs: [build-chibios]
     runs-on: ubuntu-latest
 
     steps:
