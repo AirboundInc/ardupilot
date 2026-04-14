@@ -131,27 +131,14 @@ jobs:
           git config --global --add safe.directory "${CYGPATH_GITHUB_WORKSPACE}" &&
           export PATH=/usr/local/bin:/usr/bin:$(cygpath ${SYSTEMROOT})/system32 &&
           source ~/ccache.conf &&
-          python3 ./waf --color yes --toolchain x86_64-pc-cygwin --board sitl configure &&
-          python3 ./waf plane &&
+          Tools/scripts/cygwin_build_plane.sh &&
           ccache -s
-
-      - name: Prepare SITL artifacts
-        env:
-          PATH: /usr/bin:$(cygpath ${SYSTEMROOT})/system32
-        shell: C:\cygwin\bin\bash.exe -eo pipefail '{0}'
-        run: >-
-          mkdir -p sitl_output &&
-          cp build/sitl/bin/arduplane sitl_output/arduplane.exe &&
-          for dll in $(cygcheck sitl_output/arduplane.exe | grep -oP 'cyg[^\s\\]+\.dll'); do
-            cp -v /usr/bin/$dll sitl_output/;
-          done &&
-          ls -lh sitl_output/
 
       - name: Upload SITL artifacts
         uses: actions/upload-artifact@v7
         with:
           name: firmware-sitl
-          path: sitl_output/
+          path: artifacts/
           retention-days: 90
 
   upload-to-drive:
