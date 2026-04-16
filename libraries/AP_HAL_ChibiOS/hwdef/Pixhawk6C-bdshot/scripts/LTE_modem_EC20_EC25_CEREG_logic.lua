@@ -492,14 +492,25 @@ local last_mccmnc = nil
 local last_band = nil
 
 --[[
-    CEREG state tracking for smart reconnect.
-    When the modem sends +CEREG: 1 or +CEREG: 5 on the CMUX AT channel,
-    it means it re-registered on the network after a band switch without
-    needing a full hardware reset. We record the timestamp here and check
-    it in the timeout handler to decide between fast CIPOPEN or full ATI.
+    State table — bundles timing, CEREG, and lte_track into one local
+    to stay under ArduPilot Lua's 100-local-variable limit.
+    cereg_ms:  timestamp of last +CEREG: 1/5 received (0 = none)
+    track:     band/tower tracking for GCS WARNING announcements
+    CSQ_ms:    last AT+CSQ poll timestamp
+    CSQ_rpl:   last CSQ reply timestamp (for stale detection)
+    parse_ms:  last CMUX parse timestamp
+    route_ms:  last routing update timestamp
+    send_ms:   last data send timestamp
 --]]
-local cereg_registered_ms = uint32_t(0)
-
+local S = {
+    cereg_ms  = uint32_t(0),
+    track     = { band = nil, cid = nil },
+    CSQ_ms    = millis(),
+    CSQ_rpl   = uint32_t(0),
+    parse_ms  = uint32_t(0),
+    route_ms  = uint32_t(0),
+    send_ms   = uint32_t(0),
+}
 --[[
     FCS lookup table for polynomial x^8 + x^2 + x^1 + 1 (0x07)
     This is the reverse of the standard CRC-8 table
@@ -772,9 +783,12 @@ local function reset_state()
     step = "ATI"
     modem = default_modem
     found_cmux = false
-    cereg_registered_ms = uint32_t(0)  -- clear CEREG state on full reset
+    S.cereg_ms = uint32_t(0)  -- clear CEREG state on full reset
     reset_buffers()
     pending_to_uart = ""
+    -- clear band/cell tracking so the next connection re-announces
+    S.track.band = nil
+    S.track.cid  = nil
 end
 
 -- reset back to ATI step
@@ -910,8 +924,7 @@ local function step_CONFIG()
        AT_send(modem.config_extra)
     end
     -- enable unsolicited network registration status messages (CEREG)
-    AT_send('AT+CEREG=1
-')
+    AT_send('AT+CEREG=1\r\n')
     step = "CREG"
 end
 
@@ -1219,6 +1232,30 @@ local function check_CPSI(s)
                 gcs:send_named_float('LTE_MCCMNC', mcc*100+mnc)
             end
         end
+        -- GCS band / cell-tower announcements (always active, not gated on OPTIONS)
+        local band_num = tonumber(band) or -1
+        local tower_id = scell_id >> 8   -- strip antenna selection bits
+
+        if S.track.band == nil then
+            gcs:send_text(MAV_SEVERITY.INFO,
+                string.format("LTE: connected on Band %s (%s)", tostring(band), earfcn_band))
+            S.track.band = band_num
+        end
+        if S.track.cid == nil then S.track.cid = tower_id end
+
+        if S.track.band ~= nil and band_num ~= S.track.band then
+            gcs:send_text(MAV_SEVERITY.WARNING,
+                string.format("LTE WARNING: band switch %d -> %d (%s)",
+                              S.track.band, band_num, earfcn_band))
+            S.track.band = band_num
+        end
+        if S.track.cid ~= nil and tower_id ~= S.track.cid then
+            gcs:send_text(MAV_SEVERITY.WARNING,
+                string.format("LTE WARNING: cell tower switch CID %d -> %d",
+                              S.track.cid, tower_id))
+            S.track.cid = tower_id
+        end
+
         return true
     end
     return false
@@ -1266,6 +1303,29 @@ local function check_QENG(s)
             gcs:send_named_float('LTE_CID', cid>>8)
             gcs:send_named_float('LTE_MCCMNC', mcc*100+mnc)
         end
+        -- GCS band / cell-tower announcements (always active, not gated on OPTIONS)
+        local tower_id = cid >> 8   -- strip antenna selection bits
+
+        if S.track.band == nil then
+            gcs:send_text(MAV_SEVERITY.INFO,
+                string.format("LTE: connected on Band %d (EARFCN %d)", band, earfcn))
+            S.track.band = band
+        end
+        if S.track.cid == nil then S.track.cid = tower_id end
+
+        if S.track.band ~= nil and band ~= S.track.band then
+            gcs:send_text(MAV_SEVERITY.WARNING,
+                string.format("LTE WARNING: band switch %d -> %d (EARFCN %d)",
+                              S.track.band, band, earfcn))
+            S.track.band = band
+        end
+        if S.track.cid ~= nil and tower_id ~= S.track.cid then
+            gcs:send_text(MAV_SEVERITY.WARNING,
+                string.format("LTE WARNING: cell tower switch CID %d -> %d",
+                              S.track.cid, tower_id))
+            S.track.cid = tower_id
+        end
+
         return true
     end
     return false
@@ -1297,11 +1357,11 @@ local function handle_AT_reply(s)
         local stat = tonumber(cereg)
         if stat == 1 or stat == 5 then
             -- modem re-registered on network after band switch
-            cereg_registered_ms = millis()
+            S.cereg_ms = millis()
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CEREG registered')
         elseif stat == 0 or stat == 2 then
             -- modem lost registration — clear so full reset is used on timeout
-            cereg_registered_ms = uint32_t(0)
+            S.cereg_ms = uint32_t(0)
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CEREG lost')
         end
     end
@@ -1311,11 +1371,7 @@ local function handle_AT_reply(s)
     end
 end
 
-local last_CSQ_ms = millis()
-local last_CSQ_reply_ms = uint32_t(0)
-local last_parse_ms = uint32_t(0)
-local last_route_ms = uint32_t(0)
-local last_send_data_ms = uint32_t(0)
+
 
 --[[
     handle data while connected
@@ -1344,11 +1400,11 @@ local function step_CONNECTED()
         else
             pending_to_parse = pending_to_parse .. s
             pending_to_parse = cmux.feed_uart_in(pending_to_parse)
-            if now_ms - last_parse_ms > 1000 then
+            if now_ms - S.parse_ms > 1000 then
                 pending_to_parse = ""
             end
             if #cmux.buffers[DLC_AT] > 0 then
-                last_parse_ms = now_ms
+                S.parse_ms = now_ms
                 --gcs:send_text(MAV_SEVERITY.INFO, string.format("AT reply %d", #cmux.buffers[DLC_AT]))
                 handle_AT_reply(cmux.buffers[DLC_AT])
                 cmux.buffers[DLC_AT] = ""
@@ -1356,7 +1412,7 @@ local function step_CONNECTED()
             if #cmux.buffers[DLC_DATA] > 0 then
                 last_data_ms = now_ms
                 -- gcs:send_text(MAV_SEVERITY.INFO, string.format("data input %d", #cmux.buffers[DLC_DATA]))
-                last_parse_ms = now_ms
+                S.parse_ms = now_ms
                 pending_to_fc = pending_to_fc .. cmux.buffers[DLC_DATA]
                 cmux.buffers[DLC_DATA] = ""
             end
@@ -1375,10 +1431,10 @@ local function step_CONNECTED()
 
             Threshold: 30s — if CEREG arrived within the last 30s it's valid.
         --]]
-        local cereg_age = now_ms - cereg_registered_ms
-        if cereg_registered_ms ~= uint32_t(0) and cereg_age < uint32_t(30000) then
+        local cereg_age = now_ms - S.cereg_ms
+        if S.cereg_ms ~= uint32_t(0) and cereg_age < uint32_t(30000) then
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: timeout — CEREG OK, fast reconnect')
-            cereg_registered_ms = uint32_t(0)  -- consume the event
+            S.cereg_ms = uint32_t(0)  -- consume the event
             reset_buffers()
             step = "CIPOPEN"
         else
@@ -1406,7 +1462,7 @@ local function step_CONNECTED()
 
     local quota = 0
     if LTE_TX_RATE:get() > 0 then
-        local dt = (now_ms - last_send_data_ms):tofloat()*0.001
+        local dt = (now_ms - S.send_ms):tofloat()*0.001
         quota = math.floor(dt * LTE_TX_RATE:get())
     end
 
@@ -1422,7 +1478,7 @@ local function step_CONNECTED()
         local data = pending_to_modem:sub(1, n)
 
         data_sent = data_sent + #data
-        last_send_data_ms = now_ms
+        S.send_ms = now_ms
 
         -- gcs:send_text(MAV_SEVERITY.INFO, string.format("data output %d", n))
         if not data_send_connected(data) then
@@ -1442,15 +1498,15 @@ local function step_CONNECTED()
     end
     if cmux_enabled() and not option_enabled(LTE_OPTIONS_NOSIGQUERY) then
         -- if we support CMUX then request CSQ signal strength at 1Hz
-        if now_ms - last_CSQ_ms > 1000 then
-            last_CSQ_ms = now_ms
+        if now_ms - S.CSQ_ms > 1000 then
+            S.CSQ_ms = now_ms
             AT_send("AT+CSQ\r\n")
             if modem.cpsi then
                 AT_send(modem.cpsi)
             end
         end
-        if now_ms - last_CSQ_reply_ms > 5000 then
-            last_CSQ_reply_ms = now_ms
+        if now_ms - S.CSQ_rpl > 5000 then
+            S.CSQ_rpl = now_ms
             gcs:send_named_float('LTE_RSSI', -1)
         end
         if LTE_MCCMNC:get() ~= last_mccmnc and modem.mccmnc then
@@ -1468,8 +1524,8 @@ local function step_CONNECTED()
     end
 
     -- newer firmware allows for multiple PPP interfaces and custom routing
-    if supports_routing and now_ms - last_route_ms > 1000 then
-        last_route_ms = now_ms
+    if supports_routing and now_ms - S.route_ms > 1000 then
+        S.route_ms = now_ms
         local dest = uint32_t(LTE_ROUTE_IP0:get())<<24
         dest = dest | uint32_t(LTE_ROUTE_IP1:get())<<16
         dest = dest | uint32_t(LTE_ROUTE_IP2:get())<<8

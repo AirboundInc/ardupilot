@@ -12,9 +12,11 @@
       setbaud removed (AT+IPR after CMUX breaks framing)
     - Added EC25 support (banner EC25C): same AT command set as EC20,
       same Quectel platform and firmware family
-    - Fixed stale socket: step_CIPOPEN now checks for CONNECT before
-      sending cipclose, preventing the socket being closed immediately
-      after a successful open
+    - Fixed stale socket: added CIPCLOSE step between CREG and CIPOPEN
+      for Quectel modems (EC20/EC25/EC200/BG95/EG800Q). AT+QICLOSE=0 is
+      sent and confirmed before AT+QIOPEN, preventing the ERROR response
+      that triggered a full reset loop when socket 0 was still registered
+      from the previous session.
 --]]
 
 local MAV_SEVERITY = {EMERGENCY=0, ALERT=1, CRITICAL=2, ERROR=3, WARNING=4, NOTICE=5, INFO=6, DEBUG=7}
@@ -320,11 +322,12 @@ local EC20  = { banner = 'EC20C',
 -- EC25 uses banner EC25C (matches EC25CEFILGR... but not EC200CNLGAR...).
 -- AT command set is identical to EC20 — same Quectel platform and firmware family.
 -- setbaud not used for same reason as EC20: AT+IPR after CMUX breaks framing.
-local EC25  = { banner = 'EC25C',
+local EC25  = { banner = 'EC25',   -- 'EC25' matches first ATI line before full revision arrives
                  cmux = 'AT+CMUX=0\r\n',
                  -- setbaud not used: sending AT+IPR after CMUX breaks framing
                  pppopen = 'ATD*99#\r',
-                 cpsi = 'AT+QENG="servingcell"\r\n',
+                 cpsi = 'AT+QCSQ\r\n',          -- live signal levels during connected
+                 preflight = 'AT+QENG="servingcell"\r\n', -- cell identity before socket open
                  cipmode = nil,
                  cpin = 'AT+CPIN?\r\n',
                  reset = 'AT+CFUN=1,1\r\n',
@@ -479,13 +482,15 @@ local cmux = {
     DLC_AT   = 1,
     DLC_DATA = 2,
 }
-cmux.buffers = {[cmux.DLC_AT] = "", [cmux.DLC_DATA] = ""} -- DLC1=AT, DLC2=DATA(PPP or TCP)
+cmux.buffers = {[0] = "", [cmux.DLC_AT] = "", [cmux.DLC_DATA] = ""} -- DLC0=ctrl, DLC1=AT, DLC2=DATA
 
 local last_mccmnc = nil
 local last_band = nil
 
 -- tracking table for GCS band/cell-tower switch warnings (single local, avoids hitting the 100-local limit)
 local lte_track = { band = nil, cid = nil }
+-- EC25: cache cell identity from QENG (queried before socket open, not available during connected)
+local cell_cache = { mcc=0, mnc=0, tac=0, cid=0, pcid=0, earfcn=0, band=-1 }
 
 --[[
     FCS lookup table for polynomial x^8 + x^2 + x^1 + 1 (0x07)
@@ -622,27 +627,34 @@ end
  Returns: DLC number, extracted payload, and remaining buffer (or nils on failure)
 --]]
 function cmux.parse_cmux_frame(buf)
+    -- Find the opening FLAG byte; all offsets are relative to it
     local start_idx = buf:find(string.char(cmux.FLAG))
     if not start_idx then
-        --gcs:send_text(MAV_SEVERITY.INFO, "no start idx")
         log_data("NOSTART:" .. buf, "{XXX}")
         return nil, nil, nil
     end
-    if #buf < 6 then
+    -- Need at least FLAG+ADDR+CTRL+LEN+FCS+FLAG = 6 bytes from start_idx
+    if #buf - start_idx + 1 < 6 then
         return nil, nil, nil, "short"
     end
-    local len_byte = buf:byte(4)
+    -- All field positions are relative to start_idx (not absolute buf positions)
+    -- Frame layout: FLAG(si) ADDR(si+1) CTRL(si+2) LEN(si+3) DATA(si+4..si+3+len) FCS(si+4+len) FLAG(si+5+len)
+    local len_byte = buf:byte(start_idx + 3)
     if (len_byte & cmux.EA) == 0 then
         log_data("mux multibyte", "{XXX}")
-        return nil, nil, nil -- we don't handle multi-byte length yet
+        return nil, nil, nil
     end
     local len = len_byte >> 1
-    local end_idx = 6 + len
+    local end_idx = start_idx + 5 + len
+    if end_idx > #buf then
+        return nil, nil, nil, "short"
+    end
     if buf:byte(end_idx) ~= cmux.FLAG then
         log_data("no end idx", "{XXX}")
         return nil, nil, nil, "short"
     end
 
+    -- Extract frame contents (ADDR CTRL LEN DATA FCS, without the two FLAG bytes)
     local frame = buf:sub(start_idx + 1, end_idx - 1)
     if #frame < 4 then
         log_data("too short", "{XXX}")
@@ -652,14 +664,11 @@ function cmux.parse_cmux_frame(buf)
     local addr = frame:byte(1)
     local ctrl = frame:byte(2)
 
-    --gcs:send_text(MAV_SEVERITY.INFO, string.format("addr=0x%02x ctrl=0x%02x", addr, ctrl))
-
     if ctrl == cmux.SABM then
         return nil, nil, buf:sub(end_idx + 1)
     end
 
     if (ctrl & 0xef) ~= cmux.UIH then
-        --gcs:send_text(MAV_SEVERITY.INFO, "not UIH")
         return nil, nil, nil
     end
 
@@ -674,31 +683,52 @@ function cmux.parse_cmux_frame(buf)
     local calc_fcs = fcs_calc(header)
     if calc_fcs ~= fcs_field then
         log_data("FCS mismatch", "{XXX}")
-        return nil, nil, nil -- FCS mismatch
+        return nil, nil, nil
     end
 
     local dlc = (addr >> 2) & 0x3F
     local remainder = buf:sub(end_idx + 1)
-    --gcs:send_text(MAV_SEVERITY.INFO, string.format("CMUX got: dlc=%d ldata=%d lrem=%d", dlc, #data, #remainder))
     return dlc, data, remainder
 end
 
 -- Feeds raw UART data into CMUX frame parser and routes payloads to DLC buffers
+-- Robust version: on bad frame, skip past the current FLAG and try the next one
+-- rather than discarding the entire buffer. This handles the case where a 0xF9
+-- byte appears inside MAVLink data and is mistaken for a CMUX frame start.
 function cmux.feed_uart_in(raw)
     while #raw > 0 do
         local dlc, data, rest, err = cmux.parse_cmux_frame(raw)
         if not dlc or not data or not rest then
             if err == "short" then
-                -- gcs:send_text(MAV_SEVERITY.INFO, "short")
+                -- incomplete frame — keep buffer as-is and wait for more data
                 return raw
             end
-            -- discard
-            return ""
+            -- bad frame (FCS mismatch, wrong length, etc.)
+            -- find the FLAG byte position and skip past it to try the next frame
+            local FLAG_CHAR = string.char(0xF9)
+            local flag_pos = raw:find(FLAG_CHAR)
+            if flag_pos then
+                -- skip past this FLAG and look for the next one
+                local next_pos = raw:find(FLAG_CHAR, flag_pos + 1)
+                if next_pos then
+                    raw = raw:sub(next_pos)
+                else
+                    -- no more FLAG bytes — nothing left to parse
+                    return ""
+                end
+            else
+                return ""
+            end
+        else
+            if cmux.buffers[dlc] then
+                cmux.buffers[dlc] = cmux.buffers[dlc] .. data
+                -- log AT channel frames so we can see decoded responses
+                if dlc == 1 or dlc == 0 then
+                    log_data(string.format("{DLC%d:%s}", dlc, data), '~~~')
+                end
+            end
+            raw = rest
         end
-        if cmux.buffers[dlc] then
-            cmux.buffers[dlc] = cmux.buffers[dlc] .. data
-        end
-        raw = rest
     end
     return raw
 end
@@ -747,6 +777,7 @@ local function reset_buffers()
     pending_to_modem = ""
     pending_to_fc = ""
     pending_to_parse = ""
+    cmux.buffers[0] = ""
     cmux.buffers[cmux.DLC_AT] = ""
     cmux.buffers[cmux.DLC_DATA] = ""
     while ser_device:available() > 0 do
@@ -894,6 +925,7 @@ local function step_CONFIG()
     if modem.config_extra then
        AT_send(modem.config_extra)
     end
+    -- AT_send('AT+COPS=1,2,"40445"\r\n')
     step = "CREG"
 end
 
@@ -932,8 +964,14 @@ local function step_CREG()
                     step = "PPPOPEN"
                 end
             else
-                if modem.cipmode then
+                -- EC25: go through QENG step to capture cell identity before socket opens
+                if modem.preflight then
+                    gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: sending preflight QENG')
+                    step = "QENG"
+                elseif modem.cipmode then
                     step = "CIPMODE"
+                elseif modem.cipclose then
+                    step = "CIPCLOSE"
                 else
                     step = "CIPOPEN"
                 end
@@ -1083,6 +1121,25 @@ local function step_PPPOPEN()
 end
 
 --[[
+    Close any stale Quectel socket before opening a new one.
+    AT+QICLOSE=0 must complete (OK or ERROR) before AT+QIOPEN is sent,
+    otherwise the modem returns ERROR on QIOPEN because socket 0 is still
+    registered from the previous session.  This step is only entered for
+    modems that have a cipclose command defined (EC20, EC25, EC200, BG95,
+    EG800Q).  SIM7600 does not define cipclose and skips straight to CIPOPEN.
+--]]
+local function step_CIPCLOSE()
+    local s = uart_read()
+    -- any response (OK or ERROR) means the modem has processed the close
+    if s and (s:find('\r\nOK\r\n') or s:find('\nERROR\r\n') or s:find('+QICLOSE')) then
+        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: socket closed, opening')
+        step = "CIPOPEN"
+        return
+    end
+    AT_send(modem.cipclose)
+end
+
+--[[
     open a TCP or UDP connection to the server
     the server IP and port are defined in the parameters
 --]]
@@ -1093,9 +1150,7 @@ local function step_CIPOPEN()
     end
 
     if s then
-        -- check for CONNECT before sending cipclose
-        -- cipclose must come AFTER this check — otherwise we close the
-        -- socket immediately after successfully opening it
+        -- check for CONNECT first
         if s:find('+CAOPEN: 0,0') and s:find('OK\r') and modem.caswitch then
             data_send(modem.caswitch)
             return
@@ -1106,10 +1161,7 @@ local function step_CIPOPEN()
             step = "CONNECTED"
             return
         end
-        -- no connection yet — close stale socket to prepare for next QIOPEN attempt
-        if modem.cipclose then
-            AT_send(modem.cipclose)
-        end
+        -- cipclose is handled in step_CIPCLOSE before we reach here
     end
     if LTE_SERVER_PORT:get() <= 0 then
         gcs:send_text(MAV_SEVERITY.ERROR, "Must set LTE_SERVER_PORT")
@@ -1238,6 +1290,45 @@ local function check_CPSI(s)
 end
 
 --[[
+    check for QCSQ reply — used by EC25 in CMUX+connected mode
+    +QCSQ: "LTE",<rsrp>,<rsrq>,<rssi>,<sinr>
+    Example: +QCSQ: "LTE",-88,-14,-67,-8
+--]]
+local function check_QCSQ(s)
+    if not s:find("+QCSQ") then
+        return false
+    end
+    logger:write("LTER","R1,R2",'ZZ', s:sub(1,64), s:sub(65,128))
+    local rat, rsrp_str, rsrq_str, rssi_str, sinr_str =
+        s:match('%+QCSQ:%s*"([^"]+)",([%-]?%d+),([%-]?%d+),([%-]?%d+),([%-]?%d+)')
+    if not (rat and rsrp_str) then
+        gcs:send_text(MAV_SEVERITY.WARNING, 'LTE_modem: QCSQ regex no match')
+        return false
+    end
+    if rat and rsrp_str then
+        local rsrp = tonumber(rsrp_str) or 0
+        local rsrq = tonumber(rsrq_str) or 0
+        local rssi = tonumber(rssi_str) or 0
+        local sinr = tonumber(sinr_str) or 0
+        -- combine live signal levels with cached cell identity from preflight QENG
+        logger:write("LTES", 'MCC,MNC,TAC,CID,PID,EF,RSRP,RSRQ,RSSI,SINR', 'iiiiiiiiii',
+                     cell_cache.mcc, cell_cache.mnc, cell_cache.tac,
+                     cell_cache.cid, cell_cache.pcid, cell_cache.earfcn,
+                     rsrp, rsrq, rssi, sinr)
+        log_data(string.format("LTES OK: RSRP=%d RSRQ=%d SINR=%d CID=%d Band=%d",
+                 rsrp, rsrq, sinr, cell_cache.cid, cell_cache.band), '***')
+        gcs:send_text(MAV_SEVERITY.INFO, string.format(
+            'LTE SIG: RSRP=%d RSRQ=%d SINR=%d', rsrp, rsrq, sinr))
+        if option_enabled(LTE_OPTIONS_SIGNALS) then
+            gcs:send_named_float('LTE_RSRP', rsrp)
+            gcs:send_named_float('LTE_RSRQ', rsrq)
+        end
+        return true
+    end
+    return false
+end
+
+--[[
     check for QENG reply
 --]]
 local function check_QENG(s)
@@ -1255,6 +1346,10 @@ local function check_QENG(s)
     local mcc_str, mnc_str, cid_hex, pcid_str, earfcn_str, band_str, tac_hex, rsrp_str, rsrq_str, rssi_str, sinr_str =
         s:match('+QENG:%s+"servingcell","[^"]+","[^"]+","[^"]+",(%d+),(%d+),([%x]+),(%d+),(%d+),(%d+),%d+,%d+,([%x]+),([%-]?%d+),([%-]?%d+),([%-]?%d+)')
 
+    if not mcc_str then
+        gcs:send_text(MAV_SEVERITY.WARNING, 'LTE_modem: QENG regex no match')
+        return false
+    end
     if mcc_str then
         local tac = tonumber(tac_hex, 16) or 0
         local cid = tonumber(cid_hex, 16) or 0
@@ -1268,8 +1363,15 @@ local function check_QENG(s)
         local mcc = tonumber(mcc_str) or 0
         local mnc = tonumber(mnc_str) or 0
 
+        -- cache cell identity for use during connected phase (EC25 QENG only works pre-socket)
+        cell_cache.mcc = mcc; cell_cache.mnc = mnc; cell_cache.tac = tac
+        cell_cache.cid = cid; cell_cache.pcid = pcid
+        cell_cache.earfcn = earfcn; cell_cache.band = band
         logger:write("LTES", 'MCC,MNC,TAC,CID,PID,EF,RSRP,RSRQ,RSSI,SINR', 'iiiiiiiiii',
                      mcc, mnc, tac, cid, pcid, earfcn, rsrp, rsrq, rssi, sinr)
+        log_data(string.format("LTES OK: RSRP=%d Band=%d CID=%d", rsrp, band, cid), '***')
+        gcs:send_text(MAV_SEVERITY.INFO, string.format(
+            'LTE CELL: CID=%d B%d RSRP=%d', cid, band, rsrp))
 
         if option_enabled(LTE_OPTIONS_SIGNALS) then
             gcs:send_named_float('LTE_RSRP', rsrp)
@@ -1322,6 +1424,9 @@ local function handle_AT_reply(s)
     if check_CPSI(s) then
         return
     end
+    if check_QCSQ(s) then
+        return
+    end
     if check_QENG(s) then
         return
     end
@@ -1332,6 +1437,26 @@ local function handle_AT_reply(s)
     if s:find("PPPD: DISCONNECTED") then
         step = "PPPOPEN"
     end
+end
+
+--[[
+    EC25 preflight: send QENG and wait for response before opening socket
+    Defined here (after handle_AT_reply) so the forward-reference is resolved
+--]]
+local function step_QENG()
+    local s = uart_read()
+    if s and s:find("+QENG") then
+        handle_AT_reply(s)
+        -- proceed to socket open regardless of parse result
+        if modem.cipclose then
+            step = "CIPCLOSE"
+        else
+            step = "CIPOPEN"
+        end
+        return
+    end
+    -- send QENG and wait - step timer is 500ms so modem has time to respond
+    AT_send(modem.preflight)
 end
 
 local last_CSQ_ms = millis()
@@ -1346,7 +1471,8 @@ local last_send_data_ms = uint32_t(0)
 local function step_CONNECTED()
     local s = uart:readstring(512)
     stats.bytes_in = stats.bytes_in + #s
-    if option_enabled(LTE_OPTIONS_LOGALL) then
+    -- always log raw UART in connected phase so AT replies (CSQ, QENG etc) are visible
+    if s and #s > 0 then
         log_data(s, '<<<')
     end
     if s and s:find('\r\nCLOSED\r\n') then
@@ -1372,9 +1498,13 @@ local function step_CONNECTED()
             end
             if #cmux.buffers[cmux.DLC_AT] > 0 then
                 last_parse_ms = now_ms
-                --gcs:send_text(MAV_SEVERITY.INFO, string.format("AT reply %d", #cmux.buffers[cmux.DLC_AT]))
                 handle_AT_reply(cmux.buffers[cmux.DLC_AT])
                 cmux.buffers[cmux.DLC_AT] = ""
+            end
+            -- EC25: some AT responses arrive on DLC0 (control channel)
+            if cmux.buffers[0] and #cmux.buffers[0] > 0 then
+                handle_AT_reply(cmux.buffers[0])
+                cmux.buffers[0] = ""
             end
             if #cmux.buffers[cmux.DLC_DATA] > 0 then
                 last_data_ms = now_ms
@@ -1448,7 +1578,7 @@ local function step_CONNECTED()
             last_CSQ_ms = now_ms
             AT_send("AT+CSQ\r\n")
             if modem.cpsi then
-                AT_send(modem.cpsi)
+                AT_send(modem.cpsi)  -- QCSQ for EC25, CPSI for SIM7600
             end
         end
         if now_ms - last_CSQ_reply_ms > 5000 then
@@ -1562,6 +1692,16 @@ local function run_step()
         return 200
     end
     
+    if step == "QENG" then
+        step_QENG()
+        return 500  -- 500ms gives modem time to respond before we check
+    end
+
+    if step == "CIPCLOSE" then
+        step_CIPCLOSE()
+        return 500
+    end
+
     if step == "CIPOPEN" then
         step_CIPOPEN()
         return 200
