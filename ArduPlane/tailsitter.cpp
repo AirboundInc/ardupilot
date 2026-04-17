@@ -1239,6 +1239,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
     // Apply blend of default scaler and RPM based scaler, to avoid aggressive scaling when the RPMM differene is too large
     scale_l = blend * scale_l + (1.0f - blend) * default_throttle_scaler;
     scale_r = blend * scale_r + (1.0f - blend) * default_throttle_scaler;
+#if HAL_LOGGING_ENABLED
     AP::logger().WriteStreaming("RPME", "TimeUS,RPMResultL,RPMResultR,RPMEstL,RPMEstR",
         "s----",
         "F0000",
@@ -1259,7 +1260,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
         "Qffff",
         AP_HAL::micros64(), kf_right.innovation, kf_left.innovation,
         kf_right.bias, kf_left.bias);
-
+#endif
 #else //HAL_WITH_ESC_TELEM
     scale_l = default_throttle_scaler;
     scale_r = default_throttle_scaler;
