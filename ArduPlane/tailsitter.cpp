@@ -1227,7 +1227,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
 #endif // SITL_DEBUG
     if (_esc_telem != nullptr) {
         update_rpm_kalman(kf_left,  pwm_l, valid_l ? rpm_l : kf_left.rpm,  quadplane.attitude_control->get_dt());
-        update_rpm_kalman(kf_right, pwm_r, valid_l ? rpm_r : kf_right.rpm, quadplane.attitude_control->get_dt());
+        update_rpm_kalman(kf_right, pwm_r, valid_r ? rpm_r : kf_right.rpm, quadplane.attitude_control->get_dt());
     }
     rpm_result_l = constrain_float(rpm_result_l, 2500.0f, 6000.0f);
     rpm_result_r = constrain_float(rpm_result_r, 2500.0f, 6000.0f);
