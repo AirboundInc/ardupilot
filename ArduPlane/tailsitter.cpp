@@ -1214,8 +1214,9 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
     scale_r = (rpm_hover_r*rpm_hover_r) / (rpm_result_r*rpm_result_r);
     float rpm_diff = fabsf(rpm_result_l - rpm_result_r);
     float blend = 1.0f - constrain_float((rpm_diff - RPM_DIFF_THRESHOLD) / (RPM_DIFF_BLEND_LIMIT - RPM_DIFF_THRESHOLD),0.0f, 1.0f);
-
-    // Apply blend of default scaler and RPM based scaler, to avoid aggressive scaling when the RPMM differene is too large
+    // Apply blend of default scaler and RPM based scaler, to avoid aggressive scaling when the RPM differene is too large
+    float tilt_angle;
+    quadplane.attitude_control->compute_tilt_angle(tilt_angle);
     scale_l = blend * scale_l + (1.0f - blend) * default_throttle_scaler;
     scale_r = blend * scale_r + (1.0f - blend) * default_throttle_scaler;
     AP::logger().WriteStreaming("RPME", "TimeUS,RPMResultL,RPMResultR,RPMEstL,RPMEstR",
@@ -1226,12 +1227,12 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
         rpm_result_l, rpm_result_r,
         kf_left.rpm, kf_right.rpm
        );
-        AP::logger().WriteStreaming("RPMF", "TimeUS,RPMRawL,RPMRawR,scaleL,scaleR,valL,valR",
-        "s------",
-        "F000000",
-        "QffffBB",
+        AP::logger().WriteStreaming("RPMF", "TimeUS,RPMRawL,RPMRawR,scaleL,scaleR,valL,valR,TiltAngle",
+        "s------d",
+        "F0000000",
+        "QffffBBf",
         AP_HAL::micros64(),
-        rpm_l, rpm_r,scale_l,scale_r,valid_l,valid_r);
+        rpm_l, rpm_r,scale_l,scale_r,valid_l,valid_r, tilt_angle);
         AP::logger().WriteStreaming("RPMG", "TimeUS,InvR,InvL,biaR,biaL",
         "s----",
         "F0000",

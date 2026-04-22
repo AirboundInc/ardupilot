@@ -421,6 +421,7 @@ public:
 
     static constexpr Vector3f VECTORF_111{1.0f,1.0f,1.0f};
 
+    void compute_tilt_angle(float &tilt_angle);
 protected:
 
     // Update rate_target_ang_vel using attitude_error_rot_vec_rad
