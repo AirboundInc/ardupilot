@@ -26,7 +26,8 @@
 float DEFAULT_HOVER_RPM = 3500.0f; // default rpm for motors without telemetry
 const float RPM_DIFF_THRESHOLD     = 300.0f; // scaler fully active below this
 const float RPM_DIFF_BLEND_LIMIT   = 600.0f; // scaler fully removed above this
-
+const float SCALER_HIGH = 45.0f;             // Maximum tilt angle at which the RPM based scaler will become lower value to unity
+const float SCALER_MID =  30.0f;             // Tilt angle at which the lower value of the RPM based scaler will raise linearly from 0.8 to 1.0
 
 const AP_Param::GroupInfo Tailsitter::var_info[] = {
 
@@ -1247,10 +1248,18 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
     float rpm_diff = fabsf(rpm_result_l - rpm_result_r);
     float blend = 1.0f - constrain_float((rpm_diff - RPM_DIFF_THRESHOLD) / (RPM_DIFF_BLEND_LIMIT - RPM_DIFF_THRESHOLD),0.0f, 1.0f);
     // Apply blend of default scaler and RPM based scaler, to avoid aggressive scaling when the RPM differene is too large
-    float tilt_angle;
-    quadplane.attitude_control->compute_tilt_angle(tilt_angle);
     scale_l = blend * scale_l + (1.0f - blend) * default_throttle_scaler;
     scale_r = blend * scale_r + (1.0f - blend) * default_throttle_scaler;
+    float tilt_angle, scale_low = 0.8f, scale_high = tilt_motor_hover_rpm*tilt_motor_hover_rpm/(2500.0f*2500.0f);
+    quadplane.attitude_control->compute_tilt_angle(tilt_angle);
+    if(abs(tilt_angle) > SCALER_MID && abs(tilt_angle) <= SCALER_MAX){
+        // Y = MX + C format, where y -> final scaler, x = tilt angle - mid point, M = (1 - scale_low) / (SCALER_MAX - SCALER_MID), C = scale_low
+        scale_low += (abs(tilt_angle)-SCALER_MID) * (1 - scale_low) / (SCALER_HIGH - SCALER_MID);
+    } else if (abs(tilt_angle) > SCALER_HIGH) {
+        scale_low = 1.0f;
+    }
+    scale_l = constrain_float(scale_l, scale_low, scale_high);
+    scale_r = constrain_float(scale_r, scale_low, scale_high);
     AP::logger().WriteStreaming("RPME", "TimeUS,RPMResultL,RPMResultR,RPMEstL,RPMEstR",
         "s----",
         "F0000",
@@ -1265,12 +1274,12 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
         "QffffBBf",
         AP_HAL::micros64(),
         rpm_l, rpm_r,scale_l,scale_r,valid_l,valid_r, tilt_angle);
-        AP::logger().WriteStreaming("RPMG", "TimeUS,InvR,InvL,biaR,biaL",
-        "s----",
-        "F0000",
-        "Qffff",
+        AP::logger().WriteStreaming("RPMG", "TimeUS,InvR,InvL,biaR,biaL,sclLow",
+        "s-----",
+        "F00000",
+        "Qfffff",
         AP_HAL::micros64(), kf_right.innovation, kf_left.innovation,
-        kf_right.bias, kf_left.bias);
+        kf_right.bias, kf_left.bias, scale_low);
 
 #else //HAL_WITH_ESC_TELEM
     scale_l = default_throttle_scaler;
