@@ -1252,8 +1252,8 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
     scale_r = blend * scale_r + (1.0f - blend) * default_throttle_scaler;
     float tilt_angle, scale_low = 0.8f, scale_high = tilt_motor_hover_rpm*tilt_motor_hover_rpm/(2500.0f*2500.0f);
     quadplane.attitude_control->compute_tilt_angle(tilt_angle);
-    if(abs(tilt_angle) > SCALER_MID && abs(tilt_angle) <= SCALER_MAX){
-        // Y = MX + C format, where y -> final scaler, x = tilt angle - mid point, M = (1 - scale_low) / (SCALER_MAX - SCALER_MID), C = scale_low
+    if(abs(tilt_angle) > SCALER_MID && abs(tilt_angle) <= SCALER_HIGH){
+        // Y = MX + C format, where y -> final scaler, x = tilt angle - mid point, M = (1 - scale_low) / (SCALER_HIGH - SCALER_MID), C = scale_low
         scale_low += (abs(tilt_angle)-SCALER_MID) * (1 - scale_low) / (SCALER_HIGH - SCALER_MID);
     } else if (abs(tilt_angle) > SCALER_HIGH) {
         scale_low = 1.0f;
