@@ -402,17 +402,18 @@ float AC_AttitudeControl_Multi::get_throttle_boosted_ts(float throttle_in)
     }
     // math and geometry behind this idea is given in https://www.notion.so/airbound/Decoupling-the-vertical-and-Attitude-controllers-2c321adf4be980b89fa5cae73ac286fb?source=copy_link
     float tilt_angle_rad = constrain_float(radians(_ts_tilt_angle/100.0f), -radians(45.0f), radians(45.0f)); // convert to radians and constrain between -45 to 45 degrees
-    float inv_compensation_gain =  _ahrs.sin_pitch() * sinf(tilt_angle_rad) + _ahrs.cos_pitch()*_ahrs.cos_roll() * cosf(tilt_angle_rad);
+    float inv_compensation_gain =  -_ahrs.sin_pitch() * sinf(tilt_angle_rad) + _ahrs.cos_pitch()*_ahrs.cos_roll() * cosf(tilt_angle_rad);
+    float global_thrust_angle_deg = degrees(acosf(inv_compensation_gain));
     float boost_factor = 1.0f / constrain_float(inv_compensation_gain, 0.1f, 1.0f);
     float throttle_out = throttle_in * boost_factor;
     _angle_boost = constrain_float(throttle_out - throttle_in, -1.0f, 1.0f);
 #if HAL_LOGGING_ENABLED
-    AP::logger().WriteStreaming("ANGB", "TimeUS,ThrIn,ThrO,Boost,BFactor",
-        "s----", // seconds,
-        "F0000", // micro (1e-6), no mult (1e0)
-        "Qffff", // uint64_t, float
+    AP::logger().WriteStreaming("ANGB", "TimeUS,ThrIn,ThrO,Boost,BFactor,ThrAng",
+        "s----d", // seconds,
+        "F00000", // micro (1e-6), no mult (1e0)
+        "Qfffff", // uint64_t, float
         AP_HAL::micros64(),
-        throttle_in, throttle_out, _angle_boost, boost_factor);
+        throttle_in, throttle_out, _angle_boost, boost_factor,global_thrust_angle_deg);
 #endif
         return throttle_out;
 }
