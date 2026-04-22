@@ -1193,3 +1193,11 @@ void AC_AttitudeControl::get_rpy_srate(float &roll_srate, float &pitch_srate, fl
     pitch_srate = get_rate_pitch_pid().get_pid_info().slew_rate;
     yaw_srate = get_rate_yaw_pid().get_pid_info().slew_rate;
 }
+void AC_AttitudeControl::compute_tilt_angle(float &tilt_angle){
+    Quaternion attitude_quaternion;
+    _ahrs.get_quat_body_to_ned(attitude_quaternion);
+    // To calculate the tilt angle, used the formula: cos(tilt) = 1 - 2*(q2^2 + q3^2), where q1, q2, q3, q4 are the components of the quaternion.
+    // This calculation is in VTOL frame
+    float cos_tilt = 1.0f - 2.0f*(attitude_quaternion.q2*attitude_quaternion.q2 + attitude_quaternion.q3*attitude_quaternion.q3);
+    tilt_angle = degrees(acosf(constrain_float(cos_tilt, -1.0f, 1.0f)));
+}
