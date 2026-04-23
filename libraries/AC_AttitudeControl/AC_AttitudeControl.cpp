@@ -15,9 +15,6 @@ extern const AP_HAL::HAL& hal;
  #define AC_ATTITUDE_CONTROL_ANGLE_LIMIT_MIN     10.0   // Min lean angle so that vehicle can maintain limited control
 #endif
 
-const float MAX_TILT_ALLOWED = 45.0f; // Max tilt allowed to pass the position correction.
-// setpoint = setpoint*exp(-t/TILT_RELAX_TC) -> decay rate is defined like this.
-const float TILT_RELAX_TC = 0.4f; // Time constant used to relax the tilt limit when the vehicle is tilted above the maximum allowed angle.
 AC_AttitudeControl *AC_AttitudeControl::_singleton;
 
 // table of user settable parameters
@@ -152,6 +149,22 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @Values: 0.5:Very Soft, 0.2:Soft, 0.15:Medium, 0.1:Crisp, 0.05:Very Crisp
     // @User: Standard
     AP_GROUPINFO("INPUT_TC", 20, AC_AttitudeControl, _input_tc, AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT),
+    // @Param: RELX_TC
+    // @DisplayName: Relaxation time constant
+    // @Description: Time constant for relaxing the attitude controller
+    // @Units: s
+    // @Range: 0.01 10
+    // @Increment: 0.01
+    // @User: Standard
+    AP_GROUPINFO("RELX_TC", 21, AC_AttitudeControl, _relax_time_constant, 0.4f),
+    // @Param: RELX_ANG
+    // @DisplayName: Max tilt angle for postion controller relaxation
+    // @Description: Maximum tilt angle allowed to pass the position correction.
+    // @Units: degrees
+    // @Range: 0 90
+    // @Increment: 0.01
+    // @User: Standard
+    AP_GROUPINFO("RELX_ANG", 22, AC_AttitudeControl, _max_tilt_relax, 45.0f),
 
     AP_GROUPEND
 };
@@ -721,9 +734,9 @@ void AC_AttitudeControl::attitude_controller_run_quat()
    // Gradually relax roll/pitch setpoint toward zero when tilt exceeds limit
    Vector3f euler;
    _attitude_target.to_euler(euler.x, euler.y, euler.z);
-   const float alpha = _dt / (_dt + TILT_RELAX_TC);
+   const float alpha = _dt / (_dt + _relax_time_constant);
    // Gradually bring the setpoint towards zero
-   if (_ts_enabled && fabsf(attitude_tilt) > MAX_TILT_ALLOWED && !_ts_in_transition) {
+   if (_ts_enabled && fabsf(attitude_tilt) > _max_tilt_relax && !_ts_in_transition) {
         _relaxed_roll  *= (1.0f - alpha);
         _relaxed_pitch *= (1.0f - alpha);
         _attitude_target.from_euler(_relaxed_roll, _relaxed_pitch, euler.z);

@@ -447,6 +447,9 @@ protected:
     AP_Float            _ang_vel_pitch_max;
     AP_Float            _ang_vel_yaw_max;
 
+    AP_Float            _max_tilt_relax;
+    AP_Float            _relax_time_constant;
+
     // Maximum rotation acceleration for earth-frame roll axis
     AP_Float            _accel_roll_max;
 
