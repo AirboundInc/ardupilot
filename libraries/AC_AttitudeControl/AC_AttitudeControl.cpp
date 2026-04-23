@@ -15,6 +15,9 @@ extern const AP_HAL::HAL& hal;
  #define AC_ATTITUDE_CONTROL_ANGLE_LIMIT_MIN     10.0   // Min lean angle so that vehicle can maintain limited control
 #endif
 
+const float MAX_TILT_ALLOWED = 45.0f; // Max tilt allowed to pass the position correction.
+// setpoint = setpoint*exp(-t/TILT_RELAX_TC) -> decay rate is defined like this.
+const float TILT_RELAX_TC = 0.4f; // Time constant used to relax the tilt limit when the vehicle is tilted above the maximum allowed angle.
 AC_AttitudeControl *AC_AttitudeControl::_singleton;
 
 // table of user settable parameters
@@ -713,6 +716,32 @@ void AC_AttitudeControl::attitude_controller_run_quat()
 
     // This vector represents the angular error to rotate the thrust vector using x and y and heading using z
     Vector3f attitude_error;
+    float attitude_tilt;
+    compute_tilt_angle(attitude_tilt);
+   // Gradually relax roll/pitch setpoint toward zero when tilt exceeds limit
+   Vector3f euler;
+   _attitude_target.to_euler(euler.x, euler.y, euler.z);
+   const float alpha = _dt / (_dt + TILT_RELAX_TC);
+   // Gradually bring the setpoint towards zero
+   if (_ts_enabled && fabsf(attitude_tilt) > MAX_TILT_ALLOWED && !_ts_in_transition) {
+        _relaxed_roll  *= (1.0f - alpha);
+        _relaxed_pitch *= (1.0f - alpha);
+        _attitude_target.from_euler(_relaxed_roll, _relaxed_pitch, euler.z);
+        _ang_vel_target.x *= (1.0f - alpha);
+        _ang_vel_target.y *= (1.0f - alpha);
+    }
+    // When the attitude is relaxed, gradually recover the setpoint as the vehicle returns within limits
+    else if (fabsf(_relaxed_roll - euler.x) > FLT_EPSILON ||fabsf(_relaxed_pitch - euler.y) > FLT_EPSILON) {
+        _relaxed_roll  += (euler.x - _relaxed_roll)  * alpha;
+        _relaxed_pitch += (euler.y - _relaxed_pitch) * alpha;
+        if (fabsf(_relaxed_roll  - euler.x) < radians(0.5f)) _relaxed_roll  = euler.x;
+        if (fabsf(_relaxed_pitch - euler.y) < radians(0.5f)) _relaxed_pitch = euler.y;
+        _attitude_target.from_euler(_relaxed_roll, _relaxed_pitch, euler.z);
+    } else {
+    // Fully recovered — update the relaxed angles to original setpoint
+        _relaxed_roll  = euler.x;
+        _relaxed_pitch = euler.y;
+    }
     thrust_heading_rotation_angles(_attitude_target, attitude_body, attitude_error, _thrust_angle, _thrust_error_angle);
 
     // Compute the angular velocity corrections in the body frame from the attitude error

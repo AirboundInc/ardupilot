@@ -422,6 +422,11 @@ public:
     static constexpr Vector3f VECTORF_111{1.0f,1.0f,1.0f};
 
     void compute_tilt_angle(float &tilt_angle);
+
+   // set tailsitter enabled flag
+    void set_tailsitter_enabled(bool enabled = false) { _ts_enabled = enabled; }
+    // To check the transition state
+    void set_tailsitter_transition(bool in_transition) { _ts_in_transition = in_transition; }
 protected:
 
     // Update rate_target_ang_vel using attitude_error_rot_vec_rad
@@ -560,6 +565,11 @@ protected:
 
     static AC_AttitudeControl *_singleton;
 
+    // Relaxed pitch and roll setpoint values
+    float               _relaxed_roll = 0.0f;
+    float               _relaxed_pitch = 0.0f;
+
+
 protected:
     /*
       state of control monitoring
@@ -578,6 +588,8 @@ protected:
 
     // true in inverted flight mode
     bool _inverted_flight;
+    bool _ts_enabled = false;  // tailsitter enabled flag
+    bool _ts_in_transition = false;  // tailsitter transition flag
 
 public:
     // log a CTRL message
