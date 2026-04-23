@@ -747,8 +747,8 @@ void AC_AttitudeControl::attitude_controller_run_quat()
     else if (fabsf(_relaxed_roll - euler.x) > FLT_EPSILON ||fabsf(_relaxed_pitch - euler.y) > FLT_EPSILON) {
         _relaxed_roll  += (euler.x - _relaxed_roll)  * alpha;
         _relaxed_pitch += (euler.y - _relaxed_pitch) * alpha;
-        if (fabsf(_relaxed_roll  - euler.x) < radians(0.5f)) _relaxed_roll  = euler.x;
-        if (fabsf(_relaxed_pitch - euler.y) < radians(0.5f)) _relaxed_pitch = euler.y;
+        if (fabsf(_relaxed_roll  - euler.x) < radians(FLT_EPSILON)) _relaxed_roll  = euler.x;
+        if (fabsf(_relaxed_pitch - euler.y) < radians(FLT_EPSILON)) _relaxed_pitch = euler.y;
         _attitude_target.from_euler(_relaxed_roll, _relaxed_pitch, euler.z);
     } else {
     // Fully recovered — update the relaxed angles to original setpoint
