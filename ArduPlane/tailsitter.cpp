@@ -222,6 +222,12 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("RPM_HR", 30, Tailsitter, hover_rpm_tilt_scale, 4000.0f),
 
+    // @Param: RPM_SL
+    // @DisplayName: Hover RPM tilt scale low value
+    // @Description: This is the low value to which the pitch control effort will be scaled at a RPM higher than the hover RPM.
+    // @User: Standard
+    AP_GROUPINFO("RPM_SL", 31, Tailsitter, rpm_scale_low, 0.8f),
+
     AP_GROUPEND
 };
 
@@ -1250,7 +1256,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
     // Apply blend of default scaler and RPM based scaler, to avoid aggressive scaling when the RPM differene is too large
     scale_l = blend * scale_l + (1.0f - blend) * default_throttle_scaler;
     scale_r = blend * scale_r + (1.0f - blend) * default_throttle_scaler;
-    float tilt_angle, scale_low = 0.8f, scale_high = tilt_motor_hover_rpm*tilt_motor_hover_rpm/(2500.0f*2500.0f);
+    float tilt_angle, scale_low = rpm_scale_low, scale_high = tilt_motor_hover_rpm*tilt_motor_hover_rpm/(2500.0f*2500.0f);
     quadplane.attitude_control->compute_tilt_angle(tilt_angle);
     if(abs(tilt_angle) > SCALER_MID && abs(tilt_angle) <= SCALER_HIGH){
         // Y = MX + C format, where y -> final scaler, x = tilt angle - mid point, M = (1 - scale_low) / (SCALER_HIGH - SCALER_MID), C = scale_low

@@ -136,6 +136,7 @@ public:
     AP_Float pitch_rate_effort_hi, pitch_rate_effort_low;
     AP_Int8 rpm_based_tilt_scaling;
     AP_Float hover_rpm_tilt_scale;
+    AP_Float rpm_scale_low;
 
     AP_MotorsTailsitter* tailsitter_motors;
 
