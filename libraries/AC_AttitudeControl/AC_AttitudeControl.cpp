@@ -744,7 +744,8 @@ void AC_AttitudeControl::attitude_controller_run_quat()
         _ang_vel_target.y *= (1.0f - alpha);
     }
     // When the attitude is relaxed, gradually recover the setpoint as the vehicle returns within limits
-    else if (fabsf(_relaxed_roll - euler.x) > FLT_EPSILON ||fabsf(_relaxed_pitch - euler.y) > FLT_EPSILON) {
+    // 0.5f degree threshold is used to prevent oscillations around the limit when recovering
+    else if (fabsf(_relaxed_roll - euler.x) > radians(0.5f) ||fabsf(_relaxed_pitch - euler.y) > radians(0.5f)) {
         _relaxed_roll  += (euler.x - _relaxed_roll)  * alpha;
         _relaxed_pitch += (euler.y - _relaxed_pitch) * alpha;
         if (fabsf(_relaxed_roll  - euler.x) < radians(0.5f)) _relaxed_roll  = euler.x;
