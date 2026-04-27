@@ -190,6 +190,12 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     // @Range: 45 60
     AP_GROUPINFO("WV_MI", 26, Tailsitter, wvane_pitch_mid, 45),
 
+    // @Param: MX_PR
+    // @DisplayName: Tailsitter weathervane max pitch rate control effort
+    // @Description: Max pitch rate control effort to allow weathervane to detect gusts
+    // @Range: 0.1 0.5
+    AP_GROUPINFO("MX_PR", 27, Tailsitter, max_pitch_rate_effort, 0.2),
+
     AP_GROUPEND
 };
 
@@ -508,6 +514,15 @@ void Tailsitter::output(void)
             weathervane_gain = 0.0;
             quadplane.weathervane->reset();
         }
+
+        // also check if we're fighting a gust by checking pitch rate control effort
+        float pitch_rate_effort = motors->get_pitch()+motors->get_pitch_ff();
+
+        if (pitch_rate_effort > max_pitch_rate_effort) {
+            weathervane_gain = 0.0;
+            quadplane.weathervane->reset();
+        }
+
         quadplane.weathervane->set_gain(weathervane_gain);
     }
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
