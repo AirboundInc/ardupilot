@@ -523,22 +523,19 @@ void Tailsitter::output(void)
             quadplane.weathervane->reset();
         }
 
-        // check if we're fighting a gust by checking pitch rate control effort (P+D+FF, excluding I)
+        // check if we're fighting a gust by checking pitch rate control effort (P+D+FF, excluding I) basis thresholds
         const AP_PIDInfo &pitch_pid_info = quadplane.attitude_control->get_rate_pitch_pid().get_pid_info();
         pitch_rate_effort = fabsf(pitch_pid_info.P + pitch_pid_info.D + pitch_pid_info.FF);
 
-        if (pitch_rate_effort <= pitch_rate_effort_low) {
-            weathervane_gain = wvane_max_gain;
+        if (pitch_rate_effort >= pitch_rate_effort_hi) {
+            // pitch rate effort is more than or equal to hi threshold
+            weathervane_gain = 0.0;
+            quadplane.weathervane->reset();
         } else if (pitch_rate_effort < pitch_rate_effort_hi && pitch_rate_effort > pitch_rate_effort_low) {
             // scale from max_gain to 0 between high and low while preventing div by zero
             control_effort_gain_slope = (pitch_rate_effort - pitch_rate_effort_low) / (pitch_rate_effort_hi - pitch_rate_effort_low + FLT_EPSILON);
             weathervane_gain = (wvane_max_gain) * control_effort_gain_slope;
-        } else {
-            // pitch rate effort is more than or equal to hi threshold
-            weathervane_gain = 0.0;
-            quadplane.weathervane->reset();
         }
-
         quadplane.weathervane->set_gain(weathervane_gain);
     }
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
