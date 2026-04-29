@@ -74,6 +74,9 @@ local function update()
     local current_primary = param:get("GPS_PRIMARY")
     if current_primary == nil then return update, run_interval * 1000 end
 
+    -- Make sure both GPS instances exist
+    if gps:num_sensors() <= VTOL_GPS then return update, run_interval * 1000 end
+
     local vtol_sats = gps:num_sats(VTOL_GPS) or 0
     local vtol_vacc = gps:vertical_accuracy(VTOL_GPS) or 0
     
