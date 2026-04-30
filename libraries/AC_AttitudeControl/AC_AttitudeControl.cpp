@@ -731,32 +731,35 @@ void AC_AttitudeControl::attitude_controller_run_quat()
 
     // This vector represents the angular error to rotate the thrust vector using x and y and heading using z
     Vector3f attitude_error;
-    float attitude_tilt;
-    compute_tilt_angle(attitude_tilt);
-   // Gradually relax roll/pitch setpoint toward zero when tilt exceeds limit
-   Vector3f euler;
-   _attitude_target.to_euler(euler.x, euler.y, euler.z);
-   const float alpha = _dt / (_dt + _relax_time_constant);
-   // Gradually bring the setpoint towards zero
-   if (_ts_enabled && fabsf(attitude_tilt) > _max_tilt_relax && !_ts_in_transition) {
-        _relaxed_roll  *= (1.0f - alpha);
-        _relaxed_pitch *= (1.0f - alpha);
-        _attitude_target.from_euler(_relaxed_roll, _relaxed_pitch, euler.z);
-        _ang_vel_target.x *= (1.0f - alpha);
-        _ang_vel_target.y *= (1.0f - alpha);
-    }
-    // When the attitude is relaxed, gradually recover the setpoint as the vehicle returns within limits
-    // 0.5f degree threshold is used to prevent oscillations around the limit when recovering
-    else if (fabsf(_relaxed_roll - euler.x) > radians(0.5f) ||fabsf(_relaxed_pitch - euler.y) > radians(0.5f)) {
-        _relaxed_roll  += (euler.x - _relaxed_roll)  * alpha;
-        _relaxed_pitch += (euler.y - _relaxed_pitch) * alpha;
-        if (fabsf(_relaxed_roll  - euler.x) < radians(0.5f)) _relaxed_roll  = euler.x;
-        if (fabsf(_relaxed_pitch - euler.y) < radians(0.5f)) _relaxed_pitch = euler.y;
-        _attitude_target.from_euler(_relaxed_roll, _relaxed_pitch, euler.z);
-    } else {
-    // Fully recovered — update the relaxed angles to original setpoint
-        _relaxed_roll  = euler.x;
-        _relaxed_pitch = euler.y;
+
+    if(_ts_enabled){
+        float attitude_tilt;
+        compute_tilt_angle(attitude_tilt);
+        // Gradually relax roll/pitch setpoint toward zero when tilt exceeds limit
+        Vector3f euler;
+        _attitude_target.to_euler(euler.x, euler.y, euler.z);
+        const float alpha = _dt / (_dt + _relax_time_constant);
+        // Gradually bring the setpoint towards zero
+        if (fabsf(attitude_tilt) > _max_tilt_relax && !_ts_in_transition) {
+                _relaxed_roll  *= (1.0f - alpha);
+                _relaxed_pitch *= (1.0f - alpha);
+                _attitude_target.from_euler(_relaxed_roll, _relaxed_pitch, euler.z);
+                _ang_vel_target.x *= (1.0f - alpha);
+                _ang_vel_target.y *= (1.0f - alpha);
+            }
+            // When the attitude is relaxed, gradually recover the setpoint as the vehicle returns within limits
+            // 0.5f degree threshold is used to prevent oscillations around the limit when recovering
+            else if (fabsf(_relaxed_roll - euler.x) > radians(0.5f) ||fabsf(_relaxed_pitch - euler.y) > radians(0.5f)) {
+                _relaxed_roll  += (euler.x - _relaxed_roll)  * alpha;
+                _relaxed_pitch += (euler.y - _relaxed_pitch) * alpha;
+                if (fabsf(_relaxed_roll  - euler.x) < radians(0.5f)) _relaxed_roll  = euler.x;
+                if (fabsf(_relaxed_pitch - euler.y) < radians(0.5f)) _relaxed_pitch = euler.y;
+                _attitude_target.from_euler(_relaxed_roll, _relaxed_pitch, euler.z);
+            } else {
+            // Fully recovered — update the relaxed angles to original setpoint
+                _relaxed_roll  = euler.x;
+                _relaxed_pitch = euler.y;
+            }
     }
     thrust_heading_rotation_angles(_attitude_target, attitude_body, attitude_error, _thrust_angle, _thrust_error_angle);
 
