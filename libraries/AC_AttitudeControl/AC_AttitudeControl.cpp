@@ -162,7 +162,7 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @Param: RELX_ANG
     // @DisplayName: Max tilt angle for postion controller relaxation
     // @Description: Maximum tilt angle allowed to pass the position correction.
-    // @Units: degrees
+    // @Units: deg
     // @Range: 0 90
     // @Increment: 0.01
     // @User: Standard
