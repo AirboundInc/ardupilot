@@ -149,6 +149,7 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @Values: 0.5:Very Soft, 0.2:Soft, 0.15:Medium, 0.1:Crisp, 0.05:Very Crisp
     // @User: Standard
     AP_GROUPINFO("INPUT_TC", 20, AC_AttitudeControl, _input_tc, AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT),
+
     // @Param: RELX_TC
     // @DisplayName: Relaxation time constant
     // @Description: Time constant for relaxing the attitude controller
@@ -157,6 +158,7 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @Increment: 0.01
     // @User: Standard
     AP_GROUPINFO("RELX_TC", 21, AC_AttitudeControl, _relax_time_constant, 0.4f),
+
     // @Param: RELX_ANG
     // @DisplayName: Max tilt angle for postion controller relaxation
     // @Description: Maximum tilt angle allowed to pass the position correction.
