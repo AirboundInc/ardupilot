@@ -1,6 +1,6 @@
 -- GPS management in Q modes: disables auto switch, sets GPS[1] as primary
--- switches to GPS[0] if sats or hacc drop below a threshold
--- switches back to GPS[1] if sats and hacc rise above a threshold
+-- switches to GPS[0] if sats or vacc drop below a threshold
+-- switches back to GPS[1] if sats and vacc rise above a threshold
 
 -- Q-mode numbers
 local QMODES = {
@@ -77,7 +77,7 @@ local function update()
     -- Make sure both GPS instances exist
     if gps:num_sensors() <= VTOL_GPS then return update, run_interval * 1000 end
 
-    local vtol_sats = gps:num_sats(VTOL_GPS) or 0
+    local vtol_sats = gps:num_sats(VTOL_GPS)
     local vtol_vacc = gps:vertical_accuracy(VTOL_GPS) or 0
     
     if current_primary == VTOL_GPS then
