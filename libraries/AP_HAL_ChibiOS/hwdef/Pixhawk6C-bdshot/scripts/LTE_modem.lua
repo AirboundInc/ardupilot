@@ -1,20 +1,21 @@
 --[[
     driver for LTE modems with AT command set
     supported chipsets:
-    - SIM7600
-    - SIMCom R1951
-    - EC200
-    - EC20
-    - EC25
-    - Air780
-    - BG95
-    - EG800Q
+    - SIM7600, SIMCom R1951
+    - EC200, EC20, EC25
+    - Air780, BG95, EG800Q
 
     Unified Fast Reconnect / Advanced Diagnostics Flow:
-    1. Both Quectel and SimCom modules trigger a specialized 'fast_connect' 
-       flow leveraging CEREG, Signal Gating, and Socket ghost-busting.
-    2. Generic modules (Air780) safely bypass specific AT commands 
-       while retaining the global CIPOPEN retry timeouts and URC drop recovery.
+    1. Both Quectel and SimCom modules trigger a specialized 'fast_connect' flow.
+    2. Generic modules safely bypass specific AT commands.
+
+    Fixes applied:
+    Fix 1: Smart Watchdog. Only GCS data feeds it during CONNECTED.
+    Fix 2: Parameterized Timers. LTE_GRACE handles CEREG drops, LTE_STUCK_T handles setup timeouts.
+    Fix 3: CIPOPEN 3x failure goes to CREG (soft reconnect). 3 soft reconnects trigger hard reset.
+    Fix 4: cops_rescanning guard in step_CREG runs BEFORE handle_error.
+    Fix 5: Silenced Log Spam & replaced Loop Counters with absolute millis() tracking.
+    Fix 6: CSV Parsing respects empty commas (.-) to prevent telemetry column shifting.
 --]]
 
 local MAV_SEVERITY = {EMERGENCY=0, ALERT=1, CRITICAL=2, ERROR=3, WARNING=4, NOTICE=5, INFO=6, DEBUG=7}
@@ -46,7 +47,10 @@ local P = {
     IBAUD       = bind_add_param('IBAUD', 13, 115200),
     MCCMNC      = bind_add_param('MCCMNC', 14, -1),
     TX_RATE     = bind_add_param('TX_RATE',  20, 0),
-    BAND        = bind_add_param('BAND', 21, -1)
+    BAND        = bind_add_param('BAND', 21, -1),
+    -- NEW: Tunable Timers
+    GRACE       = bind_add_param('GRACE', 22, 3),    -- Seconds to ignore network drops
+    STUCK_T     = bind_add_param('STUCK_T', 23, 15)  -- Max seconds allowed per setup step
 }
 
 local supports_routing = networking and networking.add_route -- luacheck: ignore 143
@@ -61,9 +65,6 @@ end
 
 local OPT = { LOGALL = (1<<0), SIGNALS = (1<<1), NOMUX = (1<<2), NOSIGQUERY = (1<<3), TCP = (1<<4) }
 
---[[
-    AT command mappings unified with fast_connect and diagnostic gates
---]]
 local modem_list = {
     ["SimCom"] = { banner = 'SIMCOM', cmux = 'AT+CMUX=0\r\n', setbaud = 'AT+IPR=%u\r\n', pppopen = 'ATD*99#\r', cpin = 'AT+CPIN?\r\n', cpsi = 'AT+CPSI?\r\n', reset = 'AT+CFUN=1,1\r\n', cipmode = 'AT+CIPMODE=1\r\n', cipopen_udp = 'AT+CIPOPEN=0,"UDP","%d.%d.%d.%d",%d,6001\r\n', cipopen_tcp = 'AT+CIPOPEN=0,"TCP","%d.%d.%d.%d",%d\r\n', cipclose = 'AT+CIPCLOSE=0\r\n', cgerep = 'AT+CGEREP=1,1\r\n', netopen = 'AT+NETOPEN\r\n', mccmnc = 'AT+COPS=1,2,"%u"\r\n', setband_mask = 'AT+CNBP=,0x%x\r\n', setband_all = 'AT+CNBP=,0x480000000000000000000000000000000000000000000042000007FFFFDF3FFF\r\n', config_extra = 'ATH\r\n', fast_connect = true, sim_probe = 'AT+CICCID\r\n', csq_gate = 'AT+CPSI?\r\n', socket_state = 'AT+CIPOPEN?\r\n' },
     ["SimCom2"] = { banner = 'R1951', cmux = 'AT+CMUX=0\r\n', setbaud = 'AT+IPR=%u\r\n', pppopen = 'ATD*99#\r', cpin = 'AT+CPIN?\r\n', cpsi = 'AT+CPSI?\r\n', cipmode = 'AT+CACID=0\r\n', cipopen_tcp = 'AT+CAOPEN=0,0,"TCP","%d.%d.%d.%d",%d\r\n', cipopen_udp = 'AT+CAOPEN=0,0,"UDP","%d.%d.%d.%d",%d\r\n', cgact = 'AT+CGACT?\r\n', cgerep = 'AT+CGEREP=1,1\r\n', reset = 'AT+CFUN=1,1\r\n', netopen = "AT+CNACT=0,1\r\n", netclose = "AT+CNACT=0,0\r\n", cfun = 'AT+CFUN=1\r\n', reset_not_baudrate = true, mccmnc = 'AT+COPS=4,2,"%u"\r\n', caswitch = 'AT+CASWITCH=0,1\r\n', setband = 'AT+CBANDCFG="CAT-M",%d\r\n', setband_all = 'AT+CBANDCFG="CAT-M",1,2,3,4,5,8,12,13,14,18,19,20,25,26,27,28,66,85\r\n' },
@@ -72,7 +73,7 @@ local modem_list = {
     ["BG95"] = { banner = 'BG95', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,0x%x\r\n', setband_all = 'AT+QCFG="band",0,0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' },
     ["EG800Q"] = { banner = 'EG800Q', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,0x%x\r\n', setband_all = 'AT+QCFG="band",0,0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' },
     ["EC20"] = { banner = 'EC20C', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,%x,0\r\n', setband_all  = 'AT+QCFG="band",0,7FFFFFFFFFFFFFFF,0\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' },
-    ["EC25"] = { banner = 'EC25', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', preflight = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,%x,0\r\n',setband_all  = 'AT+QCFG="band",bff,00b0e18df,0\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' }
+    ["EC25"] = { banner = 'EC25', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', preflight = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,%x,0\r\n', setband_all = 'AT+QCFG="band",bff,00b0e18df,0\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' }
 }
 
 local default_modem = { reset = 'AT+CFUN=1,1\r\r' }
@@ -109,11 +110,30 @@ local function log_data(s, marker)
     end
 end
 
+local cs = {
+    cops_rescanning = false, cops_rescan_t = 0,
+    qcsq_tries = 0,
+    cipopen_retry = 0, cipopen_sent = false, cipopen_sent_ms = 0,
+    hard_reset_strikes = 0, 
+    last_step = nil,
+    step_timer_ms = 0, step_times = {},
+    change_baud = nil, ati_sequence = 0,
+    cereg_drop_ms = nil,
+    last_data_ms = millis(),
+    last_CSQ_ms = millis(),
+    last_CSQ_reply_ms = uint32_t(0),
+    last_parse_ms = uint32_t(0),
+    last_route_ms = uint32_t(0),
+    last_send_data_ms = uint32_t(0),
+    csq_toggle = false
+}
+
 local function uart_read()
     local s = uart:readstring(512)
     if not s then return "" end
     log_data(s, '<<<')
     stats.bytes_in = stats.bytes_in + #s
+    if #s > 0 and step ~= "CONNECTED" then cs.last_data_ms = millis() end 
     return s
 end
 
@@ -139,23 +159,7 @@ local cmux = { FLAG = 0xF9, UIH = 0xEF, SABM = 0x2F, EA = 0x01, CR_SEND = 0x02, 
 
 local last_mccmnc = nil
 local last_band = nil
-
 local lte_track = { band = nil, cid = nil }
-local cs = {
-    cops_rescanning = false, cops_rescan_t = 0,
-    qcsq_tries = 0,
-    cipopen_retry = 0, cipopen_sent = false, cipopen_sent_ms = 0,
-    step_count = 0, last_step = nil,
-    step_timer_ms = 0, step_times = {},
-    change_baud = nil, ati_sequence = 0,
-    last_data_ms = millis(),
-    last_CSQ_ms = millis(),
-    last_CSQ_reply_ms = uint32_t(0),
-    last_parse_ms = uint32_t(0),
-    last_route_ms = uint32_t(0),
-    last_send_data_ms = uint32_t(0),
-    csq_toggle = false
-}
 
 local fcs_table = {
     0x00, 0x91, 0xe3, 0x72, 0x07, 0x96, 0xe4, 0x75, 0x0e, 0x9f, 0xed, 0x7c, 0x09, 0x98, 0xea, 0x7b,
@@ -300,6 +304,8 @@ local function reset_state()
     lte_track.band = nil; lte_track.cid = nil
     cs.cops_rescanning = false; cs.cops_rescan_t = 0; cs.qcsq_tries = 0
     cs.cipopen_retry = 0; cs.cipopen_sent = false; cs.cipopen_sent_ms = 0
+    cs.hard_reset_strikes = 0 
+    cs.cereg_drop_ms = nil      
     cs.step_times = {}; cs.step_timer_ms = millis():tofloat()
 end
 
@@ -318,7 +324,7 @@ local function check_modem_banner(s)
 end
 
 -- =========================================================================
--- AT COMMAND PARSERS 
+-- AT COMMAND PARSERS
 -- =========================================================================
 
 local function check_CSQ(s)
@@ -391,7 +397,7 @@ local function check_QENG(s)
     data_str = data_str:gsub('"', '')
 
     local t = {}
-    for part in string.gmatch(data_str, "([^,\r\n]+)") do table.insert(t, part) end
+    for part in string.gmatch(data_str .. ",", "(.-),") do table.insert(t, part) end
 
     if t[2] == "LTE" or t[2] == "eMTC" then
         local is_fdd = (t[3] == "FDD")
@@ -462,10 +468,10 @@ local function step_ATI()
         found_cmux = true; gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: in CMUX mode"); log_data("{INCMUX}", '***')
         AT_send('ATI\r'); return
     end
-    if cs.ati_sequence % 3 == 2 then uart_write('+++')   
+    if cs.ati_sequence % 3 == 2 then uart_write('+++')
     elseif cs.ati_sequence % 3 == 1 and not option_enabled(OPT.NOMUX) then uart_write(cmux.encode_cmux_frame(cmux.DLC_AT, cmux.UIH, "ATI\r"))
     else uart_write('\rATI\r') end
-    
+
     if cs.ati_sequence % 10 == 5 then uart:begin(P.BAUD:get()); log_data(string.format("{BAUD=%d}", P.BAUD:get()), '***') end
     if cs.ati_sequence % 10 == 9 then uart:begin(P.IBAUD:get()); log_data(string.format("{BAUD=%d}", P.IBAUD:get()), '***') end
     cs.ati_sequence = cs.ati_sequence + 1
@@ -514,11 +520,14 @@ local function step_CPIN()
         step = "HALT"; return
     end
 
-    -- Poll CPIN initially and every 20 loops (~1 sec)
-    if cs.step_count == 1 or cs.step_count % 20 == 0 then 
+    local now_ms = millis():tofloat()
+    local time_in_step = (now_ms - cs.step_timer_ms) / 1000
+
+    if time_in_step < 0.1 or math.floor(time_in_step) % 2 == 0 then 
         AT_send('AT+CPIN?\r\n')
-    -- Fire the hardware probe once at loop 40 (~2 secs)
-    elseif cs.step_count == 40 then
+    end
+
+    if time_in_step > 2.0 then
         gcs:send_text(MAV_SEVERITY.WARNING, "LTE: SIM taking too long. Probing hardware...")
         if modem.sim_probe then AT_send(modem.sim_probe) end
     end
@@ -536,17 +545,20 @@ end
 
 local function step_CREG()
     local s = uart_read()
-    if handle_error(s) then return end
-    
+
     if cs.cops_rescanning then
         if s and (s:find('\r\nOK\r\n') or s:find('\r\nERROR\r\n')) then
+            set_MCCMNC()
             AT_send('AT+COPS=0\r\n'); cs.cops_rescanning = false
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: COPS auto-select')
         elseif cs.cops_rescan_t > 0 and millis():tofloat() - cs.cops_rescan_t > 5000 then
             cs.cops_rescanning = false
+            AT_send('AT+COPS=0\r\n')
         end
         return
     end
+
+    if handle_error(s) then return end
 
     if s then
         if cmux_enabled() and #s > 4 and not cmux.parse_cmux_frame(s) then step = "CMUX"; return end
@@ -579,7 +591,6 @@ local function step_CREG()
     AT_send(modem.fast_connect and 'AT+CEREG?\r\n' or 'AT+CREG?\r\n')
 end
 
-
 local function step_SOCKET_STATE()
     local s = uart_read()
     if s and (s:find('+QISTATE:') or s:find('+CIPOPEN:') or s:find('\r\nOK\r\n') or s:find('\nERROR\r\n')) then
@@ -606,8 +617,13 @@ local function step_CGACT()
     if modem.cfun then data_send(modem.cfun) end
 end
 
-
 local function step_CMUX()
+    if found_cmux then
+        cmux.send_sabm()
+        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CMUX mode set')
+        step = "BAUD"
+        return
+    end
     local s = uart_read()
     if s then
         if s:find("CME ERROR") then AT_send('AT+CFUN=1\r\n')
@@ -618,7 +634,6 @@ local function step_CMUX()
     end
     uart_write(modem.cmux)
 end
-
 
 local function step_PPPOPEN()
     local s = uart_read()
@@ -655,9 +670,8 @@ local function step_SIGNAL_GATE()
 
     if rsrp then
         gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE RSRP=%d dBm', rsrp))
-        if rsrp >= -100 then
+        if rsrp >= -110 then
             cs.qcsq_tries = 0
-            -- FIX: Route to proper protocol setup before hitting sockets
             if P.PROTOCOL:get() == PPP then
                 step = modem.cgact and "CGACT" or "PPPOPEN"
             elseif modem.cipmode then step = "CIPMODE"
@@ -667,7 +681,7 @@ local function step_SIGNAL_GATE()
             cs.qcsq_tries = cs.qcsq_tries + 1
             if cs.qcsq_tries <= 3 then
                 gcs:send_text(MAV_SEVERITY.WARNING, string.format('LTE weak RSRP=%d re-scan %d/3', rsrp, cs.qcsq_tries))
-                AT_send('AT+COPS=2\r\n'); AT_send('AT+COPS=0\r\n'); step = "CREG"
+                step = "CREG"
             else
                 cs.qcsq_tries = 0
                 gcs:send_text(MAV_SEVERITY.WARNING, 'LTE weak signal — connecting anyway')
@@ -679,7 +693,7 @@ local function step_SIGNAL_GATE()
         return
     end
     if modem.csq_gate then AT_send(modem.csq_gate)
-    else 
+    else
         if modem.cipmode then step = "CIPMODE"
         elseif modem.preflight then step = "QENG"
         else step = "SOCKET_STATE" end
@@ -695,12 +709,11 @@ local function step_CIPMODE()
 end
 
 local function step_NETOPEN()
-    -- FIX: After NETOPEN succeeds, route to the fast connect socket checks
-    if not modem.netopen then 
+    if not modem.netopen then
         if modem.preflight then step = "QENG"
         elseif modem.fast_connect then step = "SOCKET_STATE"
         else step = "CIPOPEN" end
-        return 
+        return
     end
     local s = uart_read()
     if s:find("AT+CNACT=0,1") and s:find("ERROR") and modem.netclose then data_send(modem.netclose); return end
@@ -717,13 +730,14 @@ end
 
 local function step_CIPOPEN()
     local s = uart_read()
-    
+
     if s then
         if s == "" and modem.cipclose and not modem.fast_connect then AT_send(modem.cipclose) end
         if s:find('+CAOPEN: 0,0') and s:find('OK\r\n') and modem.caswitch then data_send(modem.caswitch); return end
         if s:find('CONNECT') or s:find('+QIOPEN: 0,0') or s:find('+CIPOPEN: 0,0') or (s:find('+CAOPEN: 0,0') and s:find('OK\r\n')) then
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: connected')
             cs.cipopen_sent = false; cs.cipopen_retry = 0
+            cs.hard_reset_strikes = 0 
             reset_buffers(); step = "CONNECTED"; return
         end
     end
@@ -736,20 +750,26 @@ local function step_CIPOPEN()
             cs.cipopen_retry = cs.cipopen_retry + 1; cs.cipopen_sent = false
             if cs.cipopen_retry <= 3 then
                 gcs:send_text(MAV_SEVERITY.WARNING, string.format('LTE CIPOPEN timeout/error retry %d/3', cs.cipopen_retry))
-                -- FIX: Route to the CIPCLOSE step so it waits for the cleanup to finish before retrying
-                if modem.cipclose then step = "CIPCLOSE" end 
+                if modem.cipclose then step = "CIPCLOSE" end
             else
-                gcs:send_text(MAV_SEVERITY.ERROR, 'LTE CIPOPEN failed 3x — reset')
-                cs.cipopen_retry = 0; reset_to_ATI()
+                cs.hard_reset_strikes = cs.hard_reset_strikes + 1
+                if cs.hard_reset_strikes >= 3 then
+                    gcs:send_text(MAV_SEVERITY.ERROR, 'LTE CIPOPEN completely dead — HARD RESET')
+                    cs.hard_reset_strikes = 0
+                    reset_to_ATI()
+                else
+                    gcs:send_text(MAV_SEVERITY.ERROR, 'LTE CIPOPEN failed 3x — soft reset to CREG')
+                    cs.cipopen_retry = 0; step = "CREG"
+                end
             end
         end
         return
     end
-    
-    if is_error then return end 
+
+    if is_error then return end
 
     if P.SERVER_PORT:get() <= 0 then gcs:send_text(MAV_SEVERITY.ERROR, "Must set LTE_SERVER_PORT"); return end
-    
+
     local cipopen = option_enabled(OPT.TCP) and modem.cipopen_tcp or modem.cipopen_udp
     data_send(string.format(cipopen, P.SERVER_IP0:get(), P.SERVER_IP1:get(), P.SERVER_IP2:get(), P.SERVER_IP3:get(), P.SERVER_PORT:get()))
     cs.cipopen_sent = true; cs.cipopen_sent_ms = millis():tofloat()
@@ -759,17 +779,12 @@ local function step_CONNECTED()
     local s = uart:readstring(512) or ""
     stats.bytes_in = stats.bytes_in + #s
     if option_enabled(OPT.LOGALL) then log_data(s, '<<<') end
-    
+
     if s and s:find('\r\nCLOSED\r\n') then
         gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: connection closed, reconnecting')
         cs.cipopen_sent = false; step = "CIPOPEN"; return
     end
-    if s and (s:find('+CEREG: 0') or s:find('+CREG: 0,0') or s:find('+CREG: 0,2')) then
-        gcs:send_text(MAV_SEVERITY.WARNING, 'LTE: network lost — fast reconnect')
-        cs.cipopen_sent = false
-        if modem.cipclose then AT_send(modem.cipclose) end
-        step = "CREG"; return
-    end
+
     if s and s:find('PPPD: DISCONNECTED\r\n') then
         gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: PPP closed, reconnecting')
         step = "PPPOPEN"; return
@@ -779,20 +794,55 @@ local function step_CONNECTED()
     if s and #s > 0 then
         if not cmux_enabled() then
             buf.fc = buf.fc .. s; cs.last_data_ms = now_ms
+
+            if s:find('+CEREG: 0') or s:find('+CEREG: 2') or s:find('+CREG: 0,0') or s:find('+CREG: 0,2') then
+                if not cs.cereg_drop_ms then
+                    cs.cereg_drop_ms = now_ms
+                    gcs:send_text(MAV_SEVERITY.WARNING, string.format('LTE: CEREG lost — %ds grace', P.GRACE:get()))
+                end
+            elseif s:find('+CEREG: 1') or s:find('+CEREG: 5') or s:find('+CREG: 0,1') or s:find('+CREG: 0,5') then
+                cs.cereg_drop_ms = nil
+            end
         else
             buf.parse = buf.parse .. s
             buf.parse = cmux.feed_uart_in(buf.parse)
             if now_ms - cs.last_parse_ms > 1000 then buf.parse = "" end
+
             if #cmux.buffers[cmux.DLC_AT] > 0 then
-                cs.last_parse_ms = now_ms; handle_AT_reply(cmux.buffers[cmux.DLC_AT]); cmux.buffers[cmux.DLC_AT] = ""
+                local at_text = cmux.buffers[cmux.DLC_AT]
+                cmux.buffers[cmux.DLC_AT] = ""
+                cs.last_parse_ms = now_ms
+
+                if at_text:find('+CEREG: 0') or at_text:find('+CEREG: 2') or
+                   at_text:find('+CREG: 0,0') or at_text:find('+CREG: 0,2') then
+                    if not cs.cereg_drop_ms then
+                        cs.cereg_drop_ms = now_ms
+                        gcs:send_text(MAV_SEVERITY.WARNING, string.format('LTE: CEREG lost — %ds grace', P.GRACE:get()))
+                    end
+                elseif at_text:find('+CEREG: 1') or at_text:find('+CEREG: 5') or
+                       at_text:find('+CREG: 0,1') or at_text:find('+CREG: 0,5') then
+                    cs.cereg_drop_ms = nil  
+                end
+
+                handle_AT_reply(at_text)
             end
+
             if #cmux.buffers[cmux.DLC_DATA] > 0 then
                 cs.last_data_ms = now_ms; cs.last_parse_ms = now_ms
                 buf.fc = buf.fc .. cmux.buffers[cmux.DLC_DATA]; cmux.buffers[cmux.DLC_DATA] = ""
             end
         end
     elseif P.TIMEOUT:get() > 0 and now_ms - cs.last_data_ms > uint32_t(P.TIMEOUT:get() * 1000) then
-        gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: timeout'); reset_to_ATI(); return
+        gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: data timeout'); reset_to_ATI(); return
+    end
+
+    local grace_ms = P.GRACE:get() * 1000
+    if cs.cereg_drop_ms and (now_ms - cs.cereg_drop_ms > grace_ms) then
+        gcs:send_text(MAV_SEVERITY.WARNING, 'LTE: network lost — fast reconnect')
+        cs.cereg_drop_ms = nil; cs.cipopen_sent = false
+        cs.hard_reset_strikes = 0 
+        if modem.cipclose then AT_send(modem.cipclose) end
+        step = "CREG"; return
     end
 
     s = ser_device:readstring(512)
@@ -846,13 +896,16 @@ local function step_CONNECTED()
         if dest ~= uint32_t(0) then networking:add_route(0, 1, dest, math.floor(P_ROUTE.MASK:get())) end -- luacheck: ignore 143
     end
 end
+
 local function run_step()
     if cs.change_baud then uart:begin(cs.change_baud); cs.change_baud = nil end
     local step_changed = (cs.last_step ~= step)
+    local now_ms = millis()
 
     if step_changed then
-        if cs.last_step and cs.last_step ~= "ATI" then table.insert(cs.step_times, {name=cs.last_step, ms=math.floor(millis():tofloat()-cs.step_timer_ms)}) end
-        cs.step_timer_ms = millis():tofloat()
+        gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE_modem: step %s', step))
+        if cs.last_step and cs.last_step ~= "ATI" then table.insert(cs.step_times, {name=cs.last_step, ms=math.floor(now_ms:tofloat()-cs.step_timer_ms)}) end
+        cs.step_timer_ms = now_ms:tofloat()
         if step == "CONNECTED" and #cs.step_times > 0 then
             local parts, total = {}, 0
             for _, t in ipairs(cs.step_times) do table.insert(parts, t.name..':'..t.ms..'ms'); total = total + t.ms end
@@ -862,27 +915,27 @@ local function run_step()
     end
     cs.last_step = step
 
-    if step == "CONNECTED" then step_CONNECTED(); cs.step_count = 0; return 5 end
+    if step == "CONNECTED" then step_CONNECTED(); return 5 end
 
-    if not step_changed then
-        cs.step_count = cs.step_count + 1
-        -- Standard 2.5s stuck guard
-        if cs.step_count > 50 and step ~= "ATI" and step ~= "CPIN" and step ~= "CREG" then 
-            gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: step reset")
-            reset_to_ATI(); return 1000 
-        end
-        -- Extended failsafe for CPIN and CREG (Network scanning takes time)
-        if cs.step_count > 600 and (step == "CPIN" or step == "CREG") then
-            gcs:send_text(MAV_SEVERITY.WARNING, "LTE: " .. step .. " stuck, resetting modem")
+    -- NEW: Dynamic Stuck Guard based on LTE_STUCK parameter
+    local time_in_step = (now_ms:tofloat() - cs.step_timer_ms) / 1000
+    if not step_changed and step ~= "ATI" and step ~= "CPIN" and step ~= "CREG" then
+        if time_in_step > P.STUCK_T:get() then
+            gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE: %s timeout after %ds", step, P.STUCK_T:get()))
             reset_to_ATI(); return 1000
         end
-    else
-        cs.step_count = 0
     end
 
-    if step == "HALT" then return 5000 end 
+    -- Deep Search patience for CREG (3x the normal step time, or at least 30s)
+    if not step_changed and (step == "CPIN" or step == "CREG") then
+        local creg_patience = math.max(30, P.STUCK_T:get() * 3)
+        if time_in_step > creg_patience then
+            gcs:send_text(MAV_SEVERITY.CRITICAL, "LTE: " .. step .. " search failed, hard reset")
+            reset_to_ATI(); return 1000
+        end
+    end
 
-    gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE_modem: step %s', step))
+    if step == "HALT" then return 5000 end
 
     if step == "ATI" then step_ATI(); return 1100 end
     if step == "BAUD" then step_BAUD(); return 50 end
