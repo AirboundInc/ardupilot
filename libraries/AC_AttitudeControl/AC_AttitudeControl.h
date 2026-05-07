@@ -428,6 +428,9 @@ public:
     
     // To check the transition state
     void set_tailsitter_transition(bool in_transition) { _ts_in_transition = in_transition; }
+
+    // To check the back transition complete state
+    void set_tailsitter_back_transition_done(bool back_transition_done) { _ts_back_transition_done = back_transition_done; }
 protected:
 
     // Update rate_target_ang_vel using attitude_error_rot_vec_rad
@@ -594,6 +597,7 @@ protected:
     bool _inverted_flight;
     bool _ts_enabled = false;  // tailsitter enabled flag
     bool _ts_in_transition = false;  // tailsitter transition flag
+    bool _ts_back_transition_done = false;  // tailsitter back transition done flag
 
 public:
     // log a CTRL message
