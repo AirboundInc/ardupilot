@@ -548,9 +548,11 @@ local function step_CREG()
 
     if cs.cops_rescanning then
         if s and (s:find('\r\nOK\r\n') or s:find('\r\nERROR\r\n')) then
-            set_MCCMNC()
-            AT_send('AT+COPS=0\r\n'); cs.cops_rescanning = false
-            gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: COPS auto-select')
+            local mccmnc = math.floor(P.MCCMNC:get())
+            if mccmnc > 0 then set_MCCMNC()
+            else AT_send('AT+COPS=0\r\n') end
+            cs.cops_rescanning = false
+            gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: COPS re-select')
         elseif cs.cops_rescan_t > 0 and millis():tofloat() - cs.cops_rescan_t > 5000 then
             cs.cops_rescanning = false
             AT_send('AT+COPS=0\r\n')
