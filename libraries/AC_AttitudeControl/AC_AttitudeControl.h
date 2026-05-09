@@ -454,6 +454,9 @@ protected:
     AP_Float            _max_tilt_relax;
     AP_Float            _relax_time_constant;
 
+    // Enable/Disable attitude relaxation
+    AP_Int8             _att_relax_enabled;
+
     // Maximum rotation acceleration for earth-frame roll axis
     AP_Float            _accel_roll_max;
 

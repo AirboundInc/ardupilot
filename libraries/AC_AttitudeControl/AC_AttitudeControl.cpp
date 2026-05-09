@@ -160,13 +160,20 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     AP_GROUPINFO("RELX_TC", 21, AC_AttitudeControl, _relax_time_constant, 0.4f),
 
     // @Param: RELX_ANG
-    // @DisplayName: Max tilt angle for postion controller relaxation
+    // @DisplayName: Max tilt angle for position controller relaxation
     // @Description: Maximum tilt angle allowed to pass the position correction.
     // @Units: deg
     // @Range: 0 90
     // @Increment: 0.01
     // @User: Standard
     AP_GROUPINFO("RELX_ANG", 22, AC_AttitudeControl, _max_tilt_relax, 45.0f),
+
+    // @Param: RELX_EN
+    // @DisplayName: Position control relaxation enable
+    // @Description: Enable/disable flag for postion controller relaxation
+    // @Values: 0:Disabled, 1:Enabled
+    // @User: Advanced
+    AP_GROUPINFO("RELX_EN", 23, AC_AttitudeControl, _att_relax_enabled, 0),
 
     AP_GROUPEND
 };
@@ -732,7 +739,7 @@ void AC_AttitudeControl::attitude_controller_run_quat()
     // This vector represents the angular error to rotate the thrust vector using x and y and heading using z
     Vector3f attitude_error;
 
-    if(_ts_enabled){
+    if(_ts_enabled && _att_relax_enabled){
         float attitude_tilt;
         compute_tilt_angle(attitude_tilt);
         // Gradually relax roll/pitch setpoint toward zero when tilt exceeds limit
