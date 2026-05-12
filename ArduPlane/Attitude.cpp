@@ -210,8 +210,17 @@ float Plane::stabilize_pitch_get_pitch_out()
 #endif
 
     const int32_t pitch_trim_cd = int32_t(g.pitch_trim * 100.0);
-    // Floor applies only in level/cruise (nav_pitch >= 0 but below trim). Descent commands (nav_pitch < 0) pass through unchanged.
-    const int32_t base_pitch = (nav_pitch_cd >= 0 && nav_pitch_cd < pitch_trim_cd) ? pitch_trim_cd : nav_pitch_cd;
+    // Smooth blend: trim acts as a soft floor with no hard switching or discontinuities.
+    // nav in [0, +trim]  -> base = trim (floor holds at cruise pitch).
+    // nav in [-trim, 0]  -> smooth taper from trim down toward nav.
+    // nav outside +-trim -> base = nav directly (climb or real descent fully honored).
+    int32_t base_pitch;
+    if (nav_pitch_cd >= pitch_trim_cd || nav_pitch_cd <= -pitch_trim_cd) {
+        base_pitch = nav_pitch_cd;
+    } else {
+        const float trim_factor = 1.0f - fabsf((float)nav_pitch_cd / (float)pitch_trim_cd);
+        base_pitch = nav_pitch_cd + int32_t(trim_factor * (float)pitch_trim_cd);
+    }
     int32_t demanded_pitch = base_pitch + SRV_Channels::get_output_scaled(SRV_Channel::k_throttle) * g.kff_throttle_to_pitch;
     bool disable_integrator = false;
     if (control_mode == &mode_stabilize && channel_pitch->get_control_in() != 0) {
