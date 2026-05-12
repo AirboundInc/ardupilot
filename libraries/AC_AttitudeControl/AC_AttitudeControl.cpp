@@ -739,7 +739,7 @@ void AC_AttitudeControl::attitude_controller_run_quat()
     // This vector represents the angular error to rotate the thrust vector using x and y and heading using z
     Vector3f attitude_error;
     static float relaxation_factor_lpf = 0.0f;
-    float alpha_relax = 0.98f;
+    float alpha_relax = 0.8f;
     static bool _att_relax_active = false;
     if(_ts_enabled && _att_relax_enabled && !_ts_in_transition){
         // Linearly relax pitch setpoint toward zero based euler pitch angle.
