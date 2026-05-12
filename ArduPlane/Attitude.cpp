@@ -209,7 +209,10 @@ float Plane::stabilize_pitch_get_pitch_out()
     const bool quadplane_in_transition = false;
 #endif
 
-    int32_t demanded_pitch = nav_pitch_cd + int32_t(g.pitch_trim * 100.0) + SRV_Channels::get_output_scaled(SRV_Channel::k_throttle) * g.kff_throttle_to_pitch;
+    const int32_t pitch_trim_cd = int32_t(g.pitch_trim * 100.0);
+    // Floor applies only in level/cruise (nav_pitch >= 0 but below trim). Descent commands (nav_pitch < 0) pass through unchanged.
+    const int32_t base_pitch = (nav_pitch_cd >= 0 && nav_pitch_cd < pitch_trim_cd) ? pitch_trim_cd : nav_pitch_cd;
+    int32_t demanded_pitch = base_pitch + SRV_Channels::get_output_scaled(SRV_Channel::k_throttle) * g.kff_throttle_to_pitch;
     bool disable_integrator = false;
     if (control_mode == &mode_stabilize && channel_pitch->get_control_in() != 0) {
         disable_integrator = true;
