@@ -305,6 +305,7 @@ local function reset_state()
     cs.cops_rescanning = false; cs.cops_rescan_t = 0; cs.qcsq_tries = 0
     cs.cipopen_retry = 0; cs.cipopen_sent = false; cs.cipopen_sent_ms = 0
     cs.hard_reset_strikes = 0 
+    cs.sim_probe_count = 0
     cs.cereg_drop_ms = nil      
     cs.step_times = {}; cs.step_timer_ms = millis():tofloat()
 end
@@ -514,7 +515,14 @@ local function step_CPIN()
     local s = uart_read()
     if s and s:find("READY") then step = "CONFIG"; return end
     if s and (s:find("%+QCCID:") or s:find("%+ICCID:")) then
-        gcs:send_text(MAV_SEVERITY.WARNING, "LTE: SIM hardware OK but unready (Locked/Unprovisioned?)")
+        cs.sim_probe_count = (cs.sim_probe_count or 0) + 1
+        gcs:send_text(MAV_SEVERITY.WARNING, string.format(
+            "LTE: SIM hardware OK but unready (%d/3)", cs.sim_probe_count))
+        if cs.sim_probe_count >= 3 then
+            gcs:send_text(MAV_SEVERITY.CRITICAL,
+                "LTE FATAL: SIM unresponsive after 3 probes. Halting.")
+            step = "HALT"; return
+        end
     elseif s and (s:find("ERROR: 10") or s:find("NOT INSERTED") or s:find("SIM not inserted")) then
         gcs:send_text(MAV_SEVERITY.CRITICAL, "LTE FATAL: SIM CARD MISSING! Halting sequence.")
         step = "HALT"; return
@@ -921,7 +929,7 @@ local function run_step()
 
     -- NEW: Dynamic Stuck Guard based on LTE_STUCK parameter
     local time_in_step = (now_ms:tofloat() - cs.step_timer_ms) / 1000
-    if not step_changed and step ~= "ATI" and step ~= "CPIN" and step ~= "CREG" then
+    if not step_changed and step ~= "ATI" and step ~= "CPIN" and step ~= "CREG" and step ~= "HALT" then
         if time_in_step > P.STUCK_T:get() then
             gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE: %s timeout after %ds", step, P.STUCK_T:get()))
             reset_to_ATI(); return 1000
@@ -937,8 +945,13 @@ local function run_step()
         end
     end
 
-    if step == "HALT" then return 5000 end
-
+    if step == "HALT" then
+        local time_in_halt = (now_ms:tofloat() - cs.step_timer_ms) / 1000
+        if math.floor(time_in_halt) % 15 == 0 then
+            gcs:send_text(MAV_SEVERITY.CRITICAL, "LTE HALTED: SIM unresponsive. Power cycle modem.")
+        end
+        return 5000
+    end
     if step == "ATI" then step_ATI(); return 1100 end
     if step == "BAUD" then step_BAUD(); return 50 end
     if step == "CREG" then step_CREG(); return 50 end
