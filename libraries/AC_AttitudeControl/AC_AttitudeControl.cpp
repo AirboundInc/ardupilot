@@ -150,9 +150,9 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("INPUT_TC", 20, AC_AttitudeControl, _input_tc, AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT),
 
-    // @Param: RELX_TC
-    // @DisplayName: Relaxation time constant
-    // @Description: Time constant for relaxing the attitude controller
+    // @Param: RELX_LO
+    // @DisplayName: Relaxation low value
+    // @Description: Hysteresis band value
     // @Units: s
     // @Range: 0.01 10
     // @Increment: 0.01
@@ -170,10 +170,19 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
 
     // @Param: RELX_EN
     // @DisplayName: Position control relaxation enable
-    // @Description: Enable/disable flag for postion controller relaxation
+    // @Description: Enable/disable flag for position controller relaxation
     // @Values: 0:Disabled, 1:Enabled
-    // @User: Advanced
+    // @User: Advancedq
     AP_GROUPINFO("RELX_EN", 23, AC_AttitudeControl, _att_relax_enabled, 0),
+
+    // @Param: RELX_TC
+    // @DisplayName: Relaxation time constant
+    // @Description: Time constant for the low pass filter on the relaxation factor
+    // @Units: s
+    // @Range: 0.01 10
+    // @Increment: 0.01
+    // @User: Advanced
+    AP_GROUPINFO("RELX_TC", 24, AC_AttitudeControl, _tc_tilt_relax, 1.0f),
 
     AP_GROUPEND
 };
@@ -739,7 +748,7 @@ void AC_AttitudeControl::attitude_controller_run_quat()
     // This vector represents the angular error to rotate the thrust vector using x and y and heading using z
     Vector3f attitude_error;
     static float relaxation_factor_lpf = 0.0f;
-    float alpha_relax = _dt / (_dt + 1.5f); 
+    float alpha_relax = _dt / (_dt + _tc_tilt_relax);
     static bool _att_relax_active = false;
     if(_ts_enabled && _att_relax_enabled && !_ts_in_transition){
         // Linearly relax pitch setpoint toward zero based euler pitch angle.
