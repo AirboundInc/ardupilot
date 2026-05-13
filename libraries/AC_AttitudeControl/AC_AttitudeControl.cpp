@@ -739,7 +739,7 @@ void AC_AttitudeControl::attitude_controller_run_quat()
     // This vector represents the angular error to rotate the thrust vector using x and y and heading using z
     Vector3f attitude_error;
     static float relaxation_factor_lpf = 0.0f;
-    float alpha_relax = 0.8f;
+    float alpha_relax = _dt / (_dt + 1.5f); 
     static bool _att_relax_active = false;
     if(_ts_enabled && _att_relax_enabled && !_ts_in_transition){
         // Linearly relax pitch setpoint toward zero based euler pitch angle.
@@ -752,15 +752,19 @@ void AC_AttitudeControl::attitude_controller_run_quat()
         } else if (pitch_tilt < _low_tilt_relax) {
             _att_relax_active = false;
         }
+        //During relaxation pitch setpoint is relaxed towards zero.
         if(_att_relax_active){
             float relax_factor = (pitch_tilt - _low_tilt_relax) / (_high_tilt_relax - _low_tilt_relax);
             relax_factor = constrain_float(relax_factor, 0.0f, 1.0f);
-            relaxation_factor_lpf = relaxation_factor_lpf*alpha_relax + relax_factor*(1.0f - alpha_relax);
-            relaxation_factor_lpf = constrain_float(relaxation_factor_lpf, 0.0f, 1.0f);
-            euler_sp.y *= (1.0f - relaxation_factor_lpf);
-            _ang_vel_target.y *= (1.0f - relaxation_factor_lpf);
-            _attitude_target.from_euler(euler_sp.x, euler_sp.y, euler_sp.z);
+            relaxation_factor_lpf += alpha_relax * (relax_factor - relaxation_factor_lpf);
         }
+        else {
+            relaxation_factor_lpf += alpha_relax * (0.0f - relaxation_factor_lpf);
+        }
+        relaxation_factor_lpf = constrain_float(relaxation_factor_lpf, 0.0f, 1.0f);
+        euler_sp.y *= (1.0f - relaxation_factor_lpf);
+        _ang_vel_target.y *= (1.0f - relaxation_factor_lpf);
+        _attitude_target.from_euler(euler_sp.x, euler_sp.y, euler_sp.z);
     }
     thrust_heading_rotation_angles(_attitude_target, attitude_body, attitude_error, _thrust_angle, _thrust_error_angle);
 
