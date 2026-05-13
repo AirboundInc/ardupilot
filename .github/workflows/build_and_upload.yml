@@ -200,7 +200,7 @@ jobs:
       - name: Upload to Google Drive
         env:
           GDRIVE_SA_KEY: ${{ secrets.GDRIVE_SA_KEY }}
-          GDRIVE_RC_FOLDER_ID: ${{ secrets.GDRIVE_FIRMWARE_FOLDER_ID }}
+          GDRIVE_RC_FOLDER_ID: ${{ secrets.GDRIVE_RC_FOLDER_ID }}
           GDRIVE_RELEASE_FOLDER_ID: ${{ secrets.GDRIVE_RELEASE_FOLDER_ID }}
           FW_VERSION: ${{ steps.version.outputs.version }}
           FW_TAG: ${{ steps.version.outputs.tag }}
