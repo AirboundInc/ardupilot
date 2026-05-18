@@ -151,11 +151,11 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     AP_GROUPINFO("INPUT_TC", 20, AC_AttitudeControl, _input_tc, AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT),
 
     // @Param: RELX_LO
-    // @DisplayName: Relaxation low value
-    // @Description: Hysteresis band value
-    // @Units: s
-    // @Range: 0.01 10
-    // @Increment: 0.01
+    // @DisplayName: Relaxation low threshold angle
+    // @Description: Pitch angle (degrees) below which the hysteresis deactivates attitude relaxation
+    // @Units: deg
+    // @Range: 0 90
+    // @Increment: 0.1
     // @User: Standard
     AP_GROUPINFO("RELX_LO", 21, AC_AttitudeControl, _low_tilt_relax, 30.0f),
 
