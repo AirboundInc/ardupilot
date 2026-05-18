@@ -172,7 +172,7 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @DisplayName: Position control relaxation enable
     // @Description: Enable/disable flag for position controller relaxation
     // @Values: 0:Disabled, 1:Enabled
-    // @User: Advancedq
+    // @User: Advanced
     AP_GROUPINFO("RELX_EN", 23, AC_AttitudeControl, _att_relax_enabled, 0),
 
     // @Param: RELX_TC
