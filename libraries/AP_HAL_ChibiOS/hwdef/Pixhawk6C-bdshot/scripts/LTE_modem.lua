@@ -3,6 +3,8 @@
     supported chipsets:
     - SIM7600
     - EC200
+    - EC20
+    - EC25
     - Air780
 --]]
 
@@ -324,6 +326,36 @@ local EG800Q = { banner = 'EG800Q',
                  setband_mask = 'AT+QCFG="band",0,0x%x\r\n',
                  setband_all = 'AT+QCFG="band",0,0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\r\n',
                 }
+-- EC20: uses AT+QENG="servingcell" for cell info (active data session safe)
+local EC20 = { banner = 'EC20',
+                 cmux = 'AT+CMUX=0\r\n',
+                 pppopen = 'ATD*99#\r',
+                 cpsi = 'AT+QENG="servingcell"\r\n',
+                 cipmode = nil,
+                 cpin = 'AT+CPIN?\r\n',
+                 reset = 'AT+CFUN=1,1\r\n',
+                 cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n',
+                 cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n',
+                 cipclose = 'AT+QICLOSE=0\r\n',
+                 mccmnc = 'AT+COPS=4,2,"%u"\r\n',
+                 setband_mask = 'AT+QCFG="band",0,0x%x\r\n',
+                 setband_all = 'AT+QCFG="band",0,0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\r\n',
+                }
+-- EC25: uses AT+CPSI? for cell info (AT+QENG silently returns nothing during data sessions)
+local EC25 = { banner = 'EC25',
+                 cmux = 'AT+CMUX=0\r\n',
+                 pppopen = 'ATD*99#\r',
+                 cpsi = 'AT+CPSI?\r\n',
+                 cipmode = nil,
+                 cpin = 'AT+CPIN?\r\n',
+                 reset = 'AT+CFUN=1,1\r\n',
+                 cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n',
+                 cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n',
+                 cipclose = 'AT+QICLOSE=0\r\n',
+                 mccmnc = 'AT+COPS=4,2,"%u"\r\n',
+                 setband_mask = 'AT+QCFG="band",0,0x%x\r\n',
+                 setband_all = 'AT+QCFG="band",0,0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\r\n',
+                }
 
 local default_modem = { reset = 'AT+CFUN=1,1\r\r' }
 
@@ -332,6 +364,8 @@ local modem_list = {
     ["SimCom2"] = SimCom2,
     ["Air780"] = Air780,
     ["EC200"] = EC200,
+    ["EC20"] = EC20,
+    ["EC25"] = EC25,
     ["BG95"] = BG95,
     ["EG800Q"] = EG800Q,
 }
@@ -365,6 +399,10 @@ end
 local step = "ATI"
 
 local stats = { bytes_in = 0, bytes_out = 0 }
+
+-- State machine timing variables
+local step_times = {}
+local step_timer_ms = millis():tofloat()
 
 uart:begin(LTE_IBAUD:get())
 
@@ -423,20 +461,18 @@ local function uart_write(s)
     return #s
 end
 
--- Constants for GSM 07.10 CMUX framing
-local FLAG = 0xF9
-local UIH = 0xEF
-local SABM = 0x2F
---local UA = 0x63
-local EA = 0x01
-local CR_SEND = 0x02
-
+-- DLC channel indices
 local DLC_AT = 1
 local DLC_DATA = 2
 
--- CMUX buffer state
+-- CMUX buffer state + GSM 07.10 framing constants
 local cmux = {}
-cmux.buffers = {[DLC_AT] = "", [DLC_DATA] = ""} -- DLC1=AT, DLC2=DATA(PPP or TCP)
+cmux.buffers  = {[DLC_AT] = "", [DLC_DATA] = ""} -- DLC1=AT, DLC2=DATA(PPP or TCP)
+cmux.FLAG     = 0xF9
+cmux.UIH      = 0xEF
+cmux.SABM     = 0x2F
+cmux.EA       = 0x01
+cmux.CR_SEND  = 0x02
 
 local last_mccmnc = nil
 local last_band = nil
@@ -498,13 +534,13 @@ end
 
 -- Construct a CMUX frame for a given DLC, data type and data
 function cmux.encode_cmux_frame(dlc, dtype, data)
-    local addr = string.char((dlc << 2) | EA | CR_SEND)
+    local addr = string.char((dlc << 2) | cmux.EA | cmux.CR_SEND)
     local ctrl = string.char(dtype | 0x10)
     local len = #data
-    local len_byte = string.char((len << 1) | EA)
+    local len_byte = string.char((len << 1) | cmux.EA)
     local header = addr .. ctrl .. len_byte
     local fcs = string.char(fcs_calc(header))
-    return string.char(FLAG) .. header .. data .. fcs .. string.char(FLAG)
+    return string.char(cmux.FLAG) .. header .. data .. fcs .. string.char(cmux.FLAG)
 end
 
 local found_cmux = false
@@ -525,7 +561,7 @@ end
 local function AT_send(atcmd)
     local s
     if cmux_enabled() then
-        s = cmux.encode_cmux_frame(DLC_AT, UIH, atcmd)
+        s = cmux.encode_cmux_frame(DLC_AT, cmux.UIH, atcmd)
     else
         s = atcmd
     end
@@ -567,9 +603,9 @@ end
 
 -- Send SABM (Set Asynchronous Balanced Mode) for all DLCs
 function cmux.send_sabm()
-    uart_write(cmux.encode_cmux_frame(0, SABM, ""))
-    uart_write(cmux.encode_cmux_frame(1, SABM, ""))
-    uart_write(cmux.encode_cmux_frame(2, SABM, ""))
+    uart_write(cmux.encode_cmux_frame(0, cmux.SABM, ""))
+    uart_write(cmux.encode_cmux_frame(1, cmux.SABM, ""))
+    uart_write(cmux.encode_cmux_frame(2, cmux.SABM, ""))
 end
 
 --[[
@@ -577,7 +613,7 @@ end
  Returns: DLC number, extracted payload, and remaining buffer (or nils on failure)
 --]]
 function cmux.parse_cmux_frame(buf)
-    local start_idx = buf:find(string.char(FLAG))
+    local start_idx = buf:find(string.char(cmux.FLAG))
     if not start_idx then
         --gcs:send_text(MAV_SEVERITY.INFO, "no start idx")
         log_data("NOSTART:" .. buf, "{XXX}")
@@ -587,13 +623,13 @@ function cmux.parse_cmux_frame(buf)
         return nil, nil, nil, "short"
     end
     local len_byte = buf:byte(4)
-    if (len_byte & EA) == 0 then
+    if (len_byte & cmux.EA) == 0 then
         log_data("mux multibyte", "{XXX}")
         return nil, nil, nil -- we don't handle multi-byte length yet
     end
     local len = len_byte >> 1
     local end_idx = 6 + len
-    if buf:byte(end_idx) ~= FLAG then
+    if buf:byte(end_idx) ~= cmux.FLAG then
         log_data("no end idx", "{XXX}")
         return nil, nil, nil, "short"
     end
@@ -609,11 +645,11 @@ function cmux.parse_cmux_frame(buf)
 
     --gcs:send_text(MAV_SEVERITY.INFO, string.format("addr=0x%02x ctrl=0x%02x", addr, ctrl))
 
-    if ctrl == SABM then
+    if ctrl == cmux.SABM then
         return nil, nil, buf:sub(end_idx + 1)
     end
 
-    if (ctrl & 0xef) ~= UIH then
+    if (ctrl & 0xef) ~= cmux.UIH then
         --gcs:send_text(MAV_SEVERITY.INFO, "not UIH")
         return nil, nil, nil
     end
@@ -664,7 +700,7 @@ end
 local function data_send(data)
     local s
     if cmux_enabled() then
-        s = cmux.encode_cmux_frame(DLC_DATA, UIH, data)
+        s = cmux.encode_cmux_frame(DLC_DATA, cmux.UIH, data)
     else
         s = data
     end
@@ -678,7 +714,7 @@ end
 local function data_send_connected(data)
     local s
     if cmux_enabled() then
-        s = cmux.encode_cmux_frame(DLC_DATA, UIH, data)
+        s = cmux.encode_cmux_frame(DLC_DATA, cmux.UIH, data)
     else
         s = data
     end
@@ -688,7 +724,9 @@ local function data_send_connected(data)
 end
 
 local ati_sequence = 0
+local cmux_retries = 0
 local cipmode_retry = 0
+local creg_errors = 0   -- tolerate transient ERROR on first CREG polls after CMUX open
 
 local last_data_ms = millis()
 local pending_to_modem = ""
@@ -716,8 +754,12 @@ local function reset_state()
     modem = default_modem
     found_cmux = false
     cipmode_retry = 0
+    cmux_retries = 0
+    creg_errors = 0
     reset_buffers()
     pending_to_uart = ""
+    step_times = {}
+    step_timer_ms = millis():tofloat()
 end
 
 -- reset back to ATI step
@@ -764,7 +806,7 @@ local function step_ATI()
         end
         return
     end
-    if not option_enabled(LTE_OPTIONS_NOMUX) and s and #s >= 4 and s:byte(1) == FLAG and s:byte(-1) == FLAG then
+    if not option_enabled(LTE_OPTIONS_NOMUX) and s and #s >= 4 and s:byte(1) == cmux.FLAG and s:byte(-1) == cmux.FLAG then
         -- already in mux mode
         found_cmux = true
         gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: in CMUX mode")
@@ -775,7 +817,7 @@ local function step_ATI()
     if ati_sequence % 3 == 2 then
         uart_write('+++')
     elseif ati_sequence % 3 == 1 and not option_enabled(LTE_OPTIONS_NOMUX) then
-        uart_write(cmux.encode_cmux_frame(DLC_AT, UIH, "ATI\r"))
+        uart_write(cmux.encode_cmux_frame(DLC_AT, cmux.UIH, "ATI\r"))
     else
         uart_write('\rATI\r')
     end
@@ -854,28 +896,54 @@ end
 --[[
     check for a SIM
 --]]
+local cpin_retries = 0
+
 local function step_CPIN()
     local s = uart_read()
     if s and s:find("READY") then
+        cpin_retries = 0
         step = "CONFIG"
+        return
+    end
+    cpin_retries = cpin_retries + 1
+    if cpin_retries > 10 then  -- ~5s at 500ms poll rate
+        gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: SIM not ready, resetting')
+        cpin_retries = 0
+        reset_to_ATI()
+        return
     end
     AT_send('AT+CPIN?\r\n')
 end
-
 --[[
     confirm we are registered on the network
 --]]
 local function step_CREG()
     local s = uart_read()
-    if handle_error(s) then
+    -- Check CMUX frame validity BEFORE error check: post-CMUX modem responses are
+    -- framed binary — an ERROR match inside the frame envelope would be a false positive
+    if s and cmux_enabled() and #s > 4 and not cmux.parse_cmux_frame(s) then
+        -- not really in CMUX mode when we should be, try again
+        step = "CMUX"
         return
     end
-    if s then
-        if cmux_enabled() and #s > 4 and not cmux.parse_cmux_frame(s) then
-            -- not really in CMUX mode when we should be, try again
-            step = "CMUX"
-            return
+    -- Tolerate transient ERROR responses in the first few CREG polls after CMUX open.
+    -- The EC25 sometimes glitches its first AT channel response when channels were
+    -- just opened (especially when re-entering CMUX from a previous session).
+    if s and s:find('\nERROR\r\n') then
+        creg_errors = creg_errors + 1
+        gcs:send_text(MAV_SEVERITY.WARNING, string.format('LTE_modem: CREG error %d/3', creg_errors))
+        if creg_errors >= 3 then
+            creg_errors = 0
+            gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: error response from modem')
+            send_data_reset()
+            step = "ATI"
+            modem = default_modem
         end
+        return
+    end
+    
+    if s then
+        creg_errors = 0
         local reg = s:match('CREG: %d,(%d+)\r\n')
         if reg == "1" or reg == "5" then
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG OK')
@@ -995,19 +1063,43 @@ end
     setup CMUX multiplexing mode
 --]]
 local function step_CMUX()
+    -- If modem is already in CMUX mode (detected via FLAG bytes in step_ATI),
+    -- skip negotiation entirely — just open channels and move on.
+    -- Flush RX first to discard any UA/stale frames from the previous session.
+    if found_cmux then
+        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CMUX already active, opening channels')
+        cmux_retries = 0
+        while uart:available() > 0 do uart:readstring(512) end
+        cmux.buffers[DLC_AT] = ""; cmux.buffers[DLC_DATA] = ""
+        cmux.send_sabm()
+        step = "BAUD"
+        return
+    end
     local s = uart_read()
     if s then
         if s:find("CME ERROR") then
             AT_send('AT+CFUN=1\r\n')
         elseif #s >= 4 and (cmux.parse_cmux_frame(s) or
                             s:find('CMUX=0\r\r\nOK\r') or
-                            s == string.char(FLAG,FLAG,FLAG,FLAG)) then
+                            s == string.char(cmux.FLAG,cmux.FLAG,cmux.FLAG,cmux.FLAG)) then
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CMUX mode set')
+            cmux_retries = 0
+            found_cmux = true
+            -- Flush any stale RX before opening DLC channels
+            while uart:available() > 0 do uart:readstring(512) end
+            cmux.buffers[DLC_AT] = ""; cmux.buffers[DLC_DATA] = ""
             -- send SABM frames to establish the DLCs
             cmux.send_sabm()
             step = "BAUD"
             return
         end
+    end
+    cmux_retries = cmux_retries + 1
+    if cmux_retries > 8 then
+        gcs:send_text(MAV_SEVERITY.WARNING, 'LTE_modem: CMUX timeout, resetting')
+        cmux_retries = 0
+        reset_to_ATI()
+        return
     end
     uart_write(modem.cmux)
 end
@@ -1253,11 +1345,14 @@ local function handle_AT_reply(s)
     end
 end
 
-local last_CSQ_ms = millis()
-local last_CSQ_reply_ms = uint32_t(0)
-local last_parse_ms = uint32_t(0)
-local last_route_ms = uint32_t(0)
-local last_send_data_ms = uint32_t(0)
+-- Timestamps table: groups all periodic-timer locals to stay under Lua's 100-local limit
+local ts = {
+    CSQ_ms       = millis(),
+    CSQ_reply_ms = uint32_t(0),
+    parse_ms     = uint32_t(0),
+    route_ms     = uint32_t(0),
+    send_data_ms = uint32_t(0),
+}
 
 --[[
     handle data while connected
@@ -1286,11 +1381,11 @@ local function step_CONNECTED()
         else
             pending_to_parse = pending_to_parse .. s
             pending_to_parse = cmux.feed_uart_in(pending_to_parse)
-            if now_ms - last_parse_ms > 1000 then
+            if now_ms - ts.parse_ms > 1000 then
                 pending_to_parse = ""
             end
             if #cmux.buffers[DLC_AT] > 0 then
-                last_parse_ms = now_ms
+                ts.parse_ms = now_ms
                 --gcs:send_text(MAV_SEVERITY.INFO, string.format("AT reply %d", #cmux.buffers[DLC_AT]))
                 handle_AT_reply(cmux.buffers[DLC_AT])
                 cmux.buffers[DLC_AT] = ""
@@ -1298,7 +1393,7 @@ local function step_CONNECTED()
             if #cmux.buffers[DLC_DATA] > 0 then
                 last_data_ms = now_ms
                 -- gcs:send_text(MAV_SEVERITY.INFO, string.format("data input %d", #cmux.buffers[DLC_DATA]))
-                last_parse_ms = now_ms
+                ts.parse_ms = now_ms
                 pending_to_fc = pending_to_fc .. cmux.buffers[DLC_DATA]
                 cmux.buffers[DLC_DATA] = ""
             end
@@ -1327,7 +1422,7 @@ local function step_CONNECTED()
 
     local quota = 0
     if LTE_TX_RATE:get() > 0 then
-        local dt = (now_ms - last_send_data_ms):tofloat()*0.001
+        local dt = (now_ms - ts.send_data_ms):tofloat()*0.001
         quota = math.floor(dt * LTE_TX_RATE:get())
     end
 
@@ -1343,7 +1438,7 @@ local function step_CONNECTED()
         local data = pending_to_modem:sub(1, n)
 
         data_sent = data_sent + #data
-        last_send_data_ms = now_ms
+        ts.send_data_ms = now_ms
 
         -- gcs:send_text(MAV_SEVERITY.INFO, string.format("data output %d", n))
         if not data_send_connected(data) then
@@ -1363,15 +1458,15 @@ local function step_CONNECTED()
     end
     if cmux_enabled() and not option_enabled(LTE_OPTIONS_NOSIGQUERY) then
         -- if we support CMUX then request CSQ signal strength at 1Hz
-        if now_ms - last_CSQ_ms > 1000 then
-            last_CSQ_ms = now_ms
+        if now_ms - ts.CSQ_ms > 1000 then
+            ts.CSQ_ms = now_ms
             AT_send("AT+CSQ\r\n")
             if modem.cpsi then
                 AT_send(modem.cpsi)
             end
         end
-        if now_ms - last_CSQ_reply_ms > 5000 then
-            last_CSQ_reply_ms = now_ms
+        if now_ms - ts.CSQ_reply_ms > 5000 then
+            ts.CSQ_reply_ms = now_ms
             gcs:send_named_float('LTE_RSSI', -1)
         end
         if LTE_MCCMNC:get() ~= last_mccmnc and modem.mccmnc then
@@ -1389,8 +1484,8 @@ local function step_CONNECTED()
     end
 
     -- newer firmware allows for multiple PPP interfaces and custom routing
-    if supports_routing and now_ms - last_route_ms > 1000 then
-        last_route_ms = now_ms
+    if supports_routing and now_ms - ts.route_ms > 1000 then
+        ts.route_ms = now_ms
         local dest = uint32_t(LTE_ROUTE_IP0:get())<<24
         dest = dest | uint32_t(LTE_ROUTE_IP1:get())<<16
         dest = dest | uint32_t(LTE_ROUTE_IP2:get())<<8
@@ -1410,6 +1505,29 @@ local function run_step()
         change_baud = nil
     end
 
+    -- Check if we transitioned to a new state
+    local step_changed = (last_step ~= step)
+
+    -- TIMING REPORT: record time spent in each step, print on connect
+    if step_changed then
+        if last_step and last_step ~= "ATI" then
+            table.insert(step_times, {name=last_step, ms=math.floor(millis():tofloat() - step_timer_ms)})
+        end
+        step_timer_ms = millis():tofloat()
+        if step == "CONNECTED" and #step_times > 0 then
+            local parts, total = {}, 0
+            for _, t in ipairs(step_times) do
+                table.insert(parts, t.name..':'..t.ms..'ms')
+                total = total + t.ms
+            end
+            gcs:send_text(MAV_SEVERITY.INFO, 'LTE timing: '..table.concat(parts,' ')..' total:'..total..'ms')
+            step_times = {}
+        end
+    end
+
+    -- Update last_step BEFORE the early return for CONNECTED
+    last_step = step
+
     if step == "CONNECTED" then
         -- run the connected step at 200Hz
         step_CONNECTED()
@@ -1417,17 +1535,17 @@ local function run_step()
         return 5
     end
 
-    -- prevent getting stuck
-    if step == last_step and step ~= "ATI" then
+    -- STUCK GUARD: prevent getting stuck; CPIN and ATI are exempt (they poll legitimately)
+    if not step_changed and step ~= "ATI" and step ~= "CPIN" then
         step_count = step_count + 1
         if step_count > 50 then
             gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: step reset")
             reset_to_ATI()
+            return 1000 -- back off 1s after reset
         end
     else
         step_count = 0
     end
-    last_step = step
 
     gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE_modem: step %s', step))
 
@@ -1512,4 +1630,3 @@ function protected_wrapper()
 end
 
 return protected_wrapper, 500
-
