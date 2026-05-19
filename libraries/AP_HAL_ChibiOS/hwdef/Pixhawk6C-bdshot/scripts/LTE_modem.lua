@@ -896,14 +896,24 @@ end
 --[[
     check for a SIM
 --]]
+local cpin_retries = 0
+
 local function step_CPIN()
     local s = uart_read()
     if s and s:find("READY") then
+        cpin_retries = 0
         step = "CONFIG"
+        return
+    end
+    cpin_retries = cpin_retries + 1
+    if cpin_retries > 10 then  -- ~5s at 500ms poll rate
+        gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: SIM not ready, resetting')
+        cpin_retries = 0
+        reset_to_ATI()
+        return
     end
     AT_send('AT+CPIN?\r\n')
 end
-
 --[[
     confirm we are registered on the network
 --]]
@@ -931,8 +941,9 @@ local function step_CREG()
         end
         return
     end
-    creg_errors = 0
+    
     if s then
+        creg_errors = 0
         local reg = s:match('CREG: %d,(%d+)\r\n')
         if reg == "1" or reg == "5" then
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG OK')
