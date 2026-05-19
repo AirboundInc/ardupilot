@@ -13,9 +13,10 @@
     Fix 1: Smart Watchdog. Only GCS data feeds it during CONNECTED.
     Fix 2: Parameterized Timers. LTE_GRACE handles CEREG drops, LTE_STUCK_T handles setup timeouts.
     Fix 3: CIPOPEN 3x failure goes to CREG (soft reconnect). 3 soft reconnects trigger hard reset.
-    Fix 4: cops_rescanning guard in step_CREG runs BEFORE handle_error.
+    Fix 4: cops_rescanning guard removed. Gentle CREG polling logic applied.
     Fix 5: Silenced Log Spam & replaced Loop Counters with absolute millis() tracking.
     Fix 6: CSV Parsing respects empty commas (.-) to prevent telemetry column shifting.
+    Fix 7: Outage time backdated by TIMEOUT, skip SIGNAL_GATE after reset, 1s CPIN wait.
 --]]
 
 local MAV_SEVERITY = {EMERGENCY=0, ALERT=1, CRITICAL=2, ERROR=3, WARNING=4, NOTICE=5, INFO=6, DEBUG=7}
@@ -41,16 +42,15 @@ local P = {
     SERVER_IP3  = bind_add_param('SERVER_IP3',  7, 0),
     SERVER_PORT = bind_add_param('SERVER_PORT',  8, 0),
     BAUD        = bind_add_param('BAUD',  9, 115200),
-    TIMEOUT     = bind_add_param('TIMEOUT', 10, 10),
+    TIMEOUT     = bind_add_param('TIMEOUT', 10, 15), -- Changed default from 10 to 15s
     PROTOCOL    = bind_add_param('PROTOCOL', 11, 48),
     OPTIONS     = bind_add_param('OPTIONS', 12, 0),
     IBAUD       = bind_add_param('IBAUD', 13, 115200),
     MCCMNC      = bind_add_param('MCCMNC', 14, -1),
     TX_RATE     = bind_add_param('TX_RATE',  20, 0),
     BAND        = bind_add_param('BAND', 21, -1),
-    -- NEW: Tunable Timers
-    GRACE       = bind_add_param('GRACE', 22, 3),    -- Seconds to ignore network drops
-    STUCK_T     = bind_add_param('STUCK_T', 23, 15)  -- Max seconds allowed per setup step
+    GRACE       = bind_add_param('GRACE', 22, 3),    
+    STUCK_T     = bind_add_param('STUCK_T', 23, 15)  
 }
 
 local supports_routing = networking and networking.add_route -- luacheck: ignore 143
@@ -111,7 +111,7 @@ local function log_data(s, marker)
 end
 
 local cs = {
-    cops_rescanning = false, cops_rescan_t = 0,
+    cops_zero_sent = false, 
     qcsq_tries = 0,
     cipopen_retry = 0, cipopen_sent = false, cipopen_sent_ms = 0,
     hard_reset_strikes = 0, 
@@ -119,13 +119,15 @@ local cs = {
     step_timer_ms = 0, step_times = {},
     change_baud = nil, ati_sequence = 0,
     cereg_drop_ms = nil,
+    disconnect_ms = nil,  
     last_data_ms = millis(),
     last_CSQ_ms = millis(),
     last_CSQ_reply_ms = uint32_t(0),
     last_parse_ms = uint32_t(0),
     last_route_ms = uint32_t(0),
     last_send_data_ms = uint32_t(0),
-    csq_toggle = false
+    csq_toggle = false,
+    post_reset = true
 }
 
 local function uart_read()
@@ -302,12 +304,13 @@ local function reset_state()
     step = "ATI"; modem = default_modem; found_cmux = false
     reset_buffers(); buf.uart = ""
     lte_track.band = nil; lte_track.cid = nil
-    cs.cops_rescanning = false; cs.cops_rescan_t = 0; cs.qcsq_tries = 0
+    cs.cops_zero_sent = false; cs.qcsq_tries = 0
     cs.cipopen_retry = 0; cs.cipopen_sent = false; cs.cipopen_sent_ms = 0
     cs.hard_reset_strikes = 0 
-    cs.sim_probe_count = 0
+    cs.sim_probe_count = 0; cs.cpin_probe_n = 0
     cs.cereg_drop_ms = nil      
     cs.step_times = {}; cs.step_timer_ms = millis():tofloat()
+    cs.post_reset = true
 end
 
 local function reset_to_ATI()
@@ -531,13 +534,26 @@ local function step_CPIN()
     local now_ms = millis():tofloat()
     local time_in_step = (now_ms - cs.step_timer_ms) / 1000
 
-    if time_in_step < 0.1 or math.floor(time_in_step) % 2 == 0 then 
+    -- Phase 1: first 1s — normal polling for +CPIN: READY (reduced from 2s)
+    if time_in_step < 1.0 then
         AT_send('AT+CPIN?\r\n')
+        return
     end
 
-    if time_in_step > 2.0 then
-        gcs:send_text(MAV_SEVERITY.WARNING, "LTE: SIM taking too long. Probing hardware...")
-        if modem.sim_probe then AT_send(modem.sim_probe) end
+    -- Phase 2: 1–5s — probe once per second (3 probes max), then hard reset
+    local probe_tick = math.floor(time_in_step) -- integer seconds since step start
+    if probe_tick > cs.cpin_probe_n then
+        cs.cpin_probe_n = probe_tick
+        local probe_num = probe_tick - 1  -- 1,2,3 for seconds 2,3,4
+        if probe_num <= 5 then
+            gcs:send_text(MAV_SEVERITY.WARNING,
+                string.format("LTE: SIM not ready, probe %d/5", probe_num))
+            AT_send('AT+CPIN?\r\n')
+            if modem.sim_probe then AT_send(modem.sim_probe) end
+        else
+            gcs:send_text(MAV_SEVERITY.CRITICAL, "LTE: CPIN failed 5 probes, hard reset")
+            reset_to_ATI()
+        end
     end
 end
 
@@ -554,26 +570,14 @@ end
 local function step_CREG()
     local s = uart_read()
 
-    if cs.cops_rescanning then
-        if s and (s:find('\r\nOK\r\n') or s:find('\r\nERROR\r\n')) then
-            local mccmnc = math.floor(P.MCCMNC:get())
-            if mccmnc > 0 then set_MCCMNC()
-            else AT_send('AT+COPS=0\r\n') end
-            cs.cops_rescanning = false
-            gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: COPS re-select')
-        elseif cs.cops_rescan_t > 0 and millis():tofloat() - cs.cops_rescan_t > 5000 then
-            cs.cops_rescanning = false
-            AT_send('AT+COPS=0\r\n')
-        end
-        return
-    end
-
     if handle_error(s) then return end
 
     if s then
         if cmux_enabled() and #s > 4 and not cmux.parse_cmux_frame(s) then step = "CMUX"; return end
         local reg = s:match('+CEREG: %d,(%d+)') or s:match('+CREG: %d,(%d+)\r\n')
+        
         if reg == "1" or reg == "5" then
+            cs.cops_zero_sent = false
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG OK')
             if P.PROTOCOL:get() == PPP then
                 step = modem.cgact and "CGACT" or "PPPOPEN"
@@ -585,16 +589,28 @@ local function step_CREG()
                 else step = "CIPOPEN" end
             end
             return
+            
         elseif reg == "0" or reg == "3" then
             if modem.fast_connect then
-                gcs:send_text(MAV_SEVERITY.WARNING, 'LTE CREG: not registered — COPS re-scan')
-                AT_send('AT+COPS=2\r\n'); cs.cops_rescanning = true; cs.cops_rescan_t = millis():tofloat()
+                local time_in_step = (millis():tofloat() - cs.step_timer_ms) / 1000
+                if time_in_step < 2.0 then
+                    -- Just wait passively for the first 2 seconds to see if it registers naturally
+                elseif not cs.cops_zero_sent then
+                    gcs:send_text(MAV_SEVERITY.WARNING, 'LTE CREG: not registered, auto-selecting (COPS=0)')
+                    AT_send('AT+COPS=0\r\n')
+                    cs.cops_zero_sent = true
+                elseif time_in_step > 12.0 then
+                    gcs:send_text(MAV_SEVERITY.CRITICAL, 'LTE: CREG search timed out, hard reset')
+                    reset_to_ATI(); return
+                end
             else
                 gcs:send_text(MAV_SEVERITY.WARNING, 'LTE CREG: not registered')
                 AT_send("AT+CFUN=1\r\n"); AT_send("AT+COPS?\r\n")
             end
             return
+            
         elseif reg == "2" then
+            -- Let it naturally search without interrupting it
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG searching...')
         end
     end
@@ -667,6 +683,16 @@ local function step_CIPCLOSE()
 end
 
 local function step_SIGNAL_GATE()
+    if cs.post_reset then
+        gcs:send_text(MAV_SEVERITY.INFO, 'LTE: Skipping signal gate post-reset')
+        if P.PROTOCOL:get() == PPP then
+            step = modem.cgact and "CGACT" or "PPPOPEN"
+        elseif modem.cipmode then step = "CIPMODE"
+        elseif modem.preflight then step = "QENG"
+        else step = "SOCKET_STATE" end
+        return
+    end
+
     local s = uart_read()
     local rsrp = nil
     if s and s:find('+QCSQ') then
@@ -843,12 +869,16 @@ local function step_CONNECTED()
             end
         end
     elseif P.TIMEOUT:get() > 0 and now_ms - cs.last_data_ms > uint32_t(P.TIMEOUT:get() * 1000) then
-        gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: data timeout'); reset_to_ATI(); return
+        gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: data timeout')
+        -- Backdate disconnect_ms to when data actually stopped
+        if not cs.disconnect_ms then cs.disconnect_ms = millis():tofloat() - (P.TIMEOUT:get() * 1000) end
+        reset_to_ATI(); return
     end
 
     local grace_ms = P.GRACE:get() * 1000
     if cs.cereg_drop_ms and (now_ms - cs.cereg_drop_ms > grace_ms) then
         gcs:send_text(MAV_SEVERITY.WARNING, 'LTE: network lost — fast reconnect')
+        if not cs.disconnect_ms then cs.disconnect_ms = cs.cereg_drop_ms:tofloat() end
         cs.cereg_drop_ms = nil; cs.cipopen_sent = false
         cs.hard_reset_strikes = 0 
         if modem.cipclose then AT_send(modem.cipclose) end
@@ -916,10 +946,30 @@ local function run_step()
         gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE_modem: step %s', step))
         if cs.last_step and cs.last_step ~= "ATI" then table.insert(cs.step_times, {name=cs.last_step, ms=math.floor(now_ms:tofloat()-cs.step_timer_ms)}) end
         cs.step_timer_ms = now_ms:tofloat()
+        
+        -- Diagnostic Timing Dump
         if step == "CONNECTED" and #cs.step_times > 0 then
+            cs.post_reset = false -- Clear post-reset flag since connection succeeded
             local parts, total = {}, 0
-            for _, t in ipairs(cs.step_times) do table.insert(parts, t.name..':'..t.ms..'ms'); total = total + t.ms end
+            local max_name, max_ms = "none", 0
+            for _, t in ipairs(cs.step_times) do 
+                table.insert(parts, t.name..':'..t.ms..'ms')
+                total = total + t.ms 
+                if t.ms > max_ms then
+                    max_ms = t.ms
+                    max_name = t.name
+                end
+            end
+            
+            gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE longest step: %s (%dms)', max_name, max_ms))
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE timing: '..table.concat(parts,' ')..' total:'..total..'ms')
+            
+            if cs.disconnect_ms then
+                local outage_s = (now_ms:tofloat() - cs.disconnect_ms) / 1000
+                gcs:send_text(MAV_SEVERITY.WARNING,
+                    string.format('LTE: total outage %.1fs', outage_s))
+                cs.disconnect_ms = nil
+            end
             cs.step_times = {}
         end
     end
@@ -927,7 +977,6 @@ local function run_step()
 
     if step == "CONNECTED" then step_CONNECTED(); return 5 end
 
-    -- NEW: Dynamic Stuck Guard based on LTE_STUCK parameter
     local time_in_step = (now_ms:tofloat() - cs.step_timer_ms) / 1000
     if not step_changed and step ~= "ATI" and step ~= "CPIN" and step ~= "CREG" and step ~= "HALT" then
         if time_in_step > P.STUCK_T:get() then
@@ -936,7 +985,6 @@ local function run_step()
         end
     end
 
-    -- Deep Search patience for CREG (3x the normal step time, or at least 30s)
     if not step_changed and (step == "CPIN" or step == "CREG") then
         local creg_patience = math.max(30, P.STUCK_T:get() * 3)
         if time_in_step > creg_patience then
