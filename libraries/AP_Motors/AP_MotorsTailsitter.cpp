@@ -23,6 +23,7 @@
 #include "AP_MotorsTailsitter.h"
 #include <GCS_MAVLink/GCS.h>
 #include <SRV_Channel/SRV_Channel.h>
+#include <RC_Channel/RC_Channel.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -212,6 +213,22 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     // thrust vectoring
     _tilt_left  = pitch_thrust - yaw_thrust;
     _tilt_right = pitch_thrust + yaw_thrust;
+    float impulse_pitch = 0.0f;
+    // RC_Channel *ch = RC_Channels::rc_channel(6);
+    // uint16_t PWM = ch->get_radio_in();
+    bool impulse_en = true;
+    if(impulse_en){
+        if(_first_time){
+            _first_time = false;
+            _impulse_start_time = AP_HAL::millis();
+        }
+        impulse_pitch = Disturbance((AP_HAL::millis()) - _impulse_start_time);
+        _tilt_left += impulse_pitch;
+        _tilt_right += impulse_pitch;
+    }
+    else{
+        _first_time = true;
+    }
 }
 
 // output_test_seq - spin a motor at the pwm value specified
@@ -240,5 +257,29 @@ void AP_MotorsTailsitter::_output_test_seq(uint8_t motor_seq, int16_t pwm)
         default:
             // do nothing
             break;
+    }
+}
+float AP_MotorsTailsitter::Disturbance(uint32_t time_ms)
+{
+    const float impulse_duration  = 0.5f;
+    const float impulse_delay     = 5.0f;
+    const float impulse_period    = impulse_duration + impulse_delay;
+    const float impulse_magnitude = 0.5f;
+
+    static bool  flipped       = false;  // has sign been flipped for this pulse?
+    static float current_sign  = 1.0f;  // current polarity
+
+    float time_s = time_ms / 1000.0f;
+    float phase  = fmodf(time_s, impulse_period);
+
+    if (phase < impulse_duration) {
+        if (!flipped) {
+            current_sign *= -1.0f;  // flip once when pulse starts
+            flipped = true;
+        }
+        return impulse_magnitude * current_sign;
+    } else {
+        flipped = false;            // reset flag during OFF phase, ready for next pulse
+        return 0.0f;
     }
 }

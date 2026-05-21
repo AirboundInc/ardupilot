@@ -41,12 +41,16 @@ protected:
     // spin a motor at the pwm value specified
     void _output_test_seq(uint8_t motor_seq, int16_t pwm) override;
 
+    float Disturbance(uint32_t time_ms);
+
     // calculated outputs
     float _throttle; // 0..1
     float _tilt_left;  // -1..1
     float _tilt_right;  // -1..1
     float _thrust_left;  // 0..1
     float _thrust_right;  // 0..1
+    int32_t _impulse_start_time;
+    bool _first_time = true;
 
     // Set by tailsitters using diskloading minumum outflow velocity limit
     float _external_min_throttle;
