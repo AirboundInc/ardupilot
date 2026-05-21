@@ -19,3 +19,9 @@ DMA_PRIORITY TIM* SPI* SDMMC* USART6* ADC* UART* USART*
 
 # Enable PPP
 define AP_NETWORKING_BACKEND_PPP 1
+
+# To create the default parameters struct in the firmware
+FORCE_APJ_DEFAULT_PARAMETERS 1
+
+# Increase the size of the embedded param struct to fit all default parameters
+define AP_PARAM_MAX_EMBEDDED_PARAM 16384
