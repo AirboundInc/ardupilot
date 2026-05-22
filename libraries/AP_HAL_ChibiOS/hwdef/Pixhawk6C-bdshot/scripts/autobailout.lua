@@ -10,10 +10,10 @@ assert(param:add_table(KEY, "AUTOB_", 7), "AUTOB table failed")
 assert(param:add_param(KEY, 1,  "PIT_LIM", 40),'could not add AUTOB_PIT_LIM')    -- Pitch limit
 assert(param:add_param(KEY, 2, "ENABLE", 1),'could not add AUTOB_ENABLE')    -- 1 = Enabled
 assert(param:add_param(KEY, 3, "MODE_DLY", 1000), 'could not add AUTOB_MODE_DLY') -- Delay (ms) before checking pitch
-assert(param:add_param(KEY, 4,"PIT_TOUT", 500),'could not add AUTOB_PIT_TOUT')
+assert(param:add_param(KEY, 4,"PIT_TOUT", 200),'could not add AUTOB_PIT_TOUT')
 assert(param:add_param(KEY, 5, "PARA_EN", 1),'could not add AUTOB_PARA_EN')    -- 1 = Enabled
-assert(param:add_param(KEY, 6,"PARA_ANG", -45),'could not add AUTOB_PARA_ANG')
-assert(param:add_param(KEY, 7,"PARA_TOUT", 200),'could not add AUTOB_PARA_TOUT')
+assert(param:add_param(KEY, 6,"PARA_ANG", -15),'could not add AUTOB_PARA_ANG')
+assert(param:add_param(KEY, 7,"PARA_TOUT", 100),'could not add AUTOB_PARA_TOUT')
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
