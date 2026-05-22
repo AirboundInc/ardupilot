@@ -14,11 +14,7 @@ assert(param:add_param(KEY, 2, "ENABLE", 1),'could not add AUTOB_ENABLE')    -- 
 assert(param:add_param(KEY, 3, "MODE_DLY", 1000), 'could not add AUTOB_MODE_DLY') -- Delay (ms) before checking pitch
 assert(param:add_param(KEY, 4,"PIT_TOUT", 200),'could not add AUTOB_PIT_TOUT')
 assert(param:add_param(KEY, 5, "PARA_EN", 1),'could not add AUTOB_PARA_EN')    -- 1 = Enabled
-<<<<<<< HEAD:libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/ab_autobailout.lua
-assert(param:add_param(KEY, 6,"PARA_ANG", -45),'could not add AUTOB_PARA_ANG')
-=======
 assert(param:add_param(KEY, 6,"PARA_ANG", -15),'could not add AUTOB_PARA_ANG')
->>>>>>> origin/airbound-develop:libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/autobailout.lua
 assert(param:add_param(KEY, 7,"PARA_TOUT", 100),'could not add AUTOB_PARA_TOUT')
 
 -- 3. BIND PARAMETERS
