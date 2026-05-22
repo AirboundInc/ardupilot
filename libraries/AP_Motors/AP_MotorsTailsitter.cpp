@@ -216,8 +216,7 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     float impulse_pitch = 0.0f;
     RC_Channel *ch = RC_Channels::rc_channel(6);
     uint16_t PWM = ch->get_radio_in();
-    bool impulse_en = true;
-    if(impulse_en && PWM > 1700){
+    if(_impulse_en && PWM > 1700){
         if(_first_time){
             _first_time = false;
             _impulse_start_time = AP_HAL::millis();
@@ -261,10 +260,10 @@ void AP_MotorsTailsitter::_output_test_seq(uint8_t motor_seq, int16_t pwm)
 }
 float AP_MotorsTailsitter::Disturbance(uint32_t time_ms)
 {
-    const float impulse_duration  = 0.5f;
-    const float impulse_delay     = 5.0f;
+    const float impulse_duration  = _impulse_duration;
+    const float impulse_delay     = _impulse_delay;
     const float impulse_period    = impulse_duration + impulse_delay;
-    const float impulse_magnitude = 0.5f;
+    const float impulse_magnitude = _impulse_magnitude;
 
     static bool  flipped       = false;  // has sign been flipped for this pulse?
     static float current_sign  = 1.0f;  // current polarity

@@ -176,6 +176,12 @@ protected:
     // scaling for booster motor throttle
     AP_Float            _boost_scale;
 
+    // impulse variables for tailsitter disturbance
+    AP_Int8             _impulse_en;
+    AP_Float            _impulse_magnitude;
+    AP_Float            _impulse_duration;
+    AP_Float            _impulse_delay;
+
     // motor output variables
     bool                motor_enabled[AP_MOTORS_MAX_NUM_MOTORS];    // true if motor is enabled
 

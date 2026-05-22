@@ -231,6 +231,39 @@ const AP_Param::GroupInfo AP_MotorsMulticopter::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("SPOOL_TIM_DN", 44, AP_MotorsMulticopter, _spool_down_time, 0),
 
+    // @Param: DIST_MAG
+    // @DisplayName: Disturbance magnitude
+    // @Description: Magnitude of the disturbance impulse for testing the response of the vehicle
+    // @Range: 0 1
+    // @Increment: 0.001
+    // @User: Advanced
+    AP_GROUPINFO("DIST_MAG", 45, AP_MotorsMulticopter, _impulse_magnitude, 0.1),
+
+    // @Param: DIST_DUR
+    // @DisplayName: Disturbance duration
+    // @Description: Duration of the disturbance impulse for testing the response of the vehicle
+    // @Range: 0 5
+    // @Units: s
+    // @Increment: 0.001
+    // @User: Advanced
+    AP_GROUPINFO("DIST_DUR", 46, AP_MotorsMulticopter, _impulse_duration, 0.5),
+
+    // @Param: DIST_DEL
+    // @DisplayName: Disturbance delay
+    // @Description: Time between disturbance impulses for testing the response of the vehicle
+    // @Range: 0 10
+    // @Units: s
+    // @Increment: 0.001
+    // @User: Advanced
+    AP_GROUPINFO("DIST_DEL", 47, AP_MotorsMulticopter, _impulse_delay, 5),
+
+    // @Param: DIST_EN
+    // @DisplayName: Disturbance enable
+    // @Description: Enable disturbance impulses for testing the response of the vehicle
+    // @Values: 0:Disabled, 1:Enabled
+    // @User: Advanced
+    AP_GROUPINFO("DIST_EN", 48, AP_MotorsMulticopter, _impulse_en, 0),
+    
     AP_GROUPEND
 };
 
