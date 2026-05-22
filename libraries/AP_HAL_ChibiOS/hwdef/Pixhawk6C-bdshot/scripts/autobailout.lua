@@ -1,6 +1,8 @@
 -- Tailsitter Recovery Loop Script
 -- Logic: Bad Pitch -> Save Mode -> QLoiter
 local LOOP_MS = 100 -- Run at 10Hz
+local para_ahrs_pitch_threshold_max = -10
+local para_ahrs_pitch_threshold_min = -50
 
 -- 1. SETUP PARAMETER TABLE
 local KEY = 110
@@ -66,9 +68,7 @@ end
 
 function is_parachute_angle_threshold_valid(threshold_angle)
 -- check if the threshold angle set by user is valid
-    ahrs_pitch_threshold_max = -10
-    ahrs_pitch_threshold_min = -50
-    if threshold_angle < ahrs_pitch_threshold_max and threshold_angle > ahrs_pitch_threshold_min then
+    if threshold_angle < para_ahrs_pitch_threshold_max and threshold_angle > para_ahrs_pitch_threshold_min then
         return true
     end
     return false
@@ -93,7 +93,7 @@ function para_deploy()
     
     para_threshold = p_para_ang:get() or -45
     if not is_parachute_angle_threshold_valid(para_threshold) then
-        gcs:send_text(2, "AUTOB:AUTB_PARA_ANG invalid. Range(-50,-10)")    
+        gcs:send_text(2, string.format("AUTOB:AUTB_PARA_ANG invalid. Range(%.1f, %.1f)",para_ahrs_pitch_threshold_min, para_ahrs_pitch_threshold_max))    
         return
     end
 
