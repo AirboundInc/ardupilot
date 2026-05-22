@@ -214,10 +214,10 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     _tilt_left  = pitch_thrust - yaw_thrust;
     _tilt_right = pitch_thrust + yaw_thrust;
     float impulse_pitch = 0.0f;
-    // RC_Channel *ch = RC_Channels::rc_channel(6);
-    // uint16_t PWM = ch->get_radio_in();
+    RC_Channel *ch = RC_Channels::rc_channel(6);
+    uint16_t PWM = ch->get_radio_in();
     bool impulse_en = true;
-    if(impulse_en){
+    if(impulse_en && PWM > 1700){
         if(_first_time){
             _first_time = false;
             _impulse_start_time = AP_HAL::millis();
