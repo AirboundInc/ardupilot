@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 import sys
 import time
-import socket
 import serial
 import threading
 import argparse
+from pymavlink import mavutil
 
 # The exact responses a healthy EC25 modem gives
 AT_RESPONSES = {
-    b'ATI':        b'\r\nEC25EFAR06A18M4G\r\nOK\r\n',
-    b'AT+CPIN?':   b'\r\n+CPIN: READY\r\nOK\r\n',
-    b'AT+CEREG?':  b'\r\n+CEREG: 0,1\r\nOK\r\n',
-    b'AT+CREG?':   b'\r\n+CREG: 0,1\r\nOK\r\n',
-    b'AT+QCSQ':    b'\r\n+QCSQ: "eMTC",-65,-10,18,-8\r\nOK\r\n',
-    b'AT+QENG=':   b'\r\n+QENG: "servingcell","LTE","FDD",404,45,1A2B3C,300,1,3,-110,-12,-80,11,-,-,-,-,-,-\r\nOK\r\n',
-    b'AT+QISTATE': b'\r\nOK\r\n',
-    b'AT+QIOPEN':  b'\r\nOK\r\n+QIOPEN: 0,0\r\n',
-    b'AT+QICLOSE': b'\r\nOK\r\n',
+    'ATI':        b'\r\nEC25EFAR06A18M4G\r\nOK\r\n',
+    'AT+CPIN?':   b'\r\n+CPIN: READY\r\nOK\r\n',
+    'AT+CEREG?':  b'\r\n+CEREG: 0,1\r\nOK\r\n',
+    'AT+CREG?':   b'\r\n+CREG: 0,1\r\nOK\r\n',
+    'AT+QCSQ':    b'\r\n+QCSQ: "eMTC",-65,-10,18,-8\r\nOK\r\n',
+    'AT+QENG=':   b'\r\n+QENG: "servingcell","LTE","FDD",404,45,1A2B3C,300,1,3,-110,-12,-80,11,-,-,-,-,-,-\r\nOK\r\n',
+    'AT+QISTATE': b'\r\nOK\r\n',
+    'AT+QIOPEN':  b'\r\nOK\r\n+QIOPEN: 0,0\r\n',
+    'AT+QICLOSE': b'\r\nOK\r\n',
 }
 
 def mock_modem_thread(port):
@@ -29,55 +29,68 @@ def mock_modem_thread(port):
             data = ser.read(128)
             if data:
                 buf += data
-                if b'\r' in buf or b'\n' in buf:
-                    # Find matching response
+                
+                # Extract and process line-by-line so joined AT commands are not dropped
+                while b'\r' in buf or b'\n' in buf:
+                    # Find the first newline boundary safely
+                    idx_r = buf.find(b'\r')
+                    idx_n = buf.find(b'\n')
+                    if idx_r != -1 and idx_n != -1:
+                        idx = min(idx_r, idx_n)
+                    else:
+                        idx = max(idx_r, idx_n)
+                    
+                    line = buf[:idx].strip()
+                    buf = buf[idx+1:] # Advance buffer past the newline
+                    
+                    if not line:
+                        continue
+                        
+                    line_str = line.decode('utf-8', errors='ignore')
                     replied = False
+                    
+                    # Find matching response
                     for key, resp in AT_RESPONSES.items():
-                        if key in buf:
+                        if key in line_str:
                             time.sleep(0.05) # Simulate slight modem delay
                             ser.write(resp)
                             ser.flush()
                             replied = True
                             break
                     
-                    if not replied and b'AT' in buf:
-                        # Catch-all for generic AT commands (e.g., ATE0, AT+CFUN=1)
+                    # Catch-all for generic AT commands (e.g., ATE0, AT+CFUN=1)
+                    if not replied and 'AT' in line_str:
                         time.sleep(0.05)
                         ser.write(b'\r\nOK\r\n')
                         ser.flush()
-                    
-                    buf = b'' # Clear buffer after line
+                        
     except Exception as e:
         print(f"[MOCK] Serial error: {e}")
 
 def monitor_gcs(mavlink_port, timeout=60):
-    """Listens to ArduPilot's GCS output to see if the script succeeded."""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(('0.0.0.0', mavlink_port))
-    sock.settimeout(1.0)
-    
-    start_time = time.time()
+    """Listens to ArduPilot's GCS output using pymavlink to parse STATUSTEXT."""
     print(f"[GCS] Monitoring MAVLink on UDP {mavlink_port} for {timeout} seconds...")
     
+    # Establish pymavlink connection safely
+    master = mavutil.mavlink_connection(f'udpin:0.0.0.0:{mavlink_port}')
+    start_time = time.time()
+    
     while time.time() - start_time < timeout:
-        try:
-            data, _ = sock.recvfrom(4096)
-            text = data.decode('utf-8', errors='ignore')
-            
-            # Print Lua script progress
-            if "LTE_modem:" in text:
-                # Clean up the MAVLink packet text formatting slightly for the console
-                clean_text = text[text.find("LTE_modem:"):].split('\x00')[0]
-                print(f"  -> {clean_text}")
-                
-                if "connected" in clean_text:
-                    print("\n✅ SUCCESS: Basic Flow reached CONNECTED state!")
-                    return 0
-                if "error" in clean_text or "bad step" in clean_text:
-                    print(f"\n❌ FAIL: Lua script crashed! ({clean_text})")
-                    return 1
-        except socket.timeout:
+        # Pull STATUSTEXT messages from the binary stream
+        msg = master.recv_match(type='STATUSTEXT', blocking=True, timeout=1.0)
+        if not msg:
             continue
+            
+        text = msg.text
+        if "LTE_modem:" in text:
+            print(f"  -> {text}")
+            
+            if "connected" in text.lower():
+                print("\n✅ SUCCESS: Basic Flow reached CONNECTED state!")
+                return 0
+            if "error" in text.lower() or "bad step" in text.lower():
+                print(f"\n❌ FAIL: Lua script crashed! ({text})")
+                return 1
 
     print("\n❌ FAIL: Timed out waiting for CONNECTED state.")
     return 1

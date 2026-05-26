@@ -19,7 +19,8 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y socat python3-serial python3-pip python3-dev python3-future
-        pip install pyserial pymavlink MAVProxy
+        # Added --break-system-packages to bypass Ubuntu 24.04 PEP 668
+        pip install pyserial pymavlink MAVProxy --break-system-packages
 
     - name: Setup Virtual Serial Cable
       run: |
@@ -29,34 +30,37 @@ jobs:
 
     - name: Build ArduPlane SITL
       run: |
-        # Configure and build the SITL binary for ArduPlane
         ./waf configure --board sitl
         ./waf plane
 
     - name: Configure Parameters & Load Script
       run: |
-        # Create the folder inside the ArduPlane directory
         mkdir -p ArduPlane/AP_Scripting/scripts
         cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua ArduPlane/AP_Scripting/scripts/
         
-        # Configure ArduPlane default parameters
+        # Load script enabling and port configurations
         echo "SCR_ENABLE 1" >> Tools/autotest/default_params/plane.parm
         echo "LTE_ENABLE 1" >> Tools/autotest/default_params/plane.parm
         echo "LTE_SERPORT 1" >> Tools/autotest/default_params/plane.parm
         echo "SERIAL1_PROTOCOL 28" >> Tools/autotest/default_params/plane.parm
-        echo "LTE_OPTIONS 4" >> Tools/autotest/default_params/plane.parm # 4 = NOMUX
+        echo "LTE_OPTIONS 4" >> Tools/autotest/default_params/plane.parm
+        
+        # IP/Port Configurations required to prevent early-return timeout
+        echo "LTE_SERVER_PORT 8080" >> Tools/autotest/default_params/plane.parm
+        echo "LTE_SERVER_IP0 8" >> Tools/autotest/default_params/plane.parm
+        echo "LTE_SERVER_IP1 8" >> Tools/autotest/default_params/plane.parm
+        echo "LTE_SERVER_IP2 8" >> Tools/autotest/default_params/plane.parm
+        echo "LTE_SERVER_IP3 8" >> Tools/autotest/default_params/plane.parm
 
     - name: Boot SITL and Run Basic Flow Test
       run: |
         export PATH=$PATH:$GITHUB_WORKSPACE/Tools/autotest
         
-        # 1. Start ArduPilot SITL in the background for ArduPlane
         sim_vehicle.py -v ArduPlane --no-rebuild --no-mavproxy \
           -A "--serial1=uart:/tmp/ttySITL" \
           --out udp:localhost:14551 &
         
-        # 2. Wait a few seconds for the simulator to boot up
         sleep 10
         
-        # 3. Run your mock script
+        # Executing exact filename with capital L
         python3 Tools/autotest/Lte_modem_test.py --port /tmp/ttyMock --mavlink-port 14551
