@@ -59,12 +59,12 @@ jobs:
         export PATH=$PATH:$GITHUB_WORKSPACE/Tools/autotest
         
         # 1. Start ArduPilot SITL in the background
-        # - Removed --no-mavproxy so telemetry routing works
-        # - Added --add-param-file to force our Lua settings to load
+        # - Added --mavproxy-args="--daemon" to prevent stdin EOF shutdown
         sim_vehicle.py -v ArduPlane --no-rebuild \
           --add-param-file lte_test.parm \
           -A "--serial1=uart:/tmp/ttySITL" \
-          --out 127.0.0.1:14551 &
+          --out 127.0.0.1:14551 \
+          --mavproxy-args="--daemon" &
         
         # 2. Wait 15 seconds to ensure SITL and MAVProxy are fully booted
         sleep 15
