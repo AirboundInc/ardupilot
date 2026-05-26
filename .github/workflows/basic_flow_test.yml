@@ -2,13 +2,10 @@ name: LTE Modem Basic Flow Check
 
 on:
   push:
-    branches: [ master, main ]
-    paths:
-      - 'libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua'
-      - 'Tools/autotest/lte_modem_test.py'
-      - '.github/workflows/lte_basic_flow.yml'
+    branches: [ master, main, lte-automated-tests ]
   pull_request:
     branches: [ master, main ]
+  workflow_dispatch:  # <-- This adds a manual "Run Workflow" button
 
 jobs:
   test_happy_path:
