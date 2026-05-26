@@ -6,7 +6,6 @@ import threading
 import argparse
 from pymavlink import mavutil
 
-# The exact responses a healthy EC25 modem gives
 AT_RESPONSES = {
     'ATI':        b'\r\nEC25EFAR06A18M4G\r\nOK\r\n',
     'AT+CPIN?':   b'\r\n+CPIN: READY\r\nOK\r\n',
@@ -20,19 +19,15 @@ AT_RESPONSES = {
 }
 
 def mock_modem_thread(port):
-    """Listens to the virtual serial port and replies with fake modem data."""
     try:
         ser = serial.Serial(port, 115200, timeout=0.1)
-        print(f"[MOCK] Listening on {port}...")
+        print(f"[MOCK] Listening on {port}...", flush=True)
         buf = b''
         while True:
             data = ser.read(128)
             if data:
                 buf += data
-                
-                # Extract and process line-by-line so joined AT commands are not dropped
                 while b'\r' in buf or b'\n' in buf:
-                    # Find the first newline boundary safely
                     idx_r = buf.find(b'\r')
                     idx_n = buf.find(b'\n')
                     if idx_r != -1 and idx_n != -1:
@@ -41,58 +36,55 @@ def mock_modem_thread(port):
                         idx = max(idx_r, idx_n)
                     
                     line = buf[:idx].strip()
-                    buf = buf[idx+1:] # Advance buffer past the newline
+                    buf = buf[idx+1:]
                     
                     if not line:
                         continue
                         
                     line_str = line.decode('utf-8', errors='ignore')
-                    replied = False
+                    print(f"[MOCK] RX: {line_str}", flush=True)
                     
-                    # Find matching response
+                    replied = False
                     for key, resp in AT_RESPONSES.items():
                         if key in line_str:
-                            time.sleep(0.05) # Simulate slight modem delay
+                            time.sleep(0.05)
                             ser.write(resp)
                             ser.flush()
+                            print(f"[MOCK] TX: {key}", flush=True)
                             replied = True
                             break
                     
-                    # Catch-all for generic AT commands (e.g., ATE0, AT+CFUN=1)
                     if not replied and 'AT' in line_str:
                         time.sleep(0.05)
                         ser.write(b'\r\nOK\r\n')
                         ser.flush()
+                        print("[MOCK] TX: Generic OK", flush=True)
                         
     except Exception as e:
-        print(f"[MOCK] Serial error: {e}")
+        print(f"[MOCK] Serial error: {e}", flush=True)
 
 def monitor_gcs(mavlink_port, timeout=60):
-    """Listens to ArduPilot's GCS output using pymavlink to parse STATUSTEXT."""
-    print(f"[GCS] Monitoring MAVLink on UDP {mavlink_port} for {timeout} seconds...")
-    
-    # Establish pymavlink connection safely
+    print(f"[GCS] Monitoring MAVLink on UDP {mavlink_port} for {timeout} seconds...", flush=True)
     master = mavutil.mavlink_connection(f'udpin:0.0.0.0:{mavlink_port}')
     start_time = time.time()
     
     while time.time() - start_time < timeout:
-        # Pull STATUSTEXT messages from the binary stream
         msg = master.recv_match(type='STATUSTEXT', blocking=True, timeout=1.0)
         if not msg:
             continue
             
         text = msg.text
-        if "LTE_modem:" in text:
-            print(f"  -> {text}")
+        if "LTE" in text:
+            print(f"  -> {text}", flush=True)
             
             if "connected" in text.lower():
-                print("\n✅ SUCCESS: Basic Flow reached CONNECTED state!")
+                print("\n✅ SUCCESS: Basic Flow reached CONNECTED state!", flush=True)
                 return 0
-            if "error" in text.lower() or "bad step" in text.lower():
-                print(f"\n❌ FAIL: Lua script crashed! ({text})")
+            if "could not find" in text.lower() or "error" in text.lower() or "bad step" in text.lower():
+                print(f"\n❌ FAIL: Lua script crashed! ({text})", flush=True)
                 return 1
 
-    print("\n❌ FAIL: Timed out waiting for CONNECTED state.")
+    print("\n❌ FAIL: Timed out waiting for CONNECTED state.", flush=True)
     return 1
 
 if __name__ == "__main__":
@@ -101,8 +93,5 @@ if __name__ == "__main__":
     parser.add_argument("--mavlink-port", type=int, required=True)
     args = parser.parse_args()
 
-    # Start the fake modem in the background
     threading.Thread(target=mock_modem_thread, args=(args.port,), daemon=True).start()
-    
-    # Block the main thread monitoring the GCS output
     sys.exit(monitor_gcs(args.mavlink_port))
