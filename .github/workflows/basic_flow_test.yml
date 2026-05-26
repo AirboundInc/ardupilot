@@ -1,0 +1,63 @@
+name: LTE Modem Basic Flow Check
+
+on:
+  push:
+    branches: [ master, main ]
+    paths:
+      - 'libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua'
+      - 'Tools/autotest/lte_modem_test.py'
+      - '.github/workflows/lte_basic_flow.yml'
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  test_happy_path:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Install System Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y socat python3-serial python3-pip python3-dev python3-future
+        pip install pyserial pymavlink MAVProxy
+
+    - name: Setup Virtual Serial Cable
+      run: |
+        socat -d -d PTY,link=/tmp/ttyMock,raw,echo=0 PTY,link=/tmp/ttySITL,raw,echo=0 &
+        sleep 1
+        chmod 777 /tmp/ttyMock /tmp/ttySITL
+
+    - name: Build ArduCopter SITL
+      run: |
+        # Configure and build the SITL binary
+        ./waf configure --board sitl
+        ./waf copter
+
+    - name: Configure Parameters & Load Script
+      run: |
+        mkdir -p modules/AP_Scripting/scripts
+        cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua modules/AP_Scripting/scripts/
+        
+        echo "SCR_ENABLE 1" >> Tools/autotest/default_params/copter.parm
+        echo "LTE_ENABLE 1" >> Tools/autotest/default_params/copter.parm
+        echo "LTE_SERPORT 1" >> Tools/autotest/default_params/copter.parm
+        echo "SERIAL1_PROTOCOL 28" >> Tools/autotest/default_params/copter.parm
+        echo "LTE_OPTIONS 4" >> Tools/autotest/default_params/copter.parm # 4 = NOMUX
+
+    - name: Boot SITL and Run Basic Flow Test
+      run: |
+        export PATH=$PATH:$GITHUB_WORKSPACE/Tools/autotest
+        
+        # 1. Start ArduPilot SITL in the background (no-rebuild since we just built it)
+        sim_vehicle.py -v ArduCopter --no-rebuild --no-mavproxy \
+          -A "--serial1=uart:/tmp/ttySITL" \
+          --out udp:localhost:14551 &
+        
+        # 2. Wait a few seconds for the simulator to boot up
+        sleep 10
+        
+        # 3. Run your mock script
+        python3 Tools/autotest/lte_modem_test.py --port /tmp/ttyMock --mavlink-port 14551
