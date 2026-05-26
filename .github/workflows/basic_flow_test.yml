@@ -40,11 +40,11 @@ jobs:
         mkdir -p ArduPlane/AP_Scripting/scripts
         cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua ArduPlane/AP_Scripting/scripts/
         
-        # Create a dedicated custom parameter file to GUARANTEE they are loaded
+        # Updated LTE_SERPORT to 0 (Index 0 matches the first scripting port)
         cat <<EOF > lte_test.parm
         SCR_ENABLE 1
         LTE_ENABLE 1
-        LTE_SERPORT 1
+        LTE_SERPORT 0
         SERIAL1_PROTOCOL 28
         LTE_OPTIONS 4
         LTE_SERVER_PORT 8080
@@ -59,15 +59,12 @@ jobs:
         export PATH=$PATH:$GITHUB_WORKSPACE/Tools/autotest
         
         # 1. Start ArduPilot SITL in the background
-        # - Added --mavproxy-args="--daemon" to prevent stdin EOF shutdown
         sim_vehicle.py -v ArduPlane --no-rebuild \
           --add-param-file lte_test.parm \
           -A "--serial1=uart:/tmp/ttySITL" \
           --out 127.0.0.1:14551 \
           --mavproxy-args="--daemon" &
         
-        # 2. Wait 15 seconds to ensure SITL and MAVProxy are fully booted
-        sleep 15
-        
-        # 3. Run your mock script
+        # 2. IMMEDIATELY run the Python mock in the foreground
+        # This ensures we capture all logs from T=0 and miss nothing!
         python3 Tools/autotest/Lte_modem_test.py --port /tmp/ttyMock --mavlink-port 14551
