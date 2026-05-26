@@ -40,29 +40,34 @@ jobs:
         mkdir -p ArduPlane/AP_Scripting/scripts
         cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua ArduPlane/AP_Scripting/scripts/
         
-        # Load script enabling and port configurations
-        echo "SCR_ENABLE 1" >> Tools/autotest/default_params/plane.parm
-        echo "LTE_ENABLE 1" >> Tools/autotest/default_params/plane.parm
-        echo "LTE_SERPORT 1" >> Tools/autotest/default_params/plane.parm
-        echo "SERIAL1_PROTOCOL 28" >> Tools/autotest/default_params/plane.parm
-        echo "LTE_OPTIONS 4" >> Tools/autotest/default_params/plane.parm
-        
-        # IP/Port Configurations required to prevent early-return timeout
-        echo "LTE_SERVER_PORT 8080" >> Tools/autotest/default_params/plane.parm
-        echo "LTE_SERVER_IP0 8" >> Tools/autotest/default_params/plane.parm
-        echo "LTE_SERVER_IP1 8" >> Tools/autotest/default_params/plane.parm
-        echo "LTE_SERVER_IP2 8" >> Tools/autotest/default_params/plane.parm
-        echo "LTE_SERVER_IP3 8" >> Tools/autotest/default_params/plane.parm
+        # Create a dedicated custom parameter file to GUARANTEE they are loaded
+        cat <<EOF > lte_test.parm
+        SCR_ENABLE 1
+        LTE_ENABLE 1
+        LTE_SERPORT 1
+        SERIAL1_PROTOCOL 28
+        LTE_OPTIONS 4
+        LTE_SERVER_PORT 8080
+        LTE_SERVER_IP0 8
+        LTE_SERVER_IP1 8
+        LTE_SERVER_IP2 8
+        LTE_SERVER_IP3 8
+        EOF
 
     - name: Boot SITL and Run Basic Flow Test
       run: |
         export PATH=$PATH:$GITHUB_WORKSPACE/Tools/autotest
         
-        sim_vehicle.py -v ArduPlane --no-rebuild --no-mavproxy \
+        # 1. Start ArduPilot SITL in the background
+        # - Removed --no-mavproxy so telemetry routing works
+        # - Added --add-param-file to force our Lua settings to load
+        sim_vehicle.py -v ArduPlane --no-rebuild \
+          --add-param-file lte_test.parm \
           -A "--serial1=uart:/tmp/ttySITL" \
-          --out udp:localhost:14551 &
+          --out 127.0.0.1:14551 &
         
-        sleep 10
+        # 2. Wait 15 seconds to ensure SITL and MAVProxy are fully booted
+        sleep 15
         
-        # Executing exact filename with capital L
+        # 3. Run your mock script
         python3 Tools/autotest/Lte_modem_test.py --port /tmp/ttyMock --mavlink-port 14551
