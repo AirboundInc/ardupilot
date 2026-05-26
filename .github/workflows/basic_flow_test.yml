@@ -5,7 +5,7 @@ on:
     branches: [ master, main, lte-automated-tests ]
   pull_request:
     branches: [ master, main ]
-  workflow_dispatch:  # <-- This adds a manual "Run Workflow" button
+  workflow_dispatch:
 
 jobs:
   test_happy_path:
@@ -27,29 +27,31 @@ jobs:
         sleep 1
         chmod 777 /tmp/ttyMock /tmp/ttySITL
 
-    - name: Build ArduCopter SITL
+    - name: Build ArduPlane SITL
       run: |
-        # Configure and build the SITL binary
+        # Configure and build the SITL binary for ArduPlane
         ./waf configure --board sitl
-        ./waf copter
+        ./waf plane
 
     - name: Configure Parameters & Load Script
       run: |
-        mkdir -p modules/AP_Scripting/scripts
-        cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua modules/AP_Scripting/scripts/
+        # Create the folder inside the ArduPlane directory
+        mkdir -p ArduPlane/AP_Scripting/scripts
+        cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua ArduPlane/AP_Scripting/scripts/
         
-        echo "SCR_ENABLE 1" >> Tools/autotest/default_params/copter.parm
-        echo "LTE_ENABLE 1" >> Tools/autotest/default_params/copter.parm
-        echo "LTE_SERPORT 1" >> Tools/autotest/default_params/copter.parm
-        echo "SERIAL1_PROTOCOL 28" >> Tools/autotest/default_params/copter.parm
-        echo "LTE_OPTIONS 4" >> Tools/autotest/default_params/copter.parm # 4 = NOMUX
+        # Configure ArduPlane default parameters
+        echo "SCR_ENABLE 1" >> Tools/autotest/default_params/plane.parm
+        echo "LTE_ENABLE 1" >> Tools/autotest/default_params/plane.parm
+        echo "LTE_SERPORT 1" >> Tools/autotest/default_params/plane.parm
+        echo "SERIAL1_PROTOCOL 28" >> Tools/autotest/default_params/plane.parm
+        echo "LTE_OPTIONS 4" >> Tools/autotest/default_params/plane.parm # 4 = NOMUX
 
     - name: Boot SITL and Run Basic Flow Test
       run: |
         export PATH=$PATH:$GITHUB_WORKSPACE/Tools/autotest
         
-        # 1. Start ArduPilot SITL in the background (no-rebuild since we just built it)
-        sim_vehicle.py -v ArduCopter --no-rebuild --no-mavproxy \
+        # 1. Start ArduPilot SITL in the background for ArduPlane
+        sim_vehicle.py -v ArduPlane --no-rebuild --no-mavproxy \
           -A "--serial1=uart:/tmp/ttySITL" \
           --out udp:localhost:14551 &
         
@@ -57,4 +59,4 @@ jobs:
         sleep 10
         
         # 3. Run your mock script
-        python3 Tools/autotest/lte_modem_test.py --port /tmp/ttyMock --mavlink-port 14551
+        python3 Tools/autotest/Lte_modem_test.py --port /tmp/ttyMock --mavlink-port 14551
