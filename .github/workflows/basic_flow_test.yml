@@ -21,8 +21,8 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y socat python3-serial python3-pip python3-dev python3-future
-        # Added --break-system-packages to bypass Ubuntu 24.04 PEP 668
-        pip install pyserial pymavlink MAVProxy --break-system-packages
+        # Added empy==3.3.4 to fix the waf build error
+        pip install pyserial pymavlink MAVProxy empy==3.3.4 --break-system-packages
 
     - name: Setup Virtual Serial Cable
       run: |
