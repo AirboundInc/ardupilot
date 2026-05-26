@@ -126,6 +126,8 @@ local cs = {
     last_parse_ms = uint32_t(0),
     last_route_ms = uint32_t(0),
     last_send_data_ms = uint32_t(0),
+    sim_probe_count = 0,
+    cpin_probe_n = 0,
     csq_toggle = false,
     post_reset = true
 }
@@ -139,7 +141,7 @@ local function uart_read()
     return s
 end
 
-local buf = { uart = "", modem = "", fc = "", parse = "" }
+local buf = { uart = "", modem = "", fc = "", parse = "", setup = "" }
 
 local function uart_write_pending()
     if #buf.uart > 0 then
@@ -295,7 +297,7 @@ end
 
 local function reset_buffers()
     cs.last_data_ms = millis()
-    buf.modem = ""; buf.fc = ""; buf.parse = ""
+    buf.modem = ""; buf.fc = ""; buf.parse = ""; buf.setup = ""
     cmux.buffers[cmux.DLC_AT] = ""; cmux.buffers[cmux.DLC_DATA] = ""
     while ser_device:available() > 0 do ser_device:readstring(512) end
 end
@@ -568,15 +570,30 @@ local function step_QENG()
 end
 
 local function step_CREG()
-    local s = uart_read()
+    local raw = uart_read()
+    if raw and #raw > 0 then buf.setup = buf.setup .. raw end
+    if #buf.setup > 4096 then buf.setup = "" end 
+    
+    local s = buf.setup
 
-    if handle_error(s) then return end
+    if handle_error(s) then 
+        buf.setup = "" 
+        return 
+    end
 
-    if s then
-        if cmux_enabled() and #s > 4 and not cmux.parse_cmux_frame(s) then step = "CMUX"; return end
+    if s and #s > 0 then
+        -- Use #raw to ensure we only evaluate CMUX if new data just arrived
+        if cmux_enabled() and #raw > 0 and #s > 4 and not cmux.parse_cmux_frame(s) then 
+            -- Check if it's just a standard AT text response before panicking
+            if not (s:find('+CEREG:') or s:find('+CREG:') or s:find('OK\r\n')) then
+                step = "CMUX"; buf.setup = ""; return 
+            end
+        end
+        
         local reg = s:match('+CEREG: %d,(%d+)') or s:match('+CREG: %d,(%d+)\r\n')
         
         if reg == "1" or reg == "5" then
+            buf.setup = "" -- Clear after success
             cs.cops_zero_sent = false
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG OK')
             if P.PROTOCOL:get() == PPP then
@@ -591,10 +608,11 @@ local function step_CREG()
             return
             
         elseif reg == "0" or reg == "3" then
+            buf.setup = "" 
             if modem.fast_connect then
                 local time_in_step = (millis():tofloat() - cs.step_timer_ms) / 1000
                 if time_in_step < 2.0 then
-                    -- Just wait passively for the first 2 seconds to see if it registers naturally
+                    -- Just wait passively for the first 2 seconds
                 elseif not cs.cops_zero_sent then
                     gcs:send_text(MAV_SEVERITY.WARNING, 'LTE CREG: not registered, auto-selecting (COPS=0)')
                     AT_send('AT+COPS=0\r\n')
@@ -610,10 +628,17 @@ local function step_CREG()
             return
             
         elseif reg == "2" then
-            -- Let it naturally search without interrupting it
+            -- Do not clear the buffer here! Let it print, and let the OK catch it below.
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG searching...')
         end
+
+        -- Self-cleaning mechanism: wipe the slate clean when the modem finishes a sentence
+        if s:find('OK\r\n') or s:find('ERROR\r\n') then
+            buf.setup = ""
+        end
     end
+    
+    -- Unconditionally poll the modem (the 200ms delay in run_step prevents spamming)
     AT_send(modem.fast_connect and 'AT+CEREG?\r\n' or 'AT+CREG?\r\n')
 end
 
@@ -765,11 +790,21 @@ local function step_NETOPEN()
 end
 
 local function step_CIPOPEN()
-    local s = uart_read()
+    local raw = uart_read()
+    if raw and #raw > 0 then buf.setup = buf.setup .. raw end
+    
+    -- Safety valve: Prevent infinite RAM growth if modem spams junk
+    if #buf.setup > 4096 then buf.setup = "" end 
+    
+    local s = buf.setup
 
-    if s then
+    if s and #s > 0 then
         if s == "" and modem.cipclose and not modem.fast_connect then AT_send(modem.cipclose) end
-        if s:find('+CAOPEN: 0,0') and s:find('OK\r\n') and modem.caswitch then data_send(modem.caswitch); return end
+        if s:find('+CAOPEN: 0,0') and s:find('OK\r\n') and modem.caswitch then 
+            data_send(modem.caswitch)
+            buf.setup = "" -- Clear after success
+            return 
+        end
         if s:find('CONNECT') or s:find('+QIOPEN: 0,0') or s:find('+CIPOPEN: 0,0') or (s:find('+CAOPEN: 0,0') and s:find('OK\r\n')) then
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: connected')
             cs.cipopen_sent = false; cs.cipopen_retry = 0
@@ -779,11 +814,13 @@ local function step_CIPOPEN()
     end
 
     local is_error = s and s:find('\nERROR\r\n')
+    if is_error then buf.setup = "" end -- Clear buffer on error so we can retry cleanly
 
     if cs.cipopen_sent then
         local wait = cs.cipopen_sent_ms > 0 and millis():tofloat() - cs.cipopen_sent_ms or 0
         if wait > 3000 or is_error then
             cs.cipopen_retry = cs.cipopen_retry + 1; cs.cipopen_sent = false
+            buf.setup = "" -- Clear buffer on timeout
             if cs.cipopen_retry <= 3 then
                 gcs:send_text(MAV_SEVERITY.WARNING, string.format('LTE CIPOPEN timeout/error retry %d/3', cs.cipopen_retry))
                 if modem.cipclose then step = "CIPCLOSE" end
@@ -978,7 +1015,7 @@ local function run_step()
     if step == "CONNECTED" then step_CONNECTED(); return 5 end
 
     local time_in_step = (now_ms:tofloat() - cs.step_timer_ms) / 1000
-    if not step_changed and step ~= "ATI" and step ~= "CPIN" and step ~= "CREG" and step ~= "HALT" then
+    if not step_changed and step ~= "ATI" and step ~= "CMUX" and step ~= "CPIN" and step ~= "CREG" and step ~= "HALT" then
         if time_in_step > P.STUCK_T:get() then
             gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE: %s timeout after %ds", step, P.STUCK_T:get()))
             reset_to_ATI(); return 1000
@@ -1002,7 +1039,7 @@ local function run_step()
     end
     if step == "ATI" then step_ATI(); return 1100 end
     if step == "BAUD" then step_BAUD(); return 50 end
-    if step == "CREG" then step_CREG(); return 50 end
+    if step == "CREG" then step_CREG(); return 150 end 
     if step == "SIGNAL_GATE" then step_SIGNAL_GATE(); return 50 end
     if step == "SOCKET_STATE" then step_SOCKET_STATE(); return 50 end
     if step == "CGACT" then step_CGACT(); return 500 end
