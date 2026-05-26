@@ -37,15 +37,23 @@ jobs:
 
     - name: Configure Parameters & Load Script
       run: |
-        mkdir -p ArduPlane/AP_Scripting/scripts
-        cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua ArduPlane/AP_Scripting/scripts/
+        # ArduPilot looks for scripts in a folder named exactly "scripts"
+        mkdir -p scripts
+        cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua scripts/
         
-        # Updated LTE_SERPORT to 0 (Index 0 matches the first scripting port)
+        # Copy to the ArduPlane specific directory as well to be bulletproof
+        mkdir -p ArduPlane/scripts
+        cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua ArduPlane/scripts/
+        
+        # Parameter file enforcing port mapping
         cat <<EOF > lte_test.parm
         SCR_ENABLE 1
         LTE_ENABLE 1
         LTE_SERPORT 0
         SERIAL1_PROTOCOL 28
+        SERIAL2_PROTOCOL 2
+        LTE_PROTOCOL 2
+        LTE_SCRPORT 0
         LTE_OPTIONS 4
         LTE_SERVER_PORT 8080
         LTE_SERVER_IP0 8
