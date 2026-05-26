@@ -14,6 +14,8 @@ jobs:
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'    # <-- Add this line to fetch waf and other dependencies
 
     - name: Install System Dependencies
       run: |
