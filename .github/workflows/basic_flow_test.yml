@@ -1,4 +1,4 @@
-name: LTE Modem Basic Flow Checkk
+name: LTE Modem Basic Flow Check
 
 on:
   push:
@@ -69,9 +69,10 @@ jobs:
         sleep 2
         
         # 3. Start ArduPilot SITL
+        # ADDED: --serial2=uart:/dev/null to force the simulated device port to turn on!
         sim_vehicle.py -v ArduPlane --no-rebuild \
           --add-param-file lte_test.parm \
-          -A "--serial1=uart:/tmp/ttySITL" \
+          -A "--serial1=uart:/tmp/ttySITL --serial2=uart:/dev/null" \
           --out 127.0.0.1:14551 \
           --mavproxy-args="--daemon" &
         SITL_PID=$!
