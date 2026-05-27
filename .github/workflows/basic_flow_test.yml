@@ -40,15 +40,15 @@ jobs:
         cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua scripts/
         mkdir -p ArduPlane/scripts
         cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua ArduPlane/scripts/
-        
-        # --- Surgically bypass CMUX transitions for the Python mock ---
+
+        # Bypass CMUX transitions for the Python mock
         sed -i 's/step = "CMUX"/step = "CPIN"/g' scripts/LTE_modem.lua
         sed -i "s/step = 'CMUX'/step = 'CPIN'/g" scripts/LTE_modem.lua
         sed -i 's/step = "CMUX"/step = "CPIN"/g' ArduPlane/scripts/LTE_modem.lua
         sed -i "s/step = 'CMUX'/step = 'CPIN'/g" ArduPlane/scripts/LTE_modem.lua
-        
-        # --- Create Parameter File using Absolute Paths ---
-        cat <<EOF > $GITHUB_WORKSPACE/lte_test.parm
+
+        # Create parameter file
+        cat <<'EOF' > lte_test.parm
         SCR_ENABLE 1
         LTE_ENABLE 1
         LTE_SERPORT 0
@@ -64,55 +64,58 @@ jobs:
         LTE_SERVER_IP2 8
         LTE_SERVER_IP3 8
         EOF
-        
-        # --- Create MAVProxy Startup Script to delay parameter loading ---
-        cat <<EOF > $GITHUB_WORKSPACE/mavinit.scr
-        module load system
-        ! sleep 5
-        param load $GITHUB_WORKSPACE/lte_test.parm
-        EOF
-        # Copy to ArduPlane directory as well to ensure MAVProxy finds it
-        cp $GITHUB_WORKSPACE/mavinit.scr $GITHUB_WORKSPACE/ArduPlane/mavinit.scr
 
-    - name: Boot SITL and Run Basic Flow Test
+    - name: "Boot 1: Register LTE params in EEPROM"
       run: |
         export PATH=$PATH:$GITHUB_WORKSPACE/Tools/autotest
-        
-        # --- BOOT 1: Initialize Lua Parameters in EEPROM ---
-        echo "Running Boot 1 to register Lua parameters..."
+
+        # First boot: LTE_ENABLE=1 makes the C++ driver start and register
+        # its child params (LTE_SERVER_PORT, etc.) into eeprom.bin.
+        # The --add-param-file values for those children are silently
+        # ignored on this boot because the params don't exist yet.
         sim_vehicle.py -v ArduPlane --no-rebuild \
           --add-param-file lte_test.parm \
           -A "--serial1=uart:/tmp/ttySITL" \
           --mavproxy-args="--daemon" &
         BOOT1_PID=$!
-        
-        # Give Lua 15 seconds to boot and write parameter definitions to memory
-        sleep 15
+
+        # 20s is enough for SITL boot + Lua init + LTE driver param registration
+        sleep 20
+
         kill -9 $BOOT1_PID || true
         killall -9 arduplane || true
         sleep 2
-        
-        # Flush stale serial data from Boot 1
-        dd if=/tmp/ttyMock of=/dev/null bs=4096 count=1 iflag=nonblock 2>/dev/null || true
-        dd if=/tmp/ttySITL of=/dev/null bs=4096 count=1 iflag=nonblock 2>/dev/null || true
-        
-        # --- START PYTHON MOCK ---
-        python3 Tools/autotest/Lte_modem_test.py --port /tmp/ttyMock --mavlink-port 14551 &
+
+        # Flush stale AT bytes that Boot 1's Lua script pushed into the PTY
+        dd if=/tmp/ttyMock  of=/dev/null bs=4096 count=1 iflag=nonblock 2>/dev/null || true
+        dd if=/tmp/ttySITL  of=/dev/null bs=4096 count=1 iflag=nonblock 2>/dev/null || true
+
+    - name: "Boot 2: Run the actual test"
+      run: |
+        export PATH=$PATH:$GITHUB_WORKSPACE/Tools/autotest
+
+        # Start mock modem + GCS monitor FIRST
+        python3 Tools/autotest/Lte_modem_test.py \
+          --port /tmp/ttyMock \
+          --mavlink-port 14551 \
+          --timeout 120 &
         TEST_PID=$!
         sleep 2
-        
-        # --- BOOT 2: Run the Actual Test ---
-        echo "Running Boot 2 to execute the test..."
+
+        # Second boot: eeprom.bin now contains the LTE_SERVER_PORT param
+        # definition, so --add-param-file can set it to 8080 successfully.
         sim_vehicle.py -v ArduPlane --no-rebuild \
           --add-param-file lte_test.parm \
           -A "--serial1=uart:/tmp/ttySITL" \
           --out 127.0.0.1:14551 \
           --mavproxy-args="--daemon" &
         SITL_PID=$!
-        
+
+        # Wait for test verdict
         wait $TEST_PID
         RESULT=$?
-        
+
+        # Cleanup
         kill -9 $SITL_PID || true
         killall -9 arduplane || true
         exit $RESULT
