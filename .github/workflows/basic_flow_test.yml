@@ -77,12 +77,11 @@ jobs:
         # 2. Wait 2 seconds for UDP and Serial to bind
         sleep 2
         
-        # 3. Start ArduPilot SITL
         sim_vehicle.py -v ArduPlane --no-rebuild \
           --add-param-file lte_test.parm \
           -A "--serial1=uart:/tmp/ttySITL" \
           --out 127.0.0.1:14551 \
-          --mavproxy-args="--daemon" &
+          --mavproxy-args="--daemon --cmd='param load lte_test.parm'" &
         SITL_PID=$!
         
         # 4. Wait for Python test to exit (Success=0, Timeout/Crash=1)
