@@ -4,10 +4,9 @@ LTE Modem SITL Happy-Path Test
 -------------------------------
 1. Runs a mock EC25 modem on a PTY — validates QIOPEN destination
 2. Connects to MAVLink, waits for heartbeat
-3. Injects LTE_SERVER_* params via PARAM_SET
-4. Monitors STATUSTEXT for CONNECTED state
-5. Validates the Lua script walked the correct step sequence
-6. Verifies the Lua script connected to the correct IP:port
+3. Background thread injects LTE_SERVER_* params via PARAM_SET
+4. Main thread monitors STATUSTEXT from the start (no missed steps)
+5. Validates step sequence + correct QIOPEN IP:port
 
 Exit codes:  0 = all checks pass,  1 = timeout / error / wrong sequence
 """
@@ -118,7 +117,6 @@ def mock_modem_thread(port):
                     line_str = line.decode('utf-8', errors='ignore')
                     print(f"[MOCK] RX: {line_str}", flush=True)
 
-                    # QIOPEN gets special validation
                     if 'AT+QIOPEN' in line_str:
                         time.sleep(0.05)
                         handle_qiopen(line_str, ser)
@@ -144,36 +142,51 @@ def mock_modem_thread(port):
         print(f"[MOCK] Serial error: {e}", flush=True)
 
 
-def inject_params(master):
-    """Send PARAM_SET messages for LTE server params."""
-    print("[GCS] Injecting LTE_SERVER_* params via PARAM_SET...", flush=True)
+def inject_params_thread(mavlink_port):
+    """Background thread: connect separately and inject params."""
+    # Separate MAVLink connection so we don't steal STATUSTEXT from main
+    print("[INJECT] Connecting to MAVLink for param injection...",
+          flush=True)
+    conn = mavutil.mavlink_connection(f'udpin:0.0.0.0:{mavlink_port}')
+    conn.wait_heartbeat()
+    print(f"[INJECT] Heartbeat received, waiting 3s for LTE driver...",
+          flush=True)
+    time.sleep(3)
 
+    print("[INJECT] Sending PARAM_SET messages...", flush=True)
     for name, value in INJECTED_PARAMS.items():
         name_bytes = name.encode('utf-8')
 
         acked = False
-        for attempt in range(3):
-            master.mav.param_set_send(
-                master.target_system,
-                master.target_component,
+        for attempt in range(5):
+            conn.mav.param_set_send(
+                conn.target_system,
+                conn.target_component,
                 name_bytes,
                 float(value),
                 mavutil.mavlink.MAV_PARAM_TYPE_REAL32
             )
-            ack = master.recv_match(type='PARAM_VALUE', blocking=True,
-                                    timeout=2.0)
-            if ack and ack.param_id.strip('\x00') == name:
-                print(f"  [PARAM] {name} = {ack.param_value}", flush=True)
-                acked = True
+            # Drain messages looking for our specific ACK
+            deadline = time.time() + 1.0
+            while time.time() < deadline:
+                msg = conn.recv_match(type='PARAM_VALUE', blocking=True,
+                                      timeout=0.5)
+                if msg and msg.param_id.strip('\x00') == name:
+                    print(f"  [INJECT] {name} = {msg.param_value}",
+                          flush=True)
+                    acked = True
+                    break
+            if acked:
                 break
-            time.sleep(0.2)
+            time.sleep(0.1)
 
         if not acked:
-            print(f"  [PARAM] {name} — FAILED after 3 attempts", flush=True)
+            print(f"  [INJECT] {name} — no ACK after 5 attempts "
+                  f"(will rely on retry)", flush=True)
 
-        time.sleep(0.1)
+        time.sleep(0.05)
 
-    print("[GCS] Param injection complete.", flush=True)
+    print("[INJECT] Param injection complete.", flush=True)
 
 
 def validate_steps(observed):
@@ -186,7 +199,6 @@ def validate_steps(observed):
     print(f"   Expected: {' → '.join(EXPECTED_STEPS)}", flush=True)
     print(f"   Observed: {' → '.join(observed)}", flush=True)
 
-    # Show what went wrong
     missing = [s for s in EXPECTED_STEPS if s not in observed]
     extra = [s for s in observed if s not in EXPECTED_STEPS]
     if missing:
@@ -197,8 +209,8 @@ def validate_steps(observed):
     return False
 
 
-def monitor_gcs(mavlink_port, timeout):
-    """Wait for heartbeat, inject params, then watch for CONNECTED."""
+def monitor_gcs(mavlink_port, inject_port, timeout):
+    """Main thread: monitor STATUSTEXT from the very start."""
     print(f"[GCS] Waiting for MAVLink heartbeat on UDP {mavlink_port}...",
           flush=True)
     master = mavutil.mavlink_connection(f'udpin:0.0.0.0:{mavlink_port}')
@@ -206,15 +218,12 @@ def monitor_gcs(mavlink_port, timeout):
     print(f"[GCS] Heartbeat received (system {master.target_system},"
           f" component {master.target_component})", flush=True)
 
-    # 3s is enough — the LTE C++ driver registers params during init(),
-    # which runs before Lua starts (~4-5s after boot).
-    print("[GCS] Waiting 3s for LTE driver param registration...",
-          flush=True)
-    time.sleep(3)
+    # Start param injection in background — doesn't block monitoring
+    inject_thread = threading.Thread(
+        target=inject_params_thread, args=(inject_port,), daemon=True)
+    inject_thread.start()
 
-    inject_params(master)
-
-    # Monitor STATUSTEXT for success/failure
+    # Monitor STATUSTEXT immediately — catch every step from ATI onwards
     print(f"[GCS] Monitoring STATUSTEXT for {timeout}s...", flush=True)
     start_time = time.time()
     observed_steps = []
@@ -280,11 +289,15 @@ if __name__ == "__main__":
     parser.add_argument("--port", required=True,
                         help="PTY path for the mock modem")
     parser.add_argument("--mavlink-port", type=int, required=True,
-                        help="UDP port to listen for MAVLink")
+                        help="UDP port for STATUSTEXT monitoring")
+    parser.add_argument("--inject-port", type=int, default=0,
+                        help="UDP port for param injection (default: mavlink-port + 1)")
     parser.add_argument("--timeout", type=int, default=120,
                         help="Seconds to wait for CONNECTED (default 120)")
     args = parser.parse_args()
 
+    inject_port = args.inject_port if args.inject_port else args.mavlink_port + 1
+
     threading.Thread(target=mock_modem_thread, args=(args.port,),
                      daemon=True).start()
-    sys.exit(monitor_gcs(args.mavlink_port, args.timeout))
+    sys.exit(monitor_gcs(args.mavlink_port, inject_port, args.timeout))
