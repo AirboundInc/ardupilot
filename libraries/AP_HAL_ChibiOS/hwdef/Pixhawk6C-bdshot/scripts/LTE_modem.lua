@@ -611,15 +611,15 @@ local function step_CREG()
             buf.setup = "" 
             if modem.fast_connect then
                 local time_in_step = (millis():tofloat() - cs.step_timer_ms) / 1000
-                if time_in_step < 2.0 then
-                    -- Just wait passively for the first 2 seconds
-                elseif not cs.cops_zero_sent then
-                    gcs:send_text(MAV_SEVERITY.WARNING, 'LTE CREG: not registered, auto-selecting (COPS=0)')
-                    AT_send('AT+COPS=0\r\n')
-                    cs.cops_zero_sent = true
-                elseif time_in_step > 12.0 then
-                    gcs:send_text(MAV_SEVERITY.CRITICAL, 'LTE: CREG search timed out, hard reset')
-                    reset_to_ATI(); return
+                if time_in_step >= 2.0 then
+                    if not cs.cops_zero_sent then
+                        gcs:send_text(MAV_SEVERITY.WARNING, 'LTE CREG: not registered, auto-selecting (COPS=0)')
+                        AT_send('AT+COPS=0\r\n')
+                        cs.cops_zero_sent = true
+                    elseif time_in_step > 12.0 then
+                        gcs:send_text(MAV_SEVERITY.CRITICAL, 'LTE: CREG search timed out, hard reset')
+                        reset_to_ATI(); return
+                    end
                 end
             else
                 gcs:send_text(MAV_SEVERITY.WARNING, 'LTE CREG: not registered')
