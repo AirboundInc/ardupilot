@@ -41,19 +41,23 @@ jobs:
         mkdir -p ArduPlane/scripts
         cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua ArduPlane/scripts/
         
+        # --- THE FIX: Surgically bypass CMUX transitions for the Python mock ---
+        # This forces the state machine to jump to the CPIN (SIM check) step instead.
+        sed -i 's/step = "CMUX"/step = "CPIN"/g' scripts/LTE_modem.lua
+        sed -i "s/step = 'CMUX'/step = 'CPIN'/g" scripts/LTE_modem.lua
+        sed -i 's/step = "CMUX"/step = "CPIN"/g' ArduPlane/scripts/LTE_modem.lua
+        sed -i "s/step = 'CMUX'/step = 'CPIN'/g" ArduPlane/scripts/LTE_modem.lua
+        # -----------------------------------------------------------------------
+        
         cat <<EOF > lte_test.parm
         SCR_ENABLE 1
         LTE_ENABLE 1
         LTE_SERPORT 0
         SERIAL1_PROTOCOL 28
-        
-        # --- THE FIX: Enable the Scripting Simulated Device Subsystem ---
         SCR_SDEV_EN 1
         SCR_SDEV1_PROTO 2
         LTE_PROTOCOL 2
         LTE_SCRPORT 0
-        # ----------------------------------------------------------------
-        
         LTE_OPTIONS 4
         LTE_SERVER_PORT 8080
         LTE_SERVER_IP0 8
