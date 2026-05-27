@@ -78,26 +78,41 @@ jobs:
       run: |
         export PATH=$PATH:$GITHUB_WORKSPACE/Tools/autotest
         
-        # 1. Start Python mock FIRST to guarantee we miss no logs
-        python3 Tools/autotest/Lte_modem_test.py --port /tmp/ttyMock --mavlink-port 14551 &
-        TEST_PID=$!
+        # --- BOOT 1: Initialize Lua Parameters in EEPROM ---
+        echo "Running Boot 1 to register Lua parameters..."
+        sim_vehicle.py -v ArduPlane --no-rebuild \
+          --add-param-file lte_test.parm \
+          -A "--serial1=uart:/tmp/ttySITL" \
+          --mavproxy-args="--daemon" &
+        BOOT1_PID=$!
         
-        # 2. Wait 2 seconds for UDP and Serial to bind
+        # Give Lua 15 seconds to boot and write parameter definitions to memory
+        sleep 15
+        kill -9 $BOOT1_PID || true
+        killall -9 arduplane || true
         sleep 2
         
-        # 3. Start ArduPilot SITL (Notice --cmd is completely removed)
+        # Flush stale serial data from Boot 1
+        dd if=/tmp/ttyMock of=/dev/null bs=4096 count=1 iflag=nonblock 2>/dev/null || true
+        dd if=/tmp/ttySITL of=/dev/null bs=4096 count=1 iflag=nonblock 2>/dev/null || true
+        
+        # --- START PYTHON MOCK ---
+        python3 Tools/autotest/Lte_modem_test.py --port /tmp/ttyMock --mavlink-port 14551 &
+        TEST_PID=$!
+        sleep 2
+        
+        # --- BOOT 2: Run the Actual Test ---
+        echo "Running Boot 2 to execute the test..."
         sim_vehicle.py -v ArduPlane --no-rebuild \
-          --add-param-file $GITHUB_WORKSPACE/lte_test.parm \
+          --add-param-file lte_test.parm \
           -A "--serial1=uart:/tmp/ttySITL" \
           --out 127.0.0.1:14551 \
           --mavproxy-args="--daemon" &
         SITL_PID=$!
         
-        # 4. Wait for Python test to exit (Success=0, Timeout/Crash=1)
         wait $TEST_PID
         RESULT=$?
         
-        # 5. Cleanup
         kill -9 $SITL_PID || true
         killall -9 arduplane || true
         exit $RESULT
