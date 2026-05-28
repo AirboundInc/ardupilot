@@ -52,6 +52,9 @@ local trigger_para_script = false
 local first_para_pitch_exceeded_t = nil
 local PARA_CHAN_HIGH = 1850
 
+-- Parameter objects
+local para_trig_ch_param = nil  -- parachute trigger channel
+
 -- Helper: Radians to Degrees
 local function rad2deg(r) return r * 57.2958 end
 
@@ -77,13 +80,20 @@ end
 function para_deploy()
     if p_para_enable:get() ~= 1 then return end
 
-    para_trigger_rc_chan = nil
-    PARA_TRIG_CHAN = Parameter()
-    PARA_TRIG_CHAN:init('PARA_TRIG_CH')
-    if PARA_TRIG_CHAN then
-        channel_num = PARA_TRIG_CHAN:get()
-        -- gcs:send_text(2, "Channel num" .. tostring(channel_num))
-        para_trigger_rc_chan = rc:get_channel(channel_num)
+    if para_trig_ch_param == nil then
+        local PARA_TRIG_CHAN = Parameter()
+        if PARA_TRIG_CHAN:init('PARA_TRIG_CH') then
+            para_trig_ch_param = PARA_TRIG_CHAN
+        end
+    end
+
+    local para_trigger_rc_chan = nil
+    if para_trig_ch_param then
+        local channel_num = para_trig_ch_param:get()
+
+        if (channel_num) then
+            para_trigger_rc_chan = rc:get_channel(channel_num)
+        end
     end
 
     if para_trigger_rc_chan == nil then
