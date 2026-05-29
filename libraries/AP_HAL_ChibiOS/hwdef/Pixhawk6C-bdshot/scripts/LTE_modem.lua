@@ -792,6 +792,11 @@ end
 
 local function step_CIPOPEN()
     local raw = uart_read()
+
+    if cs.last_step == "CIPCLOSE" or cs.last_step == "SOCKET_STATE" then
+        cs.cipopen_preclosed = true
+    end
+
     if raw and #raw > 0 then buf.setup = buf.setup .. raw end
     
     -- Safety valve: Prevent infinite RAM growth if modem spams junk
@@ -816,6 +821,7 @@ local function step_CIPOPEN()
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: connected')
             cs.cipopen_sent = false; cs.cipopen_retry = 0
             cs.hard_reset_strikes = 0 
+            cs.cipopen_preclosed = false
             reset_buffers(); step = "CONNECTED"; return
         end
     end
@@ -839,7 +845,9 @@ local function step_CIPOPEN()
                     reset_to_ATI()
                 else
                     gcs:send_text(MAV_SEVERITY.ERROR, 'LTE CIPOPEN failed 3x — soft reset to CREG')
-                    cs.cipopen_retry = 0; step = "CREG"
+                    cs.cipopen_retry = 0;
+                    cs.cipopen_preclosed = false
+                    step = "CREG"
                 end
             end
         end
