@@ -2,16 +2,18 @@ name: test scripting
 
 on:
   push:
-    paths: # only run for scripting changes
+    paths:
       - 'libraries/AP_Scripting/tests/docs_check.py'
       - 'libraries/AP_Scripting/generator/**'
       - '**.lua'
+      - 'Tools/autotest/Lte_modem_test.py'
 
   pull_request:
-    paths: # only run for scripting changes
+    paths:
       - 'libraries/AP_Scripting/tests/docs_check.py'
       - 'libraries/AP_Scripting/generator/**'
       - '**.lua'
+      - 'Tools/autotest/Lte_modem_test.py'
 
   workflow_dispatch:
 
@@ -24,7 +26,6 @@ jobs:
     runs-on: ubuntu-22.04
     container: ardupilot/ardupilot-dev-base:v0.1.3
     steps:
-      # git checkout the PR
       - uses: actions/checkout@v4
         with:
           submodules: 'recursive'
@@ -52,7 +53,7 @@ jobs:
           PATH="/github/home/.local/bin:$PATH"
           mv "libraries/AP_Scripting/docs/docs.lua" "libraries/AP_Scripting/docs/current_docs.lua"
 
-      - name: build sitl # we don't really need to build the full code, just trigger docs re-gen with --scripting-docs, timeout after 10 seconds
+      - name: build sitl
         shell: bash
         run: |
           git config --global --add safe.directory ${GITHUB_WORKSPACE}
@@ -71,3 +72,89 @@ jobs:
           name: Docs
           path: ScriptingDocs.md
           retention-days: 7
+
+  test-lte-happy-path:
+    runs-on: ubuntu-22.04
+    container: ardupilot/ardupilot-dev-base:v0.1.3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Install LTE Test Dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y socat python3-serial
+          pip install pyserial pymavlink MAVProxy empy==3.3.4 --break-system-packages 2>/dev/null \
+            || pip install pyserial pymavlink MAVProxy empy==3.3.4
+
+      - name: Setup Virtual Serial Cable
+        shell: bash
+        run: |
+          socat -d -d PTY,link=/tmp/ttyMock,raw,echo=0 PTY,link=/tmp/ttySITL,raw,echo=0 &
+          sleep 1
+          chmod 777 /tmp/ttyMock /tmp/ttySITL
+
+      - name: Build ArduPlane SITL
+        shell: bash
+        run: |
+          git config --global --add safe.directory ${GITHUB_WORKSPACE}
+          PATH="/github/home/.local/bin:$PATH"
+          ./waf configure --board sitl
+          ./waf plane
+
+      - name: Configure Parameters & Load Script
+        shell: bash
+        run: |
+          mkdir -p scripts
+          cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua scripts/
+          mkdir -p ArduPlane/scripts
+          cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua ArduPlane/scripts/
+
+          # Bypass CMUX transitions for the Python mock
+          sed -i 's/step = "CMUX"/step = "CPIN"/g' scripts/LTE_modem.lua
+          sed -i "s/step = 'CMUX'/step = 'CPIN'/g" scripts/LTE_modem.lua
+          sed -i 's/step = "CMUX"/step = "CPIN"/g' ArduPlane/scripts/LTE_modem.lua
+          sed -i "s/step = 'CMUX'/step = 'CPIN'/g" ArduPlane/scripts/LTE_modem.lua
+
+          cat <<'EOF' > lte_test.parm
+          SCR_ENABLE 1
+          LTE_ENABLE 1
+          LTE_SERPORT 0
+          SERIAL1_PROTOCOL 28
+          SCR_SDEV_EN 1
+          SCR_SDEV1_PROTO 2
+          LTE_PROTOCOL 2
+          LTE_SCRPORT 0
+          LTE_OPTIONS 4
+          EOF
+
+      - name: "LTE Happy Path: Boot SITL and Verify"
+        shell: bash
+        run: |
+          export PATH="/github/home/.local/bin:$PATH:$GITHUB_WORKSPACE/Tools/autotest"
+
+          # 14551 = STATUSTEXT monitoring, 14552 = param injection
+          python3 Tools/autotest/Lte_modem_test.py \
+            --port /tmp/ttyMock \
+            --mavlink-port 14551 \
+            --inject-port 14552 \
+            --timeout 120 &
+          TEST_PID=$!
+          sleep 2
+
+          sim_vehicle.py -v ArduPlane --no-rebuild \
+            --add-param-file lte_test.parm \
+            -A "--serial1=uart:/tmp/ttySITL" \
+            --out 127.0.0.1:14551 \
+            --out 127.0.0.1:14552 \
+            --mavproxy-args="--daemon" &
+          SITL_PID=$!
+
+          wait $TEST_PID
+          RESULT=$?
+
+          kill -9 $SITL_PID || true
+          killall -9 arduplane || true
+          exit $RESULT

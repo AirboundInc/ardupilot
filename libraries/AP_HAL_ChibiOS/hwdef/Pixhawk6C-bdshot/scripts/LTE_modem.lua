@@ -861,7 +861,8 @@ local function step_CIPOPEN()
     local cipopen = option_enabled(OPT.TCP) and modem.cipopen_tcp or modem.cipopen_udp
     if not cipopen then
         gcs:send_text(MAV_SEVERITY.ERROR, "LTE: modem has no socket-open command")
-    return
+        step = "HALT"
+        return
     end
     data_send(string.format(cipopen, P.SERVER_IP0:get(), P.SERVER_IP1:get(), P.SERVER_IP2:get(), P.SERVER_IP3:get(), P.SERVER_PORT:get()))
     cs.cipopen_sent = true; cs.cipopen_sent_ms = millis():tofloat()
