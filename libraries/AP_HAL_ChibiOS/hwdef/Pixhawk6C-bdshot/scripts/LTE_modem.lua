@@ -129,7 +129,8 @@ local cs = {
     sim_probe_count = 0,
     cpin_probe_n = 0,
     csq_toggle = false,
-    post_reset = true
+    post_reset = true,
+    cipopen_preclosed = false
 }
 
 local function uart_read()
@@ -291,7 +292,6 @@ end
 local function data_send_connected(data)
     local s = cmux_enabled() and cmux.encode_cmux_frame(cmux.DLC_DATA, cmux.UIH, data) or data
     local n = uart_write(s)
-    stats.bytes_out = stats.bytes_out + n
     return n == #s
 end
 
@@ -313,6 +313,7 @@ local function reset_state()
     cs.cereg_drop_ms = nil      
     cs.step_times = {}; cs.step_timer_ms = millis():tofloat()
     cs.post_reset = true
+    cs.cipopen_preclosed = false
 end
 
 local function reset_to_ATI()
@@ -542,7 +543,7 @@ local function step_CPIN()
         return
     end
 
-    -- Phase 2: 1–5s — probe once per second (3 probes max), then hard reset
+    -- Phase 2: 1–5s — probe once per second (5 probes max), then hard reset
     local probe_tick = math.floor(time_in_step) -- integer seconds since step start
     if probe_tick > cs.cpin_probe_n then
         cs.cpin_probe_n = probe_tick
@@ -791,6 +792,11 @@ end
 
 local function step_CIPOPEN()
     local raw = uart_read()
+
+    if cs.last_step == "CIPCLOSE" or cs.last_step == "SOCKET_STATE" then
+        cs.cipopen_preclosed = true
+    end
+
     if raw and #raw > 0 then buf.setup = buf.setup .. raw end
     
     -- Safety valve: Prevent infinite RAM growth if modem spams junk
@@ -798,8 +804,14 @@ local function step_CIPOPEN()
     
     local s = buf.setup
 
+    -- Pre-close stale socket on first entry only
+    if s == "" and modem.cipclose and not cs.cipopen_sent and not cs.cipopen_preclosed then
+        gcs:send_text(MAV_SEVERITY.INFO, "LTE: pre-close stale socket")
+        cs.cipopen_preclosed = true  -- ← dedicated flag, doesn't touch retry counter
+        step = "CIPCLOSE"
+        return
+    end
     if s and #s > 0 then
-        if s == "" and modem.cipclose and not modem.fast_connect then AT_send(modem.cipclose) end
         if s:find('+CAOPEN: 0,0') and s:find('OK\r\n') and modem.caswitch then 
             data_send(modem.caswitch)
             buf.setup = "" -- Clear after success
@@ -809,6 +821,7 @@ local function step_CIPOPEN()
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: connected')
             cs.cipopen_sent = false; cs.cipopen_retry = 0
             cs.hard_reset_strikes = 0 
+            cs.cipopen_preclosed = false
             reset_buffers(); step = "CONNECTED"; return
         end
     end
@@ -832,7 +845,9 @@ local function step_CIPOPEN()
                     reset_to_ATI()
                 else
                     gcs:send_text(MAV_SEVERITY.ERROR, 'LTE CIPOPEN failed 3x — soft reset to CREG')
-                    cs.cipopen_retry = 0; step = "CREG"
+                    cs.cipopen_retry = 0;
+                    cs.cipopen_preclosed = false
+                    step = "CREG"
                 end
             end
         end
@@ -844,6 +859,11 @@ local function step_CIPOPEN()
     if P.SERVER_PORT:get() <= 0 then gcs:send_text(MAV_SEVERITY.ERROR, "Must set LTE_SERVER_PORT"); return end
 
     local cipopen = option_enabled(OPT.TCP) and modem.cipopen_tcp or modem.cipopen_udp
+    if not cipopen then
+        gcs:send_text(MAV_SEVERITY.ERROR, "LTE: modem has no socket-open command")
+        step = "HALT"
+        return
+    end
     data_send(string.format(cipopen, P.SERVER_IP0:get(), P.SERVER_IP1:get(), P.SERVER_IP2:get(), P.SERVER_IP3:get(), P.SERVER_PORT:get()))
     cs.cipopen_sent = true; cs.cipopen_sent_ms = millis():tofloat()
 end
