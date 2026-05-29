@@ -547,6 +547,15 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("LND_FRZ_TIM", 39, QuadPlane, q_land_freeze_time, 7.0f),
 
+    // @Param: LND_DET_TIM
+    // @DisplayName: Qmode Land detection timeout
+    // @Description: The maximum time allowed for land detection in milliseconds
+    // @Units: ms
+    // @Range: 1000 4000
+    // @Increment: 100
+    // @User: Standard
+    AP_GROUPINFO("LND_DET_TIM", 40, QuadPlane, landing_detect.timeout_ms, 1000),
+
     AP_GROUPEND
 };
 
@@ -3555,7 +3564,7 @@ bool QuadPlane::verify_vtol_takeoff(const AP_Mission::Mission_Command &cmd)
 /*
   a landing detector based on change in altitude over a timeout
  */
-bool QuadPlane::land_detector(uint32_t timeout_ms)
+bool QuadPlane::land_detector(void)
 {
     bool might_be_landed = should_relax() && !poscontrol.pilot_correction_active;
     if (!might_be_landed) {
@@ -3570,16 +3579,16 @@ bool QuadPlane::land_detector(uint32_t timeout_ms)
     }
 
     // we only consider the vehicle landed when the motors have been
-    // at minimum for timeout_ms+1000 and the vertical position estimate has not
-    // changed by more than 20cm for timeout_ms
+    // at minimum for landing_detect.timeout_ms+1000 and the vertical position estimate has not
+    // changed by more than 20cm for landing_detect.timeout_ms
     if (fabsf(height - landing_detect.vpos_start_m) > landing_detect.detect_alt_change) {
         // height has changed, call off landing detection
         landing_detect.land_start_ms = 0;
         return false;
     }
            
-    if ((now - landing_detect.land_start_ms) < timeout_ms ||
-        (now - landing_detect.lower_limit_start_ms) < (timeout_ms+1000)) {
+    if ((now - landing_detect.land_start_ms) < landing_detect.timeout_ms ||
+        (now - landing_detect.lower_limit_start_ms) < (landing_detect.timeout_ms+1000)) {
         // not landed yet
         return false;
     }
@@ -3596,7 +3605,7 @@ bool QuadPlane::check_land_complete(void)
         // only apply to final landing phase
         return false;
     }
-    if (land_detector(4000)) {
+    if (land_detector()) {
         poscontrol.set_state(QPOS_LAND_COMPLETE);
         gcs().send_text(MAV_SEVERITY_INFO,"Land complete");
 
@@ -3640,7 +3649,7 @@ bool QuadPlane::check_land_final(void)
       also apply landing detector, in case we have landed in descent
       phase. Use a longer threshold
      */
-    return land_detector(6000);
+    return land_detector();
 }
 
 /*
