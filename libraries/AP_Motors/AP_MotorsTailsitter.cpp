@@ -23,6 +23,7 @@
 #include "AP_MotorsTailsitter.h"
 #include <GCS_MAVLink/GCS.h>
 #include <SRV_Channel/SRV_Channel.h>
+#include <AP_Logger/AP_Logger.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -208,7 +209,8 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     } else {
         _throttle_out = throttle_thrust / compensation_gain;
     }
-
+    float pitch_before = pitch_thrust;
+    float yaw_before = yaw_thrust;
     // thrust vectoring
     pitch_thrust = constrain_float(pitch_thrust, -1.0f, 1.0f);
     float yaw_headroom = 1.0f - fabsf(pitch_thrust);
@@ -218,6 +220,12 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     }
     _tilt_left  = pitch_thrust - yaw_thrust_limited;
     _tilt_right = pitch_thrust + yaw_thrust_limited;
+    AP::logger().WriteStreaming("ATPD", "TimeUS,PBefore,YBefore,P,Y",
+        "sd---", // seconds, degrees
+        "F0000", // micro (1e-6), no mult (1e0)
+        "Qffff", // uint64_t, float
+        AP_HAL::micros64(),
+        pitch_before, yaw_before, pitch_thrust, yaw_thrust_limited);
 }
 
 // output_test_seq - spin a motor at the pwm value specified
