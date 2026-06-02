@@ -3290,25 +3290,34 @@ void QuadPlane::takeoff_controller(void)
     // End of commented out block *Stefard*
 
     // takeoff yaw handling added on 02-June-2026 *Stefard*
-    if (takeoff_yaw_active) {
-    // Yaw phase: hold position, zero climb, command absolute yaw
-    disable_yaw_rate_time_constant();
-    attitude_control->input_euler_angle_roll_pitch_yaw(plane.nav_roll_cd,
-                                                       plane.nav_pitch_cd,
-                                                       takeoff_yaw_target_cd, true);
-    set_climb_rate_cms(0);
-} else {
     set_pilot_yaw_rate_time_constant();
-    attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
-                                                                  plane.nav_pitch_cd,
-                                                                  get_pilot_input_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
+    if (takeoff_alt_hold_start_ms != 0 && (AP_HAL::millis() - takeoff_alt_hold_start_ms) < 10000) {
+        // hold altitude during pause phase
+        attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
+                                                                      plane.nav_pitch_cd,
+                                                                      get_pilot_input_yaw_rate_cds());
+        set_climb_rate_cms(0);
+    } else {
+        attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
+                                                                      plane.nav_pitch_cd,
+                                                                      get_pilot_input_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
+        float vel_z = wp_nav->get_default_speed_up();
+        if (plane.control_mode == &plane.mode_guided && guided_takeoff) {
+            Location origin;
+            if (ahrs.get_origin(origin)) {
+                const int32_t margin_cm = 5;
+                float pos_z = margin_cm + plane.next_WP_loc.alt - origin.alt;
+                vel_z = 0;
+                pos_control->input_pos_vel_accel_z(pos_z, vel_z, 0);
+            } else {
+                set_climb_rate_cms(vel_z);
+            }
+        } else {
+            set_climb_rate_cms(vel_z);
+        }
+    }
+    run_z_controller();
 
-    float vel_z = wp_nav->get_default_speed_up();
-    // ... keep existing guided_takeoff branch exactly as-is
-    set_climb_rate_cms(vel_z);
-}
-
-run_z_controller();
 // End of Change *Stefard*
 }
 
@@ -3479,8 +3488,7 @@ bool QuadPlane::do_vtol_takeoff(const AP_Mission::Mission_Command& cmd)
     takeoff_time_limit_ms = MAX(travel_time * takeoff_failure_scalar * 1000, 5000); // minimum time 5 seconds
 
     // takeoff yaw handling added on 02-June-2026 *Stefard*
-    takeoff_yaw_active = false;
-    takeoff_yaw_target_cd = 0.0f;
+    takeoff_alt_hold_start_ms = 0;
     // End of Change *Stefard*
 
     return true;
@@ -3560,31 +3568,21 @@ if (plane.current_loc.alt < plane.next_WP_loc.alt) {
     }
 
 // takeoff yaw handling added on 02-June-2026 *Stefard*
-// Tailsitter-only: yaw to face next waypoint before transitioning
-if (tailsitter.enabled()) {
-    if (!takeoff_yaw_active) {
-        // First time altitude reached — compute bearing to next nav waypoint
-        AP_Mission::Mission_Command next_cmd;
-        if (plane.mission.get_next_nav_cmd(plane.mission.get_current_nav_index() + 1, next_cmd)) {
-            takeoff_yaw_target_cd = (float)plane.current_loc.get_bearing_to(next_cmd.content.location);
-            takeoff_yaw_active = true;
-            takeoff_start_time_ms = now;  // reset timeout for the yaw phase
-            gcs().send_text(MAV_SEVERITY_INFO, "Takeoff: yawing to %.0f deg", (double)(takeoff_yaw_target_cd * 0.01f));
-            return false;
-        }
-        // No next waypoint — fall through and transition immediately
+// 10-second hold at takeoff altitude before fixed-wing transition
+if (takeoff_alt_hold_start_ms == 0) {
+        takeoff_alt_hold_start_ms = now;
     }
+const uint32_t hold_elapsed_ms = now - takeoff_alt_hold_start_ms;
+if (hold_elapsed_ms < 10000) {
+        uint8_t secs_remaining = (uint8_t)((10000 - hold_elapsed_ms + 999) / 1000);
+                static uint8_t last_sec = 255;
+        if (secs_remaining != last_sec) {
+            last_sec = secs_remaining;
+            gcs().send_text(MAV_SEVERITY_INFO, "Takeoff hold: %u sec remaining", (unsigned)secs_remaining);
+        }
 
-    if (takeoff_yaw_active) {
-        float yaw_error_cd = fabsf(wrap_180_cd((float)ahrs.yaw_sensor - takeoff_yaw_target_cd));
-        if (yaw_error_cd > 1000.0f) {   // > 10 degrees, keep waiting
-            return false;
-        }
-        // Aligned — clear flag and proceed to transition
-        takeoff_yaw_active = false;
-        gcs().send_text(MAV_SEVERITY_INFO, "Takeoff: aligned, transitioning");
+        return false;
     }
-}
 // End of Change *Stefard*
 
 transition->restart();
