@@ -3261,11 +3261,12 @@ void QuadPlane::takeoff_controller(void)
     }
 
     run_xy_controller();
+
     // commented out below on 02-June-2026 *Stefard* 
     //set_pilot_yaw_rate_time_constant();
     //attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
-                                                                  plane.nav_pitch_cd,
-                                                                  get_pilot_input_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
+    //                                                              plane.nav_pitch_cd,
+    //                                                              get_pilot_input_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
 
     //float vel_z = wp_nav->get_default_speed_up();
     // if (plane.control_mode == &plane.mode_guided && guided_takeoff) {
@@ -3556,7 +3557,7 @@ bool QuadPlane::verify_vtol_takeoff(const AP_Mission::Mission_Command &cmd)
 
 if (plane.current_loc.alt < plane.next_WP_loc.alt) {
     return false;
-}
+    }
 
 // takeoff yaw handling added on 02-June-2026 *Stefard*
 // Tailsitter-only: yaw to face next waypoint before transitioning
