@@ -646,6 +646,11 @@ private:
     uint32_t takeoff_last_run_ms;
     float takeoff_start_alt;
 
+    // takeoff yaw handling added on 02-June-2026 *Stefard*
+    bool takeoff_yaw_active;      // true while hovering and yawing to face next WP
+    float takeoff_yaw_target_cd;  // bearing to next WP in centidegrees
+    // End of Change *Stefard*
+
     // oneshot with duration ARMING_DELAY_MS used by quadplane to delay spoolup after arming:
     // ignored unless OPTION_DELAY_ARMING or OPTION_TILT_DISARMED is set
     bool delay_arming;
