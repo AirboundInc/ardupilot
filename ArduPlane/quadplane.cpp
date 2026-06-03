@@ -3291,7 +3291,7 @@ void QuadPlane::takeoff_controller(void)
 
     // takeoff yaw handling added on 02-June-2026 *Stefard*
     set_pilot_yaw_rate_time_constant();
-    if (takeoff_alt_hold_start_ms != 0 && (AP_HAL::millis() - takeoff_alt_hold_start_ms) < 10000) {
+    if (takeoff_alt_hold_start_ms != 0) {
         // hold altitude during pause phase
         attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
                                                                       plane.nav_pitch_cd,
@@ -3489,6 +3489,7 @@ bool QuadPlane::do_vtol_takeoff(const AP_Mission::Mission_Command& cmd)
 
     // takeoff yaw handling added on 02-June-2026 *Stefard*
     takeoff_alt_hold_start_ms = 0;
+    takeoff_wp_bearing_cd = -1.0f;
     // End of Change *Stefard*
 
     return true;
@@ -3568,20 +3569,31 @@ if (plane.current_loc.alt < plane.next_WP_loc.alt) {
     }
 
 // takeoff yaw handling added on 02-June-2026 *Stefard*
-// 10-second hold at takeoff altitude before fixed-wing transition
-if (takeoff_alt_hold_start_ms == 0) {
+    // Hold altitude until heading aligns with next waypoint, then transition
+    if (takeoff_alt_hold_start_ms == 0) {
         takeoff_alt_hold_start_ms = now;
-    }
-const uint32_t hold_elapsed_ms = now - takeoff_alt_hold_start_ms;
-if (hold_elapsed_ms < 10000) {
-        uint8_t secs_remaining = (uint8_t)((10000 - hold_elapsed_ms + 999) / 1000);
-                static uint8_t last_sec = 255;
-        if (secs_remaining != last_sec) {
-            last_sec = secs_remaining;
-            gcs().send_text(MAV_SEVERITY_INFO, "Takeoff hold: %u sec remaining", (unsigned)secs_remaining);
+        takeoff_start_time_ms = now;  // reset failure timeout for hold phase
+        AP_Mission::Mission_Command next_cmd;
+        if (plane.mission.get_next_nav_cmd(plane.mission.get_current_nav_index() + 1, next_cmd)) {
+            takeoff_wp_bearing_cd = (float)plane.current_loc.get_bearing_to(next_cmd.content.location);
+            gcs().send_text(MAV_SEVERITY_INFO, "Takeoff: holding, target heading %.0f deg",
+                            (double)(takeoff_wp_bearing_cd * 0.01f));
         }
+        // if no next waypoint, takeoff_wp_bearing_cd stays -1 and we transition immediately
+    }
 
-        return false;
+    if (takeoff_wp_bearing_cd >= 0.0f) {
+        float yaw_error_cd = fabsf(wrap_180_cd((float)ahrs.yaw_sensor - takeoff_wp_bearing_cd));
+        if (yaw_error_cd > 1000.0f) {  // more than 10 degrees off
+            static uint32_t last_print_ms = 0;
+            if (now - last_print_ms >= 1000) {
+                last_print_ms = now;
+                gcs().send_text(MAV_SEVERITY_INFO, "Takeoff: waiting for heading, error %.0f deg",
+                                (double)(yaw_error_cd * 0.01f));
+            }
+            return false;
+        }
+        gcs().send_text(MAV_SEVERITY_INFO, "Takeoff: heading aligned, transitioning");
     }
 // End of Change *Stefard*
 
