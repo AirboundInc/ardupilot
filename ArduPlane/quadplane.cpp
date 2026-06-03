@@ -3600,7 +3600,7 @@ if (plane.current_loc.alt < plane.next_WP_loc.alt) {
     }
 
     if (takeoff_wp_bearing_cd >= 0.0f) {
-        float yaw_error_cd = fabsf(wrap_180_cd((float)ahrs.yaw_sensor - takeoff_wp_bearing_cd - 18000.0f));
+        float yaw_error_cd = fabsf(wrap_180_cd((float)ahrs_view->yaw_sensor - takeoff_wp_bearing_cd));
         if (yaw_error_cd > takeoff_yaw_tol * 100.0f) {
             static uint32_t last_print_ms = 0;
             if (now - last_print_ms >= 1000) {
