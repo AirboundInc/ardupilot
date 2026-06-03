@@ -762,11 +762,10 @@ void AC_AttitudeControl::attitude_controller_run_quat()
             _att_relax_active = false;
         }
         //During relaxation pitch setpoint is relaxed towards zero.
-        if(_att_relax_active){
-            float relax_factor = (pitch_tilt - _low_tilt_relax) / (_high_tilt_relax - _low_tilt_relax);
-            relax_factor = constrain_float(relax_factor, 0.0f, 1.0f);
-            relaxation_factor_lpf += alpha_relax * (relax_factor - relaxation_factor_lpf);
+        if(_att_relax_active) {
+            relaxation_factor_lpf += alpha_relax * (1.0f - relaxation_factor_lpf);
         }
+        // When not relaxing, return the setpoint back to the commanded angle.
         else {
             relaxation_factor_lpf += alpha_relax * (0.0f - relaxation_factor_lpf);
         }
