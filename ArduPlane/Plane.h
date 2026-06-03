@@ -1150,6 +1150,7 @@ private:
     void do_parachute(const AP_Mission::Mission_Command& cmd);
     void parachute_release();
     bool parachute_manual_release();
+    bool parachute_release_with_disarm();
 #endif
 
     // soaring.cpp

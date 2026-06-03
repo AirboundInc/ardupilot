@@ -364,7 +364,12 @@ bool RC_Channel_Plane::do_aux_function(const aux_func_t ch_option, const AuxSwit
     case AUX_FUNC::PARACHUTE_RELEASE:
 #if PARACHUTE == ENABLED
         if (ch_flag == AuxSwitchPos::HIGH) {
-            plane.parachute_manual_release();
+            if(plane.quadplane.tailsitter.enabled()) {
+                plane.parachute_release_with_disarm();
+            }
+            else {
+                plane.parachute_manual_release();
+            }
         }
 #endif
         break;
