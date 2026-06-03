@@ -547,6 +547,15 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("LND_FRZ_TIM", 39, QuadPlane, q_land_freeze_time, 7.0f),
 
+    // @Param: TKOFF_YAW_TOL
+    // @DisplayName: Takeoff yaw tolerance
+    // @Description: Yaw error tolerance in degrees before fixed-wing transition after VTOL takeoff
+    // @Units: deg
+    // @Range: 5 60
+    // @User: Standard
+    AP_GROUPINFO("YAW_TOL", 41, QuadPlane, takeoff_yaw_tol, 20),
+
+
     AP_GROUPEND
 };
 
@@ -3592,7 +3601,7 @@ if (plane.current_loc.alt < plane.next_WP_loc.alt) {
 
     if (takeoff_wp_bearing_cd >= 0.0f) {
         float yaw_error_cd = fabsf(wrap_180_cd((float)ahrs.yaw_sensor - takeoff_wp_bearing_cd - 18000.0f));
-        if (yaw_error_cd > 1000.0f) {  // more than 10 degrees off
+        if (yaw_error_cd > takeoff_yaw_tol * 100.0f) {
             static uint32_t last_print_ms = 0;
             if (now - last_print_ms >= 1000) {
                 last_print_ms = now;

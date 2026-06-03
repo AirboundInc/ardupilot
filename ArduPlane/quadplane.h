@@ -647,7 +647,7 @@ private:
     // takeoff yaw handling added on 02-June-2026 *Stefard*
     uint32_t takeoff_alt_hold_start_ms;   // nonzero once takeoff altitude is reached
     float takeoff_wp_bearing_cd;          // bearing to next WP in centidegrees, -1 if unknown
-
+    AP_Float takeoff_yaw_tol;
     // End of Change *Stefard*
 
     // oneshot with duration ARMING_DELAY_MS used by quadplane to delay spoolup after arming:
