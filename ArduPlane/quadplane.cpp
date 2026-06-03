@@ -3583,7 +3583,7 @@ if (plane.current_loc.alt < plane.next_WP_loc.alt) {
         takeoff_start_time_ms = now;  // reset failure timeout for hold phase
         AP_Mission::Mission_Command next_cmd;
         if (plane.mission.get_next_nav_cmd(plane.mission.get_current_nav_index() + 1, next_cmd)) {
-            takeoff_wp_bearing_cd = wrap_360_cd((float)plane.current_loc.get_bearing_to(next_cmd.content.location) + 18000.0f);
+            takeoff_wp_bearing_cd = (float)plane.current_loc.get_bearing_to(next_cmd.content.location);
             gcs().send_text(MAV_SEVERITY_INFO, "Takeoff: holding, target heading %.0f deg",
                             (double)(takeoff_wp_bearing_cd * 0.01f));
         }
@@ -3591,7 +3591,7 @@ if (plane.current_loc.alt < plane.next_WP_loc.alt) {
     }
 
     if (takeoff_wp_bearing_cd >= 0.0f) {
-        float yaw_error_cd = fabsf(wrap_180_cd((float)ahrs.yaw_sensor - takeoff_wp_bearing_cd));
+        float yaw_error_cd = fabsf(wrap_180_cd((float)ahrs.yaw_sensor - takeoff_wp_bearing_cd - 18000.0f));
         if (yaw_error_cd > 1000.0f) {  // more than 10 degrees off
             static uint32_t last_print_ms = 0;
             if (now - last_print_ms >= 1000) {
