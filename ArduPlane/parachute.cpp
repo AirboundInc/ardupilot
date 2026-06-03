@@ -58,11 +58,33 @@ bool Plane::parachute_manual_release()
 
     // if we get this far release parachute
     parachute_release();
-
+    
 #if AP_LANDINGGEAR_ENABLED
     // deploy landing gear
     g2.landing_gear.set_position(AP_LandingGear::LandingGear_Deploy);
 #endif
     return true;    
+}
+
+bool Plane::parachute_release_with_disarm()
+{
+    if (!parachute.enabled() || parachute.released()) {
+        return false;
+    }
+
+    if (parachute.alt_min() > 0 && relative_ground_altitude(false) < parachute.alt_min() &&
+            auto_state.last_flying_ms > 0) {
+        // Allow manual ground tests by only checking if flying too low if we've taken off
+        gcs().send_text(MAV_SEVERITY_WARNING, "Parachute: Too low");
+        return false;
+    }
+    
+    // if we get this far release parachute
+    parachute_release();
+    
+    //Disarm when parachute release commanded 
+    plane.arming.disarm(AP_Arming::Method::PARACHUTE_RELEASE, false);
+
+    return true;
 }
 #endif
