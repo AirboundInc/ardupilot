@@ -3583,7 +3583,7 @@ if (plane.current_loc.alt < plane.next_WP_loc.alt) {
         takeoff_start_time_ms = now;  // reset failure timeout for hold phase
         AP_Mission::Mission_Command next_cmd;
         if (plane.mission.get_next_nav_cmd(plane.mission.get_current_nav_index() + 1, next_cmd)) {
-            takeoff_wp_bearing_cd = (float)plane.current_loc.get_bearing_to(next_cmd.content.location);
+            takeoff_wp_bearing_cd = wrap_360_cd((float)plane.current_loc.get_bearing_to(next_cmd.content.location) + 18000.0f);
             gcs().send_text(MAV_SEVERITY_INFO, "Takeoff: holding, target heading %.0f deg",
                             (double)(takeoff_wp_bearing_cd * 0.01f));
         }
