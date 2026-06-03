@@ -3290,13 +3290,21 @@ void QuadPlane::takeoff_controller(void)
     // End of commented out block *Stefard*
 
     // takeoff yaw handling added on 02-June-2026 *Stefard*
-    set_pilot_yaw_rate_time_constant();
     if (takeoff_alt_hold_start_ms != 0) {
-        // hold altitude during pause phase
-        attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
-                                                                      plane.nav_pitch_cd,
-                                                                      get_pilot_input_yaw_rate_cds());
+        // hold altitude and actively yaw to face next waypoint
         set_climb_rate_cms(0);
+        if (takeoff_wp_bearing_cd >= 0.0f) {
+            disable_yaw_rate_time_constant();
+            attitude_control->input_euler_angle_roll_pitch_yaw(plane.nav_roll_cd,
+                                                               plane.nav_pitch_cd,
+                                                               takeoff_wp_bearing_cd, true);
+        } else {
+            set_pilot_yaw_rate_time_constant();
+            attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
+                                                                          plane.nav_pitch_cd,
+                                                                          get_pilot_input_yaw_rate_cds());
+        }
+  
     } else {
         attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
                                                                       plane.nav_pitch_cd,
