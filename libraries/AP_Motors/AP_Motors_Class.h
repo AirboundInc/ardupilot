@@ -143,6 +143,7 @@ public:
     void                set_slew_filter_cutoff(float filt_hz) { _throttle_slew_filter.set_cutoff_frequency(filt_hz); }
     void                set_forward(float forward_in) { _forward_in = forward_in; }; // range -1 ~ +1
     void                set_lateral(float lateral_in) { _lateral_in = lateral_in; };     // range -1 ~ +1
+    void                set_roll_gain_suppression_factor(float factor) { _roll_gain_suppression_factor = factor; } //range 0 ~ 1
 
     // for 6DoF vehicles, sets the roll and pitch offset, this rotates the thrust vector in body frame
     virtual void        set_roll_pitch(float roll_deg, float pitch_deg) {};
@@ -374,6 +375,9 @@ protected:
     //  motor_seq is the motor's sequence number from 1 to the number of motors on the frame
     //  pwm value is an actual pwm value that will be output, normally in the range of 1000 ~ 2000
     virtual void _output_test_seq(uint8_t motor_seq, int16_t pwm) = 0;
+
+    // roll gain suppression factor for tailsitters, between 0 and 1, where 0 means no suppression and 1 means full suppression
+    float _roll_gain_suppression_factor = 0.0f;
 
 #if AP_SCRIPTING_ENABLED
     // Custom frame string set from scripting

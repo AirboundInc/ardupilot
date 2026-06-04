@@ -5,6 +5,8 @@
 #include <AP_Scheduler/AP_Scheduler.h>
 #include <AP_Logger/AP_Logger.h>
 
+const float PHI_LOW = 30.0f; // angle at which roll gain suppression starts
+const float PHI_HIGH = 40.0f; // angle at which roll gain suppression
 // table of user settable parameters
 const AP_Param::GroupInfo AC_AttitudeControl_Multi::var_info[] = {
     // parameters from parent vehicle
@@ -495,6 +497,9 @@ void AC_AttitudeControl_Multi::rate_controller_run()
     _pd_scale = VECTORF_111;
 
     control_monitor_update();
+    if(_ts_enabled) {
+        update_roll_gain_suppression();
+    }
 }
 
 // sanity check parameters.  should be called once before takeoff
@@ -527,4 +532,21 @@ void AC_AttitudeControl_Multi::set_notch_sample_rate(float sample_rate)
     _pid_rate_pitch.set_notch_sample_rate(sample_rate);
     _pid_rate_yaw.set_notch_sample_rate(sample_rate);
 #endif
+}
+void AC_AttitudeControl_Multi::update_roll_gain_suppression(){
+    float phi_cal  = constrain_float(_tv_suppression_angle/100, 0.0f, 45.0f);
+    float suppression_factor = constrain_float((phi_cal - PHI_LOW)/(PHI_HIGH - PHI_LOW), 0.0f, 1.0f);
+    if(phi_cal>=PHI_HIGH){
+        get_rate_roll_pid().reset_I();
+    }
+    _motors.set_roll_gain_suppression_factor(suppression_factor);
+#if HAL_LOGGING_ENABLED
+    AP::logger().WriteStreaming("RLLS", "TimeUS,factor",
+        "s-", // seconds,
+        "F0", // micro (1e-6), no mult (1e0)
+        "Qf", // uint64_t, float
+        AP_HAL::micros64(),
+        suppression_factor);
+#endif
+
 }

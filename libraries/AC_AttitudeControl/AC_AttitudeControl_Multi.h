@@ -89,6 +89,8 @@ public:
 
     void get_tilt_motor_angle(float tilt_angle){_ts_tilt_angle = tilt_angle;}
 
+    void get_tv_suppression_angle(float tv_angle){_tv_suppression_angle = tv_angle;}
+
     // user settable parameters
     static const struct AP_Param::GroupInfo var_info[];
 
@@ -102,6 +104,9 @@ protected:
 
     // get maximum value throttle can be raised to based on throttle vs attitude prioritisation
     float get_throttle_avg_max(float throttle_in);
+
+    // Suppress roll control effort based on TV angle for tailsitters
+    void update_roll_gain_suppression();
 
     AP_MotorsMulticopter& _motors_multi;
     AC_PID                _pid_rate_roll {
@@ -156,4 +161,5 @@ protected:
     AP_Float              _throttle_gain_boost;
 
     float               _ts_tilt_angle = 0.0f; // tailsitter tilt motor angle
+    float              _tv_suppression_angle = 0.0f; // average positive TV angle used for roll gain suppression.
 };

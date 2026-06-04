@@ -576,6 +576,7 @@ void Tailsitter::output(void)
         quadplane.weathervane->set_gain(weathervane_gain);
     }
     quadplane.attitude_control->get_tilt_motor_angle((constrain_float(tilt_left, -4500.0f, 4500.0f) + constrain_float(tilt_right, -4500.0f, 4500.0f)) / 2.0f);
+    quadplane.attitude_control->get_tv_suppression_angle((constrain_float(abs(tilt_left), 0.0f, 4500.0f) + constrain_float(abs(tilt_right), 0.0f, 4500.0f)) / 2.0f);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
 

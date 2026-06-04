@@ -145,6 +145,8 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     // apply voltage and air pressure compensation
     const float compensation_gain = thr_lin.get_compensation_gain();
     roll_thrust = (_roll_in + _roll_in_ff) * compensation_gain;
+    // reduce roll control effort based TV angular position.
+    roll_thrust *= (1.0f - _roll_gain_suppression_factor);
     pitch_thrust = _pitch_in + _pitch_in_ff;
     yaw_thrust = _yaw_in + _yaw_in_ff;
     throttle_thrust = get_throttle() * compensation_gain;
