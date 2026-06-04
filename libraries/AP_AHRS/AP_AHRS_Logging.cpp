@@ -165,9 +165,9 @@ void AP_AHRS_View::Write_Att_Tar_Axis_Ang(Vector3f att_tar_axis_ang) const
     const struct log_AttitudeTarAxisAng pkt{
         LOG_PACKET_HEADER_INIT(LOG_ATT_TAR_AA_MSG),
         time_us                   : AP_HAL::micros64(),
-        target_x                  : att_tar_axis_ang.x,
-        target_y                  : att_tar_axis_ang.y,
-        target_z                  : att_tar_axis_ang.z,
+        target_x                  : degrees(att_tar_axis_ang.x),
+        target_y                  : degrees(att_tar_axis_ang.y),
+        target_z                  : degrees(att_tar_axis_ang.z),
     };
     AP::logger().WriteBlock(&pkt, sizeof(pkt));
 }
@@ -178,9 +178,9 @@ void AP_AHRS_View::Write_Att_Body_Axis_Ang(Vector3f att_body_axis_ang) const
     const struct log_AttitudeBodyAxisAng pkt{
         LOG_PACKET_HEADER_INIT(LOG_ATT_BOD_AA_MSG),
         time_us                 : AP_HAL::micros64(),
-        body_x                  : att_body_axis_ang.x,
-        body_y                  : att_body_axis_ang.y,
-        body_z                  : att_body_axis_ang.z,
+        body_x                  : degrees(att_body_axis_ang.x),
+        body_y                  : degrees(att_body_axis_ang.y),
+        body_z                  : degrees(att_body_axis_ang.z),
     };
     AP::logger().WriteBlock(&pkt, sizeof(pkt));
 }
@@ -191,9 +191,9 @@ void AP_AHRS_View::Write_Att_Err_Axis_Ang(Vector3f att_err_axis_ang) const
     const struct log_AttitudeErrAxisAng pkt{
         LOG_PACKET_HEADER_INIT(LOG_ATT_ERR_AA_MSG),
         time_us                : AP_HAL::micros64(),
-        err_x                  : att_err_axis_ang.x,
-        err_y                  : att_err_axis_ang.y,
-        err_z                  : att_err_axis_ang.z,
+        err_x                  : degrees(att_err_axis_ang.x),
+        err_y                  : degrees(att_err_axis_ang.y),
+        err_z                  : degrees(att_err_axis_ang.z),
     };
     AP::logger().WriteBlock(&pkt, sizeof(pkt));
 }

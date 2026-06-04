@@ -102,9 +102,9 @@ struct PACKED log_AttitudeViewCompensation {
 // @LoggerMessage: ATAT
 // @Description: Canonical vehicle attitude target axis angle representation of body to NED quat
 // @Field: TimeUS: Time since system startup
-// @Field: TarX:  X component of axis angle vector
-// @Field: TarY:  Y component of axis angle vector
-// @Field: TarZ:  Z component of axis angle vector
+// @Field: TRoll:  Roll component of axis angle vector
+// @Field: TPitch:  Pitch component of axis angle vector
+// @Field: TYaw:  Yaw component of axis angle vector
 struct PACKED log_AttitudeTarAxisAng {
     LOG_PACKET_HEADER;
     uint64_t time_us;
@@ -116,9 +116,9 @@ struct PACKED log_AttitudeTarAxisAng {
 // @LoggerMessage: ATAB
 // @Description: Canonical vehicle attitude body axis angle representation of body to NED quat
 // @Field: TimeUS: Time since system startup
-// @Field: BodyX:  X component of axis angle vector
-// @Field: BodyY:  Y component of axis angle vector
-// @Field: BodyZ:  Z component of axis angle vector
+// @Field: BRoll:  Roll component of axis angle vector
+// @Field: BPitch: Pitch component of axis angle vector
+// @Field: BYaw:  Yaw component of axis angle vector
 struct PACKED log_AttitudeBodyAxisAng {
     LOG_PACKET_HEADER;
     uint64_t time_us;
@@ -130,9 +130,9 @@ struct PACKED log_AttitudeBodyAxisAng {
 // @LoggerMessage: ATAE
 // @Description: Canonical vehicle attitude error axis angle representation of body to NED quat
 // @Field: TimeUS: Time since system startup
-// @Field: ErrX:  X component of axis angle vector
-// @Field: ErrY:  Y component of axis angle vector
-// @Field: ErrZ:  Z component of axis angle vector
+// @Field: ERoll:  Roll component of axis angle vector
+// @Field: EPitch:  Pitch component of axis angle vector
+// @Field: EYaw:  Yaw component of axis angle vector
 struct PACKED log_AttitudeErrAxisAng {
     LOG_PACKET_HEADER;
     uint64_t time_us;
@@ -280,9 +280,9 @@ struct PACKED log_ATSC {
     { LOG_ATT_PIT_COMP_MSG, sizeof(log_AttitudeViewCompensation), \
         "ATPC", "Qccffff",  "TimeUS,AttPNew,AttPOld,ZNedZ,XNedZ,isNoseDn,isBellyUp", "sdd----", "FBB0000" }, \
     { LOG_ATT_TAR_AA_MSG, sizeof(log_AttitudeTarAxisAng), \
-        "ATAT", "Qfff",  "TimeUS,TarX,TarY,TarZ", "s---", "F000" }, \
+        "ATAT", "Qfff",  "TimeUS,TRoll,TPitch,TYaw", "s---", "F000" }, \
     { LOG_ATT_BOD_AA_MSG, sizeof(log_AttitudeBodyAxisAng), \
-        "ATAB", "Qfff",  "TimeUS,BodyX,BodyY,BodyZ", "s---", "F000" }, \
+        "ATAB", "Qfff",  "TimeUS,BRoll,BPitch,BYaw", "s---", "F000" }, \
     { LOG_ATT_ERR_AA_MSG, sizeof(log_AttitudeErrAxisAng), \
-        "ATAE", "Qfff",  "TimeUS,ErrX,ErrY,ErrZ", "s---", "F000" }, 
+        "ATAE", "Qfff",  "TimeUS,ERoll,EPitch,EYaw", "s---", "F000" },
 
