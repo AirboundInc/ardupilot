@@ -506,6 +506,9 @@ private:
         // landing detection threshold in meters
         AP_Float detect_alt_change;
         AP_Float timeout_ms;
+
+        AP_Float wdg_timeout_s;
+        uint32_t wdg_start_ms;
     } landing_detect;
 
     // throttle mix acceleration filter

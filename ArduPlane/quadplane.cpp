@@ -556,6 +556,8 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Standard
     AP_GROUPINFO("LND_DET_TIM", 40, QuadPlane, landing_detect.timeout_ms, 1000),
 
+    AP_GROUPINFO("DARM_WDG_T", 41, QuadPlane, landing_detect.wdg_timeout_s, 10.0),
+
     AP_GROUPEND
 };
 
@@ -1414,6 +1416,10 @@ void QuadPlane::set_armed(bool armed)
         return;
     }
     motors->armed(armed);
+
+    if (armed) {
+        landing_detect.wdg_start_ms = 0;
+    }
 
     if (plane.control_mode == &plane.mode_guided) {
         guided_wait_takeoff = armed;
@@ -3566,8 +3572,14 @@ bool QuadPlane::verify_vtol_takeoff(const AP_Mission::Mission_Command &cmd)
  */
 bool QuadPlane::land_detector(void)
 {
-    bool might_be_landed = should_relax() && !poscontrol.pilot_correction_active;
+    const bool relaxed = should_relax();
+    bool might_be_landed = relaxed && !poscontrol.pilot_correction_active;
     if (!might_be_landed) {
+        if (landing_detect.land_start_ms != 0 && poscontrol.get_state() == QPOS_LAND_FINAL) {
+            gcs().send_text(MAV_SEVERITY_INFO, "LandDet: abort relax=%d pilot=%d",
+                            (int)relaxed,
+                            (int)poscontrol.pilot_correction_active);
+        }
         landing_detect.land_start_ms = 0;
         return false;
     }
@@ -3576,23 +3588,26 @@ bool QuadPlane::land_detector(void)
     if (landing_detect.land_start_ms == 0) {
         landing_detect.land_start_ms = now;
         landing_detect.vpos_start_m = height;
+        gcs().send_text(MAV_SEVERITY_INFO, "LandDet: start h=%.2f timeout=%u",
+                        (double)height, (unsigned)landing_detect.timeout_ms);
     }
 
-    // we only consider the vehicle landed when the motors have been
-    // at minimum for landing_detect.timeout_ms+1000 and the vertical position estimate has not
-    // changed by more than 20cm for landing_detect.timeout_ms
     if (fabsf(height - landing_detect.vpos_start_m) > landing_detect.detect_alt_change) {
-        // height has changed, call off landing detection
+        gcs().send_text(MAV_SEVERITY_INFO, "LandDet: reset dh=%.2f",
+                        (double)fabsf(height - landing_detect.vpos_start_m));
         landing_detect.land_start_ms = 0;
         return false;
     }
            
     if ((now - landing_detect.land_start_ms) < landing_detect.timeout_ms ||
         (now - landing_detect.lower_limit_start_ms) < (landing_detect.timeout_ms+1000)) {
-        // not landed yet
+        weathervane->set_gain(0);
+        weathervane->reset();
         return false;
     }
 
+    gcs().send_text(MAV_SEVERITY_INFO, "LandDet: done h=%.2f t=%u",
+                    (double)height, (unsigned)(now - landing_detect.land_start_ms));
     return true;
 }
 
@@ -3604,6 +3619,25 @@ bool QuadPlane::check_land_complete(void)
     if (poscontrol.get_state() != QPOS_LAND_FINAL) {
         // only apply to final landing phase
         return false;
+    }
+    // ---- disarm watchdog ----
+    const float wdg_t = landing_detect.wdg_timeout_s.get();
+    if (wdg_t > 0 && motors->armed() &&
+        landing_detect.lower_limit_start_ms != 0 &&
+        landing_detect.wdg_start_ms == 0)
+    {
+        landing_detect.wdg_start_ms = AP_HAL::millis();
+        gcs().send_text(MAV_SEVERITY_INFO,
+            "DISARM_WDG: timer started, %.0fs to disarm", (double)wdg_t);
+    }
+
+    if (landing_detect.wdg_start_ms != 0 && motors->armed()) {
+        const float elapsed = (AP_HAL::millis() - landing_detect.wdg_start_ms) * 0.001;
+        if (elapsed >= wdg_t) {
+            gcs().send_text(MAV_SEVERITY_EMERGENCY,
+                "DISARM_WDG: ARMED %.0fs AFTER LANDING! DISARM NOW", (double)elapsed);
+            landing_detect.wdg_start_ms = AP_HAL::millis();
+        }
     }
     if (land_detector()) {
         poscontrol.set_state(QPOS_LAND_COMPLETE);
@@ -3917,7 +3951,8 @@ float QuadPlane::get_weathervane_yaw_rate_cds(void)
         plane.control_mode == &plane.mode_qautotune ||
 #endif
         plane.control_mode == &plane.mode_qhover ||
-        should_relax()
+        should_relax() ||
+        landing_detect.wdg_start_ms != 0
         ) {
         // Ensure the weathervane controller is reset to prevent weathervaning from happening outside of the timer
         weathervane->reset();
