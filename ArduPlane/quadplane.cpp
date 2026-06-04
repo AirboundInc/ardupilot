@@ -4278,6 +4278,12 @@ bool QuadPlane::in_vtol_airbrake(void) const
     return false;
 }
 
+//Check if tailsitter is in vtol transition
+bool QuadPlane::tailsitter_in_vtol_transition()
+{
+    return tailsitter.in_vtol_transition();
+}
+
 // return true if we should show VTOL view
 bool QuadPlane::show_vtol_view() const
 {
