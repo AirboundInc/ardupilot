@@ -44,7 +44,7 @@ static const uint8_t DZ_MAX_CHECKS = 4;
 
 enum class DZ_CheckType : uint8_t { NONE = 0, THRESHOLD, DURATION, WINDOW, OSCILLATION };
 enum class DZ_Cmp  : uint8_t { ABOVE = 0, BELOW };       // ABOVE is the default (value-init)
-enum class DZ_Stat : uint8_t { MEAN = 0, PEAK };         // statistic reduced over a window
+enum class DZ_Stat : uint8_t { MEAN = 0, PEAK, RANGE };  // statistic reduced over a window
 enum class DZ_Op   : uint8_t { OR = 0, AND };
 
 // Live metric source. Returns the current value of one scalar metric.
@@ -63,19 +63,29 @@ struct DZ_OscParams       { uint32_t window_ms; uint16_t min_crossings; uint32_t
 // ---------------------------------------------------------------------------
 class DZ_RingBuffer {
 public:
-    void reset() { _tail = 0; _count = 0; }
+    void reset() { _tail = 0; _count = 0; _has_first = false; }
     void push(float v, uint32_t now_ms);
     void prune(uint32_t now_ms, uint32_t window_ms);
     uint16_t count() const { return _count; }
+
+    // True once the buffer has accumulated at least window_ms of data, so a
+    // windowed statistic reflects a complete window rather than a partial one.
+    bool full(uint32_t now_ms, uint32_t window_ms) const {
+        return _has_first && (now_ms - _first_ms) >= window_ms;
+    }
+
     float mean() const;
-    float peak(DZ_Cmp cmp) const;        // ABOVE -> max, BELOW -> min
-    uint16_t mean_crossings() const;     // sign changes of (v - mean)
+    float peak() const;                // maximum value in the window
+    float range() const;               // max - min in the window
+    uint16_t mean_crossings() const;   // sign changes of (v - mean)
 
 private:
     float    _v[DZ_CHECK_BUFFER_SAMPLES];
     uint32_t _t[DZ_CHECK_BUFFER_SAMPLES];
-    uint16_t _tail = 0;     // index of oldest sample
-    uint16_t _count = 0;    // number of valid samples
+    uint16_t _tail = 0;       // index of oldest sample
+    uint16_t _count = 0;      // number of valid samples
+    uint32_t _first_ms = 0;   // timestamp of the first sample since reset
+    bool     _has_first = false;
 };
 
 // Mutable per-check runtime state (debounce timer + sample buffer).
