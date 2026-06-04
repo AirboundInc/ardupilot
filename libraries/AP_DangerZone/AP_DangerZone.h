@@ -47,8 +47,6 @@ private:
     uint8_t  _zone{0};                  // current zone level; 0 = baseline
     const char *_reason{""};            // last transition cause
     uint32_t _last_transition_ms{0};
-    uint32_t _exit_since_ms{0};         // when the exit condition first held
-    bool     _exit_active{false};       // is the exit condition currently latched
 };
 
 #endif  // AP_DANGERZONE_ENABLED

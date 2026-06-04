@@ -7,6 +7,10 @@
 // ---------------------------------------------------------------------------
 void DZ_RingBuffer::push(float v, uint32_t now_ms)
 {
+    if (!_has_first) {
+        _first_ms = now_ms;
+        _has_first = true;
+    }
     const uint16_t w = (_tail + _count) % DZ_CHECK_BUFFER_SAMPLES;
     _v[w] = v;
     _t[w] = now_ms;
@@ -39,21 +43,32 @@ float DZ_RingBuffer::mean() const
     return sum / _count;
 }
 
-float DZ_RingBuffer::peak(DZ_Cmp cmp) const
+float DZ_RingBuffer::peak() const
 {
     if (_count == 0) {
         return 0.0f;
     }
-    float extreme = _v[_tail];
+    float mx = _v[_tail];
     for (uint16_t k = 1; k < _count; k++) {
         const float x = _v[(_tail + k) % DZ_CHECK_BUFFER_SAMPLES];
-        if (cmp == DZ_Cmp::ABOVE) {
-            if (x > extreme) { extreme = x; }
-        } else {
-            if (x < extreme) { extreme = x; }
-        }
+        if (x > mx) { mx = x; }
     }
-    return extreme;
+    return mx;
+}
+
+float DZ_RingBuffer::range() const
+{
+    if (_count == 0) {
+        return 0.0f;
+    }
+    float mn = _v[_tail];
+    float mx = _v[_tail];
+    for (uint16_t k = 1; k < _count; k++) {
+        const float x = _v[(_tail + k) % DZ_CHECK_BUFFER_SAMPLES];
+        if (x < mn) { mn = x; }
+        if (x > mx) { mx = x; }
+    }
+    return mx - mn;
 }
 
 uint16_t DZ_RingBuffer::mean_crossings() const
@@ -93,13 +108,26 @@ bool DZ_Check::raw_satisfied(DZ_CheckState& st, float value, uint32_t now_ms) co
     case DZ_CheckType::WINDOW: {
         st.buf.push(value, now_ms);
         st.buf.prune(now_ms, window_ms);
-        const float s = (stat == DZ_Stat::MEAN) ? st.buf.mean() : st.buf.peak(cmp);
+        // Require a complete window before the statistic is meaningful, so a
+        // partially-filled buffer cannot satisfy the check prematurely.
+        if (!st.buf.full(now_ms, window_ms)) {
+            return false;
+        }
+        float s = 0.0f;
+        switch (stat) {
+        case DZ_Stat::MEAN:  s = st.buf.mean();  break;
+        case DZ_Stat::PEAK:  s = st.buf.peak();  break;
+        case DZ_Stat::RANGE: s = st.buf.range(); break;
+        }
         return cmp_pass(s, thresh, cmp);
     }
 
     case DZ_CheckType::OSCILLATION: {
         st.buf.push(value, now_ms);
         st.buf.prune(now_ms, window_ms);
+        if (!st.buf.full(now_ms, window_ms)) {
+            return false;
+        }
         return st.buf.mean_crossings() >= min_crossings;
     }
 

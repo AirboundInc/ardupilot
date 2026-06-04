@@ -11,13 +11,13 @@
 //   entry: conditions that escalate INTO this zone from the level below.
 //   exit:  conditions that de-escalate OUT of this zone to the level below.
 //          An empty exit group makes the zone terminal (never de-escalates).
-//   hysteresis_ms: the exit condition must hold continuously for this long
-//          before the zone actually de-escalates.
+//
+// Exit debouncing is expressed directly in the exit conditions (e.g. a rolling
+// Window check), so there is no separate zone-level hysteresis.
 struct DZ_Zone {
     const char* name;
     DZ_Group    entry;
     DZ_Group    exit;
-    uint32_t    hysteresis_ms;
 };
 
 // DZ_CheckState slots required per zone: one block for entry checks and one for
