@@ -584,7 +584,7 @@ void Tailsitter::output(void)
             "sddd--", // seconds, degrees
             "F00000", // micro (1e-6), no mult (1e0)
             "Qfffff", // uint64_t, float
-            AP_HAL::micros64(), tilt_left/100, tilt_right/100,pitch_cd/100,weathervane_gain,gain_slope);
+            AP_HAL::micros64(), constrain_float(tilt_left/100, -45.0f, 45.0f), constrain_float(tilt_right/100, -45.0f, 45.0f), pitch_cd/100, weathervane_gain, gain_slope);
 
     // Check for saturated limits
     bool tilt_lim = _is_vectored && ((fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorLeft)) >= SERVO_MAX) || (fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorRight)) >= SERVO_MAX));
