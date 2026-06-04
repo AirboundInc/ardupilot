@@ -546,7 +546,7 @@ void AC_AttitudeControl_Multi::update_roll_gain_suppression(){
         "F0", // micro (1e-6), no mult (1e0)
         "Qf", // uint64_t, float
         AP_HAL::micros64(),
-        suppression_factor);
+        1-suppression_factor);
 #endif
 
 }
