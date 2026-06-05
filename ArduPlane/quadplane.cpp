@@ -556,6 +556,14 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Standard
     AP_GROUPINFO("LND_DET_TIM", 40, QuadPlane, landing_detect.timeout_ms, 1000),
 
+    // @Param: DARM_WDG_T
+    // @DisplayName: Disarm watchdog timeout
+    // @Description: Time in seconds after landing detection starts in LAND_FINAL before an emergency disarm warning is issued. Set to 0 to disable.
+    // @Units: s
+    // @Range: 0 30
+    // @Increment: 1
+    // @User: Standard
+
     AP_GROUPINFO("DARM_WDG_T", 41, QuadPlane, landing_detect.wdg_timeout_s, 10.0),
 
     AP_GROUPEND
@@ -3601,8 +3609,6 @@ bool QuadPlane::land_detector(void)
            
     if ((now - landing_detect.land_start_ms) < landing_detect.timeout_ms ||
         (now - landing_detect.lower_limit_start_ms) < (landing_detect.timeout_ms+1000)) {
-        weathervane->set_gain(0);
-        weathervane->reset();
         return false;
     }
 
@@ -3938,7 +3944,7 @@ float QuadPlane::forward_throttle_pct()
   get weathervaning yaw rate in cd/s
  */
 float QuadPlane::get_weathervane_yaw_rate_cds(void)
-{
+{   static bool weathervane_was_active = false;
     /*
       we only do weathervaning in modes where we are doing VTOL
       position control.
