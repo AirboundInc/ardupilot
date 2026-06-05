@@ -11,7 +11,7 @@ assert(param:add_table(KEY, "AUTOB_", 7), "AUTOB table failed")
 -- 2. ADD PARAMETERS
 assert(param:add_param(KEY, 1,  "PIT_LIM", 40),'could not add AUTOB_PIT_LIM')    -- Pitch limit
 assert(param:add_param(KEY, 2, "ENABLE", 1),'could not add AUTOB_ENABLE')    -- 1 = Enabled
-assert(param:add_param(KEY, 3, "BTRN_DLY", 1000), 'could not add AUTOB_MODE_DLY') -- Delay (ms) before checking pitch
+assert(param:add_param(KEY, 3, "BTRN_DLY", 2500), 'could not add AUTOB_BTRN_DLY') -- Delay (ms) before checking pitch
 assert(param:add_param(KEY, 4,"PIT_TOUT", 200),'could not add AUTOB_PIT_TOUT')
 assert(param:add_param(KEY, 5, "PARA_EN", 1),'could not add AUTOB_PARA_EN')    -- 1 = Enabled
 assert(param:add_param(KEY, 6,"PARA_ANG", -15),'could not add AUTOB_PARA_ANG')
