@@ -5,47 +5,101 @@
 #include <AP_DangerZone/DZ_Zone.h>
 
 /*
-  Danger Zone vehicle wiring.
+  Danger Zone vehicle wiring
 */
 
 // ---------------------------------------------------------------------------
 // Metric getters
-//
-// Each getter returns the current value of one scalar metric and is referenced
-// by a check in the zone table. They are plain functions so their address can
-// be stored as a DZ_Getter. Example shape:
-//
-//   static float dz_control_effort()
-//   {
-//       const auto *atc = plane.quadplane.get_attitude_control();   // needs accessor
-//       if (atc == nullptr) {
-//           return 0.0f;
-//       }
-//       const AP_PIDInfo &pid = atc->get_rate_pitch_pid().get_pid_info();
-//       return fabsf(pid.P + pid.D + pid.FF);
-//   }
-//
 // ---------------------------------------------------------------------------
+class DZ_Metrics {
+public:
+    // pitch rate control effort: abs(P + D + FF)
+    static float control_effort()
+    {
+        const auto *atc = plane.quadplane.attitude_control;
+        if (atc == nullptr) {
+            return 0.0f;
+        }
+        const AP_PIDInfo &pid = atc->get_rate_pitch_pid().get_pid_info();
+        return fabsf(pid.P + pid.D + pid.FF);
+    }
+
+    // abs(pitch error) (degrees) in the AHRS frame.
+    static float pitch_error_deg()
+    {
+        const auto *atc = plane.quadplane.attitude_control;
+        const auto *view = plane.quadplane.ahrs_view;
+        if (atc == nullptr || view == nullptr) {
+            return 0.0f;
+        }
+        const float target_cd = atc->get_att_target_euler_cd().y;
+        return fabsf(target_cd - view->pitch_sensor) * 0.01f;
+    }
+
+    // target pitch (degrees)
+    static float des_pitch_deg()
+    {
+        const auto *atc = plane.quadplane.attitude_control;
+        if (atc == nullptr) {
+            return 0.0f;
+        }
+        return atc->get_att_target_euler_cd().y * 0.01f;
+    }
+
+    // abs(pitch) (degrees) in the AHRS frame
+    static float att_pitch_deg()
+    {
+        const auto *view = plane.quadplane.ahrs_view;
+        if (view == nullptr) {
+            return 0.0f;
+        }
+        return fabsf(degrees(view->pitch));
+    }
+};
 
 // ---------------------------------------------------------------------------
 // Zone table
-//
-// Zones are ordered by severity; index 0 is the baseline (nominal) zone.
-// Example shape for a real zone (to be filled in the definition phase):
-//
-//   { .name = "zone2",
-//     .entry = dz::OR(
-//         DZ_Check::Threshold(dz_control_effort, { .thresh = 0.08f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 0 }),
-//         DZ_Check::Window(dz_pitch_error, { .stat = DZ_Stat::PEAK, .thresh = 10.0f, .cmp = DZ_Cmp::ABOVE, .window_ms = 5000, .duration_ms = 0 })),
-//     .exit  = dz::AND(
-//         DZ_Check::Threshold(dz_control_effort, { .thresh = 0.08f, .cmp = DZ_Cmp::BELOW, .duration_ms = 0 })),
-//     .hysteresis_ms = 5000 },
 // ---------------------------------------------------------------------------
 static const DZ_Zone dz_zones[] = {
-    { .name = "zone1" },   // baseline only; real zones added in the definition phase
+    { .name = "zone1" },   // baseline: nominal vertical flight
+
+    // ---- zone2 - Caution: weathervaning disabled --------------------------
+    // entry: control effort > 0.1
+    // exit:  rolling-avg pitch error < 5 deg AND peak < 10 deg over 5 s
+    //        AND control effort < 0.08
+    { .name = "zone2",
+      .entry = dz::OR(
+          DZ_Check::Threshold(DZ_Metrics::control_effort,
+              { .thresh = 0.1f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 0 })),
+      .exit = dz::AND(
+          DZ_Check::Window(DZ_Metrics::pitch_error_deg,
+              { .stat = DZ_Stat::MEAN, .thresh = 5.0f,  .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 }),
+          DZ_Check::Window(DZ_Metrics::pitch_error_deg,
+              { .stat = DZ_Stat::PEAK, .thresh = 10.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 }),
+          DZ_Check::Threshold(DZ_Metrics::control_effort,
+              { .thresh = 0.08f, .cmp = DZ_Cmp::BELOW, .duration_ms = 0 })) },
+
+    // ---- zone3 - Warning: relax attitude + disable yaw rate ---------------
+    // entry: pitch error > 20 deg
+    //        OR DesPitch oscillation range > 10 deg
+    //        OR |att pitch| > 45 deg
+    // exit:  rolling-avg pitch error < 10 deg AND peak < 15 deg over 5 s
+    { .name = "zone3",
+      .entry = dz::OR(
+          DZ_Check::Threshold(DZ_Metrics::pitch_error_deg,
+              { .thresh = 20.0f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 0 }),
+          DZ_Check::Window(DZ_Metrics::des_pitch_deg,
+              { .stat = DZ_Stat::RANGE, .thresh = 10.0f, .cmp = DZ_Cmp::ABOVE, .window_ms = 2000, .duration_ms = 0 }),
+          DZ_Check::Threshold(DZ_Metrics::att_pitch_deg,
+              { .thresh = 45.0f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 0 })),
+      .exit = dz::AND(
+          DZ_Check::Window(DZ_Metrics::pitch_error_deg,
+              { .stat = DZ_Stat::MEAN, .thresh = 10.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 }),
+          DZ_Check::Window(DZ_Metrics::pitch_error_deg,
+              { .stat = DZ_Stat::PEAK, .thresh = 15.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 })) },
 };
 
-// Parallel check-state storage
+// Parallel check-state storage (timers + rolling buffers), sized from the table.
 static DZ_CheckState dz_states[ARRAY_SIZE(dz_zones) * DZ_ZONE_STATE_SLOTS];
 
 void Plane::danger_zone_init()

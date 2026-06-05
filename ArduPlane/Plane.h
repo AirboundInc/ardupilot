@@ -145,6 +145,7 @@ public:
     friend class Tiltrotor;
     friend class SLT_Transition;
     friend class Tailsitter_Transition;
+    friend class DZ_Metrics;
 
     friend class Mode;
     friend class ModeCircle;
