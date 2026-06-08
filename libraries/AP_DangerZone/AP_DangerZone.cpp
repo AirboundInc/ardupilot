@@ -24,30 +24,33 @@ void AP_DangerZone::update(uint32_t now_ms)
         return;
     }
 
-    // Escalation takes priority: evaluate the entry conditions of the next zone.
-    // The next zone's entry checks are fed every tick while we sit in the
-    // current zone, so their windowed buffers stay warm.
+    _entry_bits = 0;
+    _exit_bits = 0;
+    bool want_escalate = false;
+    bool want_deescalate = false;
+
+    // Check the entry conditions for the next zone
     if (_zone + 1 < _num_zones) {
         DZ_CheckState *entry_states = states_for(_zone + 1, false);
-        if (_zones[_zone + 1].entry.update(entry_states, now_ms)) {
-            _zone++;
-            _reason = _zones[_zone].name;
-            _last_transition_ms = now_ms;
-            return;                 // at most one transition per tick
-        }
+        want_escalate = _zones[_zone + 1].entry.update(entry_states, now_ms, &_entry_bits);
     }
 
-    // De-escalation: evaluate the exit conditions of the current zone. Exit
-    // debouncing lives in the conditions themselves (e.g. a rolling Window),
-    // so de-escalation is immediate once the exit group is satisfied. An empty
-    // exit group never fires, so the zone is terminal.
+    // Check the exit conditions for the current zone
     if (_zone > 0) {
         DZ_CheckState *exit_states = states_for(_zone, true);
-        if (_zones[_zone].exit.update(exit_states, now_ms)) {
-            _zone--;
-            _reason = _zones[_zone].name;
-            _last_transition_ms = now_ms;
-        }
+        want_deescalate = _zones[_zone].exit.update(exit_states, now_ms, &_exit_bits);
+    }
+
+    if (want_escalate) {
+        // Entry condition triggered, enter the next zone
+        _zone++;
+        _reason = _zones[_zone].name;
+        _last_transition_ms = now_ms;
+    } else if (want_deescalate) {
+        // Exit condition triggered, enter the previous zone
+        _zone--;
+        _reason = _zones[_zone].name;
+        _last_transition_ms = now_ms;
     }
 }
 

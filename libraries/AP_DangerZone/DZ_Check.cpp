@@ -157,11 +157,13 @@ bool DZ_Check::update(DZ_CheckState& st, float value, uint32_t now_ms) const
 // ---------------------------------------------------------------------------
 // DZ_Group
 // ---------------------------------------------------------------------------
-bool DZ_Group::update(DZ_CheckState states[DZ_MAX_CHECKS], uint32_t now_ms) const
+bool DZ_Group::update(DZ_CheckState states[DZ_MAX_CHECKS], uint32_t now_ms,
+                      uint8_t *out_mask) const
 {
     bool any = false;
     bool all = true;
     bool saw_check = false;
+    uint8_t mask = 0;
 
     for (uint8_t i = 0; i < DZ_MAX_CHECKS; i++) {
         const DZ_Check& c = checks[i];
@@ -173,10 +175,16 @@ bool DZ_Group::update(DZ_CheckState states[DZ_MAX_CHECKS], uint32_t now_ms) cons
         // we never short-circuit the side-effecting update.
         const float value = (c.getter != nullptr) ? c.getter() : 0.0f;
         const bool sat = c.update(states[i], value, now_ms);
+        if (sat) {
+            mask |= (1U << i);
+        }
         any = any || sat;
         all = all && sat;
     }
 
+    if (out_mask != nullptr) {
+        *out_mask = mask;
+    }
     if (!saw_check) {
         return false;   // empty group is never satisfied
     }

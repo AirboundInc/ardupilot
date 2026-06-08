@@ -138,11 +138,13 @@ struct DZ_Group {
     DZ_Op    op;
     DZ_Check checks[DZ_MAX_CHECKS];
 
-    // Reads each non-NONE check's getter, updates its state, and combines.
+    // Reads each check's getter, updates its state, and combines.
     // `states` is parallel to `checks` (one slot per check). All checks are
     // evaluated every tick (their buffers/timers must advance); only the
     // boolean combination depends on `op`. An empty group is never satisfied.
-    bool update(DZ_CheckState states[DZ_MAX_CHECKS], uint32_t now_ms) const;
+    // `out_mask` receives a per-check satisfied bitmask
+    bool update(DZ_CheckState states[DZ_MAX_CHECKS], uint32_t now_ms,
+                uint8_t *out_mask = nullptr) const;
 };
 
 namespace dz {

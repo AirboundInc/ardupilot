@@ -117,9 +117,19 @@ void Plane::danger_zone_update()
 
     danger_zone.update(AP_HAL::millis());
 
-    // Surface transitions to the GCS (proper DataFlash logging arrives in the
-    // logging phase).
     const uint8_t level = danger_zone.get_current_danger_zone();
+
+#if HAL_LOGGING_ENABLED
+    // Log the current zone level and bitmasks of the evaluations of 
+    // the entry and exit conditions for each zone
+    AP::logger().WriteStreaming("DZ", "TimeUS,Zone,Ent,Ext", "QBBB",
+                                AP_HAL::micros64(),
+                                level,
+                                danger_zone.get_entry_bits(),
+                                danger_zone.get_exit_bits());
+#endif
+
+    // Send a warning on a zone change
     if (level != danger_zone_last_level) {
         gcs().send_text(MAV_SEVERITY_WARNING, "DangerZone: %s (level %u)",
                         danger_zone.get_reason(), (unsigned)level);
