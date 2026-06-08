@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "lua/src/lauxlib.h"
+#include <AC_PID/AP_PIDInfo.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -952,6 +953,39 @@ int lua_range_finder_handle_script_msg(lua_State *L) {
     }
 
     lua_pushboolean(L, result);
+    return 1;
+}
+#endif
+
+#if APM_BUILD_TYPE(APM_BUILD_ArduPlane) && HAL_QUADPLANE_ENABLED
+#include "../ArduPlane/quadplane.h"
+int lua_get_rate_pid_info(lua_State *L) {
+    binding_argcheck(L, 1);
+
+    const uint8_t axis = get_uint8_t(L, 1);  // 0=roll, 1=pitch, 2=yaw
+
+    auto *att = QuadPlane::get_singleton()->get_attitude_control();
+    if (att == nullptr) {
+        return luaL_error(L, "attitude_control not available");
+    }
+
+    const AP_PIDInfo *info = nullptr;
+    switch (axis) {
+        case 0: info = &att->get_rate_roll_pid().get_pid_info();  break;
+        case 1: info = &att->get_rate_pitch_pid().get_pid_info(); break;
+        case 2: info = &att->get_rate_yaw_pid().get_pid_info();   break;
+        default: return luaL_error(L, "axis must be 0=roll 1=pitch 2=yaw");
+    }
+
+    lua_newtable(L);
+    lua_pushnumber(L, info->P);      lua_setfield(L, -2, "P");
+    lua_pushnumber(L, info->I);      lua_setfield(L, -2, "I");
+    lua_pushnumber(L, info->D);      lua_setfield(L, -2, "D");
+    lua_pushnumber(L, info->FF);     lua_setfield(L, -2, "FF");
+    lua_pushnumber(L, info->target); lua_setfield(L, -2, "target");
+    lua_pushnumber(L, info->actual); lua_setfield(L, -2, "actual");
+    lua_pushnumber(L, info->error);  lua_setfield(L, -2, "error");
+
     return 1;
 }
 #endif

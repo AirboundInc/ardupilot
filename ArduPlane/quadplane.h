@@ -753,6 +753,7 @@ private:
 
 public:
     void motor_test_output();
+    AC_AttitudeControl_Multi *get_attitude_control() { return attitude_control; }
     MAV_RESULT mavlink_motor_test_start(mavlink_channel_t chan, uint8_t motor_seq, uint8_t throttle_type,
                                         uint16_t throttle_value, float timeout_sec,
                                         uint8_t motor_count);
