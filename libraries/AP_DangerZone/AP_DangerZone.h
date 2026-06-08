@@ -36,6 +36,10 @@ public:
     // Timestamp (ms) of the most recent zone transition.
     uint32_t get_last_transition_ms() const { return _last_transition_ms; }
 
+    // Bitmasks for every entry/exit condition
+    uint8_t get_entry_bits() const { return _entry_bits; }
+    uint8_t get_exit_bits() const { return _exit_bits; }
+
 private:
     // Base of the entry (is_exit=false) or exit (is_exit=true) check-state block
     // for a given zone.
@@ -44,9 +48,11 @@ private:
     const DZ_Zone *_zones{nullptr};
     DZ_CheckState *_states{nullptr};
     uint8_t  _num_zones{0};
-    uint8_t  _zone{0};                  // current zone level; 0 = baseline
+    uint8_t  _zone{0};                  // current zone level
     const char *_reason{""};            // last transition cause
     uint32_t _last_transition_ms{0};
+    uint8_t  _entry_bits{0};            // next-zone entry checks satisfied this tick
+    uint8_t  _exit_bits{0};             // current-zone exit checks satisfied this tick
 };
 
 #endif  // AP_DANGERZONE_ENABLED
