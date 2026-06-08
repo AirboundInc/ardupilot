@@ -3637,7 +3637,7 @@ bool QuadPlane::check_land_complete(void)
             "DISARM_WDG: timer started, %.0fs to disarm", (double)wdg_t);
     }
 
-    if (landing_detect.wdg_start_ms != 0 && motors->armed()) {
+    if (wdg_t > 0 && landing_detect.wdg_start_ms != 0 && motors->armed()) {
         const float elapsed = (AP_HAL::millis() - landing_detect.wdg_start_ms) * 0.001;
         if (elapsed >= wdg_t) {
             gcs().send_text(MAV_SEVERITY_EMERGENCY,
@@ -3944,8 +3944,7 @@ float QuadPlane::forward_throttle_pct()
   get weathervaning yaw rate in cd/s
  */
 float QuadPlane::get_weathervane_yaw_rate_cds(void)
-{   static bool weathervane_was_active = false;
-    /*
+{   /*
       we only do weathervaning in modes where we are doing VTOL
       position control.
     */
