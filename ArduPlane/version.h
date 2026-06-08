@@ -6,7 +6,7 @@
 
 #include "ap_version.h"
 
-#define THISFIRMWARE "Airbound ArduPlane V4.5.7.4 -hf4 - Controller desaturation"
+#define THISFIRMWARE "Airbound V4.5.7.4 - hf5-ctrldesat-autob"
 
 // the following line is parsed by the autotest scripts
 #define FIRMWARE_VERSION 4,5,7,FIRMWARE_VERSION_TYPE_DEV
