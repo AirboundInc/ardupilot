@@ -39,7 +39,6 @@ local p_para_timeout = bind_param("AUTOB_PARA_TOUT")
 
 -- 4. MODE DEFINITIONS (ArduPlane)
 local MODE_QLOITER = 19 -- Auto-Hover (Functionally same as QLoiter 50% Thr)
-local MODE_QLAND  = 20
 local AUTOBAILOUT_EXCLUDE_MODES = {
     [17] = true, --QSTABILIZE
     [18] = true,  -- QHOVER
@@ -50,7 +49,6 @@ local AUTOBAILOUT_EXCLUDE_MODES = {
 -- 5. STATE VARIABLES
 local active = false
 local last_mode_idx = 0
-local mode_entry_time = 0
 local first_pitch_exceeded_t = nil
 
 -- Parachute state variables
@@ -71,7 +69,7 @@ function is_vehicle_landing()
 end
 
 function in_vtol_flight()
-    mode = vehicle:get_mode()
+    local mode = vehicle:get_mode()
     local in_vtol_flight = not quadplane:tailsitter_in_vtol_transition() and quadplane:in_vtol_mode() and not AUTOBAILOUT_EXCLUDE_MODES[mode]
     if in_vtol_flight then
         if backtransition_complete_time_ms == nil then
@@ -153,7 +151,6 @@ function update()
     -- Detect Mode Changes
     if current_mode ~= last_mode_idx then
         last_mode_idx = current_mode
-        mode_entry_time = now
         first_pitch_exceeded_t = nil
     end
 
