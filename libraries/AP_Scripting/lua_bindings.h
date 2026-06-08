@@ -28,3 +28,5 @@ int lua_mavlink_block_command(lua_State *L);
 int lua_print(lua_State *L);
 int lua_range_finder_handle_script_msg(lua_State *L);
 int lua_get_rate_pid_info(lua_State *L);
+int lua_get_att_target_euler_cd(lua_State *L);
+int lua_get_rate_ef_targets(lua_State *L);

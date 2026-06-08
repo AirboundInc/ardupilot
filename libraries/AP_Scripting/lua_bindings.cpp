@@ -990,4 +990,42 @@ int lua_get_rate_pid_info(lua_State *L) {
 }
 #endif
 
+#if APM_BUILD_TYPE(APM_BUILD_ArduPlane) && HAL_QUADPLANE_ENABLED
+int lua_get_att_target_euler_cd(lua_State *L) {
+    binding_argcheck(L, 0);
+
+    auto *att = QuadPlane::get_singleton()->get_attitude_control();
+    if (att == nullptr) {
+        return luaL_error(L, "attitude_control not available");
+    }
+
+    const Vector3f target = att->get_att_target_euler_cd();
+
+    lua_newtable(L);
+    lua_pushnumber(L, target.x); lua_setfield(L, -2, "roll_cd");
+    lua_pushnumber(L, target.y); lua_setfield(L, -2, "pitch_cd");
+    lua_pushnumber(L, target.z); lua_setfield(L, -2, "yaw_cd");
+
+    return 1;
+}
+
+int lua_get_rate_ef_targets(lua_State *L) {
+    binding_argcheck(L, 0);
+
+    auto *att = QuadPlane::get_singleton()->get_attitude_control();
+    if (att == nullptr) {
+        return luaL_error(L, "attitude_control not available");
+    }
+
+    const Vector3f &rates = att->get_rate_ef_targets();
+
+    lua_newtable(L);
+    lua_pushnumber(L, degrees(rates.x)); lua_setfield(L, -2, "roll_dps");
+    lua_pushnumber(L, degrees(rates.y)); lua_setfield(L, -2, "pitch_dps");
+    lua_pushnumber(L, degrees(rates.z)); lua_setfield(L, -2, "yaw_dps");
+
+    return 1;
+}
+#endif
+
 #endif  // AP_SCRIPTING_ENABLED
