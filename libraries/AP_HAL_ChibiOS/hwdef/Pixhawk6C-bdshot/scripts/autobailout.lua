@@ -70,8 +70,8 @@ end
 
 function in_vtol_flight()
     local mode = vehicle:get_mode()
-    local in_vtol_flight = not quadplane:tailsitter_in_vtol_transition() and quadplane:in_vtol_mode() and not AUTOBAILOUT_EXCLUDE_MODES[mode]
-    if in_vtol_flight then
+    local vtol_active = not quadplane:tailsitter_in_vtol_transition() and quadplane:in_vtol_mode() and not AUTOBAILOUT_EXCLUDE_MODES[mode]
+    if vtol_active then
         if backtransition_complete_time_ms == nil then
             backtransition_complete_time_ms = millis():tofloat()
         end
