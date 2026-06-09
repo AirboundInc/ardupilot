@@ -964,7 +964,11 @@ int lua_get_rate_pid_info(lua_State *L) {
 
     const uint8_t axis = get_uint8_t(L, 1);  // 0=roll, 1=pitch, 2=yaw
 
-    auto *att = QuadPlane::get_singleton()->get_attitude_control();
+    auto *qp = QuadPlane::get_singleton();
+    if (qp == nullptr) {
+        return luaL_error(L, "QuadPlane not available");
+    }
+    auto *att = qp->get_attitude_control();
     if (att == nullptr) {
         return luaL_error(L, "attitude_control not available");
     }
@@ -994,7 +998,11 @@ int lua_get_rate_pid_info(lua_State *L) {
 int lua_get_att_target_euler_cd(lua_State *L) {
     binding_argcheck(L, 0);
 
-    auto *att = QuadPlane::get_singleton()->get_attitude_control();
+    auto *qp = QuadPlane::get_singleton();
+    if (qp == nullptr) {
+        return luaL_error(L, "QuadPlane not available");
+    }
+    auto *att = qp->get_attitude_control();
     if (att == nullptr) {
         return luaL_error(L, "attitude_control not available");
     }
@@ -1012,7 +1020,11 @@ int lua_get_att_target_euler_cd(lua_State *L) {
 int lua_get_rate_ef_targets(lua_State *L) {
     binding_argcheck(L, 0);
 
-    auto *att = QuadPlane::get_singleton()->get_attitude_control();
+    auto *qp = QuadPlane::get_singleton();
+    if (qp == nullptr) {
+        return luaL_error(L, "QuadPlane not available");
+    }
+    auto *att = qp->get_attitude_control();
     if (att == nullptr) {
         return luaL_error(L, "attitude_control not available");
     }
