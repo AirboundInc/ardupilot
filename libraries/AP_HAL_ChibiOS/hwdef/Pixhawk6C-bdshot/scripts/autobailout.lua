@@ -1,6 +1,6 @@
 -- Tailsitter Recovery Loop Script
 -- Logic: Bad Pitch -> Save Mode -> QLoiter
-local LOOP_MS = 50 -- Run at 10Hz
+local LOOP_MS = 50 
 local para_ahrs_pitch_threshold_max = -10
 local para_ahrs_pitch_threshold_min = -50
 
