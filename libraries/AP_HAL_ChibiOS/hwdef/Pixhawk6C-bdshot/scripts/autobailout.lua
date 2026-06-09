@@ -1,6 +1,6 @@
 -- Tailsitter Recovery Loop Script
 -- Logic: Bad Pitch -> Save Mode -> QLoiter
-local LOOP_MS = 100 -- Run at 10Hz
+local LOOP_MS = 50 -- Run at 10Hz
 local para_ahrs_pitch_threshold_max = -10
 local para_ahrs_pitch_threshold_min = -50
 
@@ -12,7 +12,7 @@ assert(param:add_table(KEY, "AUTOB_", 7), "AUTOB table failed")
 assert(param:add_param(KEY, 1,  "PIT_LIM", 40),'could not add AUTOB_PIT_LIM')    -- Pitch limit
 assert(param:add_param(KEY, 2, "ENABLE", 1),'could not add AUTOB_ENABLE')    -- 1 = Enabled
 assert(param:add_param(KEY, 3, "BTRN_DLY", 2500), 'could not add AUTOB_BTRN_DLY') -- Delay (ms) before checking pitch
-assert(param:add_param(KEY, 4,"PIT_TOUT", 200),'could not add AUTOB_PIT_TOUT')
+assert(param:add_param(KEY, 4,"PIT_TOUT", 100),'could not add AUTOB_PIT_TOUT')
 assert(param:add_param(KEY, 5, "PARA_EN", 1),'could not add AUTOB_PARA_EN')    -- 1 = Enabled
 assert(param:add_param(KEY, 6,"PARA_ANG", -15),'could not add AUTOB_PARA_ANG')
 assert(param:add_param(KEY, 7,"PARA_TOUT", 100),'could not add AUTOB_PARA_TOUT')
