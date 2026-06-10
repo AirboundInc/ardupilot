@@ -1038,6 +1038,28 @@ int lua_get_rate_ef_targets(lua_State *L) {
 
     return 1;
 }
+
+int lua_get_actual_euler_cd(lua_State *L) {
+    binding_argcheck(L, 0);
+    auto *qp = QuadPlane::get_singleton();
+    if (qp == nullptr) {
+        return luaL_error(L, "QuadPlane not available");
+    }
+    auto *view = qp->get_ahrs_view();
+    if (view == nullptr) {
+        return luaL_error(L, "ahrs_view not available");
+    }
+
+    float roll_cd  = (float)view->roll_sensor;
+    float pitch_cd = (float)view->pitch_sensor;
+    float yaw_cd   = (float)view->yaw_sensor;
+
+    lua_newtable(L);
+    lua_pushstring(L, "roll_cd");  lua_pushnumber(L, roll_cd);  lua_settable(L, -3);
+    lua_pushstring(L, "pitch_cd"); lua_pushnumber(L, pitch_cd); lua_settable(L, -3);
+    lua_pushstring(L, "yaw_cd");   lua_pushnumber(L, yaw_cd);   lua_settable(L, -3);
+    return 1;
+}
 #endif
 
 #endif  // AP_SCRIPTING_ENABLED
