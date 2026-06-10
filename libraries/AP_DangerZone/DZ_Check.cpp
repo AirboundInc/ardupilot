@@ -5,34 +5,111 @@
 // ---------------------------------------------------------------------------
 // DZ_RingBuffer
 // ---------------------------------------------------------------------------
+void DZ_RingBuffer::cache_push(float v, uint16_t idx)
+{
+    // max cache: keep the DZ_MINMAX_K largest, values descending.
+    if (_max_n < DZ_MINMAX_K || v > _max_v[_max_n - 1]) {
+        if (_max_n < DZ_MINMAX_K) { _max_n++; }
+        uint8_t j = _max_n - 1;
+        while (j > 0 && _max_v[j - 1] < v) {
+            _max_v[j] = _max_v[j - 1];
+            _max_i[j] = _max_i[j - 1];
+            j--;
+        }
+        _max_v[j] = v;
+        _max_i[j] = idx;
+    }
+    // min cache: keep the DZ_MINMAX_K smallest, values ascending.
+    if (_min_n < DZ_MINMAX_K || v < _min_v[_min_n - 1]) {
+        if (_min_n < DZ_MINMAX_K) { _min_n++; }
+        uint8_t j = _min_n - 1;
+        while (j > 0 && _min_v[j - 1] > v) {
+            _min_v[j] = _min_v[j - 1];
+            _min_i[j] = _min_i[j - 1];
+            j--;
+        }
+        _min_v[j] = v;
+        _min_i[j] = idx;
+    }
+}
+
+void DZ_RingBuffer::cache_evict(uint16_t idx)
+{
+    for (uint8_t j = 0; j < _max_n; j++) {
+        if (_max_i[j] == idx) {
+            for (uint8_t m = j; m + 1 < _max_n; m++) {
+                _max_v[m] = _max_v[m + 1];
+                _max_i[m] = _max_i[m + 1];
+            }
+            _max_n--;
+            break;
+        }
+    }
+    for (uint8_t j = 0; j < _min_n; j++) {
+        if (_min_i[j] == idx) {
+            for (uint8_t m = j; m + 1 < _min_n; m++) {
+                _min_v[m] = _min_v[m + 1];
+                _min_i[m] = _min_i[m + 1];
+            }
+            _min_n--;
+            break;
+        }
+    }
+}
+
+void DZ_RingBuffer::rebuild_minmax()
+{
+    _max_n = 0;
+    _min_n = 0;
+    for (uint16_t k = 0; k < _count; k++) {
+        const uint16_t idx = (_tail + k) % DZ_CHECK_BUFFER_SAMPLES;
+        cache_push(_v[idx], idx);
+    }
+}
+
+void DZ_RingBuffer::append(float v, uint32_t now_ms)
+{
+    const uint16_t w = (_tail + _count) % DZ_CHECK_BUFFER_SAMPLES;
+    _v[w] = v;
+    _t[w] = now_ms;
+    _sum += v;
+    cache_push(v, w);
+    _count++;
+}
+
+void DZ_RingBuffer::pop_oldest()
+{
+    // Evicting the current max/min can reveal an extremum that was never cached
+    // (a value skipped while the cache was full of larger/smaller entries), so
+    // those cases must rescan. Losing a non-front entry leaves the front valid.
+    const bool lose_extremum = (_max_n > 0 && _max_i[0] == _tail) ||
+                               (_min_n > 0 && _min_i[0] == _tail);
+    cache_evict(_tail);
+    _sum -= _v[_tail];
+    _tail = (_tail + 1) % DZ_CHECK_BUFFER_SAMPLES;
+    _count--;
+    if (_count > 0 && lose_extremum) {
+        rebuild_minmax();
+    }
+}
+
 void DZ_RingBuffer::push(float v, uint32_t now_ms)
 {
     if (!_has_first) {
         _first_ms = now_ms;
         _has_first = true;
     }
-    const uint16_t w = (_tail + _count) % DZ_CHECK_BUFFER_SAMPLES;
     if (_count == DZ_CHECK_BUFFER_SAMPLES) {
-        _sum -= _v[w];   // buffer full: drop the sample being overwritten
+        pop_oldest();   // full: evict oldest to make room
     }
-    _v[w] = v;
-    _t[w] = now_ms;
-    _sum += v;
-    if (_count < DZ_CHECK_BUFFER_SAMPLES) {
-        _count++;
-    } else {
-        // buffer full: overwrite oldest by advancing the tail
-        _tail = (_tail + 1) % DZ_CHECK_BUFFER_SAMPLES;
-    }
+    append(v, now_ms);
 }
 
 void DZ_RingBuffer::prune(uint32_t now_ms, uint32_t window_ms)
 {
     // drop samples older than the window (timestamps assumed monotonic)
     while (_count > 0 && (now_ms - _t[_tail]) > window_ms) {
-        _sum -= _v[_tail];
-        _tail = (_tail + 1) % DZ_CHECK_BUFFER_SAMPLES;
-        _count--;
+        pop_oldest();
     }
 }
 
@@ -49,12 +126,7 @@ float DZ_RingBuffer::peak() const
     if (_count == 0) {
         return 0.0f;
     }
-    float mx = _v[_tail];
-    for (uint16_t k = 1; k < _count; k++) {
-        const float x = _v[(_tail + k) % DZ_CHECK_BUFFER_SAMPLES];
-        if (x > mx) { mx = x; }
-    }
-    return mx;
+    return _max_v[0];
 }
 
 float DZ_RingBuffer::range() const
@@ -62,14 +134,7 @@ float DZ_RingBuffer::range() const
     if (_count == 0) {
         return 0.0f;
     }
-    float mn = _v[_tail];
-    float mx = _v[_tail];
-    for (uint16_t k = 1; k < _count; k++) {
-        const float x = _v[(_tail + k) % DZ_CHECK_BUFFER_SAMPLES];
-        if (x < mn) { mn = x; }
-        if (x > mx) { mx = x; }
-    }
-    return mx - mn;
+    return _max_v[0] - _min_v[0];
 }
 
 uint16_t DZ_RingBuffer::mean_crossings() const

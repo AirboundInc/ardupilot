@@ -39,6 +39,9 @@ static const uint16_t DZ_CHECK_BUFFER_SAMPLES =
 // Maximum checks combined within a single AND/OR group.
 static const uint8_t DZ_MAX_CHECKS = 4;
 
+// Cached min/max values retained per buffer
+static const uint8_t DZ_MINMAX_K = 3;
+
 enum class DZ_CheckType : uint8_t { NONE = 0, THRESHOLD, DURATION, WINDOW, OSCILLATION };
 enum class DZ_Cmp  : uint8_t { ABOVE = 0, BELOW };       // ABOVE is the default (value-init)
 enum class DZ_Stat : uint8_t { MEAN = 0, PEAK, RANGE };  // statistic reduced over a window
@@ -60,7 +63,14 @@ struct DZ_OscParams       { uint32_t window_ms; uint16_t min_crossings; uint32_t
 // ---------------------------------------------------------------------------
 class DZ_RingBuffer {
 public:
-    void reset() { _tail = 0; _count = 0; _sum = 0.0f; _has_first = false; }
+    void reset() {
+        _tail = 0;
+        _count = 0;
+        _sum = 0.0f;
+        _has_first = false;
+        _max_n = 0;
+        _min_n = 0;
+    }
     void push(float v, uint32_t now_ms);
     void prune(uint32_t now_ms, uint32_t window_ms);
     uint16_t count() const { return _count; }
@@ -71,12 +81,22 @@ public:
         return _has_first && (now_ms - _first_ms) >= window_ms;
     }
 
-    float mean() const;                // O(1): maintained incrementally
-    float peak() const;                // maximum value in the window
-    float range() const;               // max - min in the window
+    float mean() const;                // running sum
+    float peak() const;                // cached maximum
+    float range() const;               // cached max - cached min
     uint16_t mean_crossings() const;   // sign changes of (v - mean)
 
 private:
+    // Add the newest sample / drop the oldest, maintaining all aggregates.
+    void append(float v, uint32_t now_ms);
+    void pop_oldest();
+    // Insert (value,index) into the descending max / ascending min cache.
+    void cache_push(float v, uint16_t idx);
+    // Drop the entry for a sample index leaving the window (no-op if absent).
+    void cache_evict(uint16_t idx);
+    // Rescan the live window to rebuild whichever minmax cache has drained.
+    void rebuild_minmax();
+
     float    _v[DZ_CHECK_BUFFER_SAMPLES];
     uint32_t _t[DZ_CHECK_BUFFER_SAMPLES];
     uint16_t _tail = 0;       // index of oldest sample
@@ -84,6 +104,15 @@ private:
     float    _sum = 0.0f;     // running sum of live samples (for O(1) mean)
     uint32_t _first_ms = 0;   // timestamp of the first sample since reset
     bool     _has_first = false;
+
+    // Cached min/max: _max_v descending, _min_v ascending; _*_i are the sample
+    // indices so an entry can be dropped when its sample leaves the window.
+    float    _max_v[DZ_MINMAX_K];
+    uint16_t _max_i[DZ_MINMAX_K];
+    uint8_t  _max_n = 0;
+    float    _min_v[DZ_MINMAX_K];
+    uint16_t _min_i[DZ_MINMAX_K];
+    uint8_t  _min_n = 0;
 };
 
 // Mutable per-check runtime state (debounce timer + optional sample buffer).
