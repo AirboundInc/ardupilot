@@ -12,8 +12,12 @@ void DZ_RingBuffer::push(float v, uint32_t now_ms)
         _has_first = true;
     }
     const uint16_t w = (_tail + _count) % DZ_CHECK_BUFFER_SAMPLES;
+    if (_count == DZ_CHECK_BUFFER_SAMPLES) {
+        _sum -= _v[w];   // buffer full: drop the sample being overwritten
+    }
     _v[w] = v;
     _t[w] = now_ms;
+    _sum += v;
     if (_count < DZ_CHECK_BUFFER_SAMPLES) {
         _count++;
     } else {
@@ -26,6 +30,7 @@ void DZ_RingBuffer::prune(uint32_t now_ms, uint32_t window_ms)
 {
     // drop samples older than the window (timestamps assumed monotonic)
     while (_count > 0 && (now_ms - _t[_tail]) > window_ms) {
+        _sum -= _v[_tail];
         _tail = (_tail + 1) % DZ_CHECK_BUFFER_SAMPLES;
         _count--;
     }
@@ -36,11 +41,7 @@ float DZ_RingBuffer::mean() const
     if (_count == 0) {
         return 0.0f;
     }
-    float sum = 0.0f;
-    for (uint16_t k = 0; k < _count; k++) {
-        sum += _v[(_tail + k) % DZ_CHECK_BUFFER_SAMPLES];
-    }
-    return sum / _count;
+    return _sum / _count;
 }
 
 float DZ_RingBuffer::peak() const
@@ -106,29 +107,35 @@ bool DZ_Check::raw_satisfied(DZ_CheckState& st, float value, uint32_t now_ms) co
         return cmp_pass(value, thresh, cmp);
 
     case DZ_CheckType::WINDOW: {
-        st.buf.push(value, now_ms);
-        st.buf.prune(now_ms, window_ms);
+        if (st.buf == nullptr) {
+            return false;   // no buffer
+        }
+        st.buf->push(value, now_ms);
+        st.buf->prune(now_ms, window_ms);
         // Require a complete window before the statistic is meaningful, so a
         // partially-filled buffer cannot satisfy the check prematurely.
-        if (!st.buf.full(now_ms, window_ms)) {
+        if (!st.buf->full(now_ms, window_ms)) {
             return false;
         }
         float s = 0.0f;
         switch (stat) {
-        case DZ_Stat::MEAN:  s = st.buf.mean();  break;
-        case DZ_Stat::PEAK:  s = st.buf.peak();  break;
-        case DZ_Stat::RANGE: s = st.buf.range(); break;
+        case DZ_Stat::MEAN:  s = st.buf->mean();  break;
+        case DZ_Stat::PEAK:  s = st.buf->peak();  break;
+        case DZ_Stat::RANGE: s = st.buf->range(); break;
         }
         return cmp_pass(s, thresh, cmp);
     }
 
     case DZ_CheckType::OSCILLATION: {
-        st.buf.push(value, now_ms);
-        st.buf.prune(now_ms, window_ms);
-        if (!st.buf.full(now_ms, window_ms)) {
+        if (st.buf == nullptr) {
+            return false;   // no buffer
+        }
+        st.buf->push(value, now_ms);
+        st.buf->prune(now_ms, window_ms);
+        if (!st.buf->full(now_ms, window_ms)) {
             return false;
         }
-        return st.buf.mean_crossings() >= min_crossings;
+        return st.buf->mean_crossings() >= min_crossings;
     }
 
     case DZ_CheckType::NONE:

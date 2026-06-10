@@ -60,7 +60,7 @@ public:
 // ---------------------------------------------------------------------------
 // Zone table
 // ---------------------------------------------------------------------------
-static const DZ_Zone dz_zones[] = {
+static constexpr DZ_Zone dz_zones[] = {
     { .name = "zone1" },   // baseline: nominal vertical flight
 
     // ---- zone2 - Caution: weathervaning disabled --------------------------
@@ -70,14 +70,14 @@ static const DZ_Zone dz_zones[] = {
     { .name = "zone2",
       .entry = dz::OR(
           DZ_Check::Threshold(DZ_Metrics::control_effort,
-              { .thresh = 0.1f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 0 })),
+              { .thresh = 0.1f, .cmp = DZ_Cmp::ABOVE })),
       .exit = dz::AND(
           DZ_Check::Window(DZ_Metrics::pitch_error_deg,
               { .stat = DZ_Stat::MEAN, .thresh = 5.0f,  .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 }),
           DZ_Check::Window(DZ_Metrics::pitch_error_deg,
               { .stat = DZ_Stat::PEAK, .thresh = 10.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 }),
           DZ_Check::Threshold(DZ_Metrics::control_effort,
-              { .thresh = 0.08f, .cmp = DZ_Cmp::BELOW, .duration_ms = 0 })) },
+              { .thresh = 0.08f, .cmp = DZ_Cmp::BELOW })) },
 
     // ---- zone3 - Warning: relax attitude + disable yaw rate ---------------
     // entry: pitch error > 20 deg
@@ -87,11 +87,11 @@ static const DZ_Zone dz_zones[] = {
     { .name = "zone3",
       .entry = dz::OR(
           DZ_Check::Threshold(DZ_Metrics::pitch_error_deg,
-              { .thresh = 20.0f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 0 }),
+              { .thresh = 20.0f, .cmp = DZ_Cmp::ABOVE }),
           DZ_Check::Window(DZ_Metrics::des_pitch_deg,
               { .stat = DZ_Stat::RANGE, .thresh = 10.0f, .cmp = DZ_Cmp::ABOVE, .window_ms = 2000, .duration_ms = 0 }),
           DZ_Check::Threshold(DZ_Metrics::att_pitch_deg,
-              { .thresh = 45.0f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 0 })),
+              { .thresh = 45.0f, .cmp = DZ_Cmp::ABOVE })),
       .exit = dz::AND(
           DZ_Check::Window(DZ_Metrics::pitch_error_deg,
               { .stat = DZ_Stat::MEAN, .thresh = 10.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 }),
@@ -99,12 +99,15 @@ static const DZ_Zone dz_zones[] = {
               { .stat = DZ_Stat::PEAK, .thresh = 15.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 })) },
 };
 
-// Parallel check-state storage (timers + rolling buffers), sized from the table.
+// Parallel check-state storage (debounce timers), sized from the table.
 static DZ_CheckState dz_states[ARRAY_SIZE(dz_zones) * DZ_ZONE_STATE_SLOTS];
+
+// Rolling-buffer pool, sized to the windowed checks in the table.
+static DZ_RingBuffer dz_buffers[dz::buffer_pool_size(dz_zones, ARRAY_SIZE(dz_zones))];
 
 void Plane::danger_zone_init()
 {
-    danger_zone.init(dz_zones, ARRAY_SIZE(dz_zones), dz_states);
+    danger_zone.init(dz_zones, ARRAY_SIZE(dz_zones), dz_states, dz_buffers, ARRAY_SIZE(dz_buffers));
     danger_zone_last_level = danger_zone.get_current_danger_zone();
 }
 

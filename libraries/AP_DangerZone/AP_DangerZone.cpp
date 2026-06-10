@@ -3,7 +3,8 @@
 #if AP_DANGERZONE_ENABLED
 
 
-void AP_DangerZone::init(const DZ_Zone *zones, uint8_t num_zones, DZ_CheckState *states)
+void AP_DangerZone::init(const DZ_Zone *zones, uint8_t num_zones, DZ_CheckState *states,
+                         DZ_RingBuffer *buffers, uint8_t num_buffers)
 {
     _zones = zones;
     _num_zones = num_zones;
@@ -11,6 +12,29 @@ void AP_DangerZone::init(const DZ_Zone *zones, uint8_t num_zones, DZ_CheckState 
     _zone = 0;
     _reason = "";
     _last_transition_ms = 0;
+
+    // Use a buffer for each windowed check
+    uint8_t next = 0;
+    for (uint8_t z = 0; z < num_zones; z++) {
+        wire_group_buffers(zones[z].entry, states_for(z, false), buffers, num_buffers, next);
+        wire_group_buffers(zones[z].exit,  states_for(z, true),  buffers, num_buffers, next);
+    }
+}
+
+void AP_DangerZone::wire_group_buffers(const DZ_Group &group, DZ_CheckState *states,
+                                       DZ_RingBuffer *buffers, uint8_t num_buffers,
+                                       uint8_t &next) const
+{
+    for (uint8_t i = 0; i < DZ_MAX_CHECKS; i++) {
+        // Only use a buffer for checks which need one
+        if (!dz::needs_buffer(group.checks[i].type)) {
+            continue;
+        }
+        if (next < num_buffers) {
+            states[i].buf = &buffers[next++];
+            states[i].buf->reset();
+        }
+    }
 }
 
 DZ_CheckState *AP_DangerZone::states_for(uint8_t zone, bool is_exit) const

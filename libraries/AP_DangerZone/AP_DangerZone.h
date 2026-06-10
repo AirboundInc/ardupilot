@@ -21,7 +21,9 @@ public:
 
     // Register the vehicle-owned zone table and the parallel state storage.
     // `states` must hold num_zones * DZ_ZONE_STATE_SLOTS entries.
-    void init(const DZ_Zone *zones, uint8_t num_zones, DZ_CheckState *states);
+    // `buffers` is the buffer pool for windowed checks
+    void init(const DZ_Zone *zones, uint8_t num_zones, DZ_CheckState *states,
+              DZ_RingBuffer *buffers = nullptr, uint8_t num_buffers = 0);
 
     // Evaluate entry of the next zone and exit of the current zone. Advances by
     // at most one level per call; escalation takes priority over de-escalation.
@@ -44,6 +46,10 @@ private:
     // Base of the entry (is_exit=false) or exit (is_exit=true) check-state block
     // for a given zone.
     DZ_CheckState *states_for(uint8_t zone, bool is_exit) const;
+
+    // Use a buffer for each windowed check in a group
+    void wire_group_buffers(const DZ_Group &group, DZ_CheckState *states,
+                            DZ_RingBuffer *buffers, uint8_t num_buffers, uint8_t &next) const;
 
     const DZ_Zone *_zones{nullptr};
     DZ_CheckState *_states{nullptr};
