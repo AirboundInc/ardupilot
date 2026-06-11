@@ -547,7 +547,7 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("LND_FRZ_TIM", 39, QuadPlane, q_land_freeze_time, 7.0f),
 
-    // @Param: TKOFF_YAW_TOL
+    // @Param: YAW_TOL
     // @DisplayName: Takeoff yaw tolerance
     // @Description: Yaw error tolerance in degrees before fixed-wing transition after VTOL takeoff
     // @Units: deg

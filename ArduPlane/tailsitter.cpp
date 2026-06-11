@@ -643,14 +643,27 @@ bool Tailsitter::transition_fw_complete(void)
         // instant transition when disarmed, no message
         return true;
     }
-    if (labs(quadplane.ahrs_view->pitch_sensor) > transition_angle_fw*100) {
-        gcs().send_text(MAV_SEVERITY_INFO, "Transition FW done");
-        return true;
-    }
+    // Stock Code commented out on 2026-06-11: to investigate inverted FW transitions
+
+    // if (labs(quadplane.ahrs_view->pitch_sensor) > transition_angle_fw*100) {
+    //   gcs().send_text(MAV_SEVERITY_INFO, "Transition FW done");
+    //    return true;
+    // }
+    // if (labs(quadplane.ahrs_view->roll_sensor) > MAX(4500, plane.roll_limit_cd + 500)) {
+    //    gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW done, roll error");
+    //    return true;
+    // }
+    // End of comment out
+
     if (labs(quadplane.ahrs_view->roll_sensor) > MAX(4500, plane.roll_limit_cd + 500)) {
-        gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW done, roll error");
-        return true;
+    return false;  // inverted - do not enter FW mode, keep waiting
     }
+    if ((quadplane.ahrs_view->pitch_sensor) < -(transition_angle_fw*100)) {
+    gcs().send_text(MAV_SEVERITY_INFO, "Transition FW done");
+    return true;
+    }
+
+
     uint32_t now = AP_HAL::millis();
      // Guard for large initial pitch value, if there need to reset the initial pitch again
     if(abs(fw_initial_pitch_diff)>10.0f){
@@ -660,6 +673,11 @@ bool Tailsitter::transition_fw_complete(void)
         transition->fw_transition_initial_pitch = constrain_float(quadplane.attitude_control->get_attitude_target_quat().get_euler_pitch() * degrees(100.0),-8500,8500);
     }
     if (now - transition->fw_transition_start_ms > ((transition_angle_fw+(transition->fw_transition_initial_pitch*0.01f))/transition_rate_fw)*1500) {
+        if (labs(quadplane.ahrs_view->roll_sensor) > MAX(4500, plane.roll_limit_cd + 500)) {
+            gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW timeout, inverted - retrying");
+            transition->fw_transition_start_ms = now;
+            return false;
+        }
         gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW done, timeout");
         gcs().send_text(MAV_SEVERITY_WARNING, "FW transition_initial_pitch: %f",(float)transition->fw_transition_initial_pitch*0.01f);
         gcs().send_text(MAV_SEVERITY_WARNING, "FW current_time: %f, transition_start_ms: %f",(float)now,(float)transition->fw_transition_start_ms);
