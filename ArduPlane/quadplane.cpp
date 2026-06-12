@@ -2852,6 +2852,7 @@ void QuadPlane::vtol_position_controller(void)
             if (tailsitter.enabled()){
                 set_climb_rate_cms(0);
                 last_pos2_ms = now_ms;
+                weathervane->set_gain(tailsitter.wvane_max_gain/3);
             }else{
                 Location loc2 = loc;
                 loc2.change_alt_frame(Location::AltFrame::ABOVE_ORIGIN);
@@ -2862,6 +2863,7 @@ void QuadPlane::vtol_position_controller(void)
         } else {
             if(tailsitter.enabled()){
                 last_pos2_ms = now_ms;
+                weathervane->set_gain(tailsitter.wvane_max_gain/3);
             }
             set_climb_rate_cms(0);
         }
@@ -4247,6 +4249,13 @@ bool QuadPlane::in_vtol_airbrake(void) const
         return true;
     }
     return false;
+}
+
+//Check if tailsitter is in vtol transition
+bool QuadPlane::tailsitter_in_vtol_transition()
+{
+    const uint32_t now = AP_HAL::millis();
+    return tailsitter.in_vtol_transition(now);
 }
 
 // return true if we should show VTOL view
