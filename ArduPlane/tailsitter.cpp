@@ -358,6 +358,12 @@ void Tailsitter::output(void)
 
     // To inform the attitude controller that tailsitter is enabled
     quadplane.attitude_control->set_tailsitter_enabled(true);
+
+#if AP_DANGERZONE_ENABLED
+    // Enable danger zone level 3 actions
+    quadplane.attitude_control->set_danger_zone_z3_active(plane.danger_zone.get_current_danger_zone() >= 2);
+#endif
+
     // handle forward flight modes and transition to VTOL modes
     if (!active() || in_vtol_transition()) {
         // get FW controller throttle demand and mask of motors enabled during forward flight
