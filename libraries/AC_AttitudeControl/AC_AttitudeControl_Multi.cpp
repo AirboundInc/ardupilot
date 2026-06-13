@@ -495,6 +495,27 @@ void AC_AttitudeControl_Multi::rate_controller_run()
     _pd_scale = VECTORF_111;
 
     control_monitor_update();
+
+    if (_ts_enabled) {
+        update_roll_gain_suppression();
+    }
+}
+
+// Suppress roll gain while Danger Zone 3 is active
+void AC_AttitudeControl_Multi::update_roll_gain_suppression()
+{
+    if (_dz_z3_active) {
+        get_rate_roll_pid().reset_I();
+    }
+    _motors.set_roll_gain_suppression_factor(_dz_z3_factor);
+#if HAL_LOGGING_ENABLED
+    AP::logger().WriteStreaming("RLLS", "TimeUS,factor",
+        "s-",  // seconds
+        "F0",  // micro (1e-6), no mult (1e0)
+        "Qf",  // uint64_t, float
+        AP_HAL::micros64(),
+        1.0f - _dz_z3_factor);
+#endif
 }
 
 // sanity check parameters.  should be called once before takeoff
