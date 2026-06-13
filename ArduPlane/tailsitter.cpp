@@ -361,7 +361,7 @@ void Tailsitter::output(void)
 
 #if AP_DANGERZONE_ENABLED
     // Enable danger zone level 3 actions
-    quadplane.attitude_control->set_danger_zone_z3_active(plane.danger_zone.get_current_danger_zone() >= 2);
+    quadplane.attitude_control->set_danger_zone_z3_active(plane.danger_zone.get_current_danger_zone() >= 3);
 #endif
 
     // handle forward flight modes and transition to VTOL modes
@@ -560,7 +560,7 @@ void Tailsitter::output(void)
         // Set the gain to 0, ramped over 500ms
         const uint32_t dz_now_ms = AP_HAL::millis();
         float wv_gain_target = 1.0f;   // 1 = full weathervaning
-        if (plane.danger_zone.get_current_danger_zone() >= 1) {
+        if (plane.danger_zone.get_current_danger_zone() >= 2) {
             wv_gain_target = 0.0f;     // 0 = disabled (zone 2 and above)
         }
         if (!is_equal(wv_gain_target, _wv_gain_scale_target)) {
