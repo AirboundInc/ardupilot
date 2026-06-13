@@ -575,16 +575,26 @@ void Tailsitter::output(void)
         }
         quadplane.weathervane->set_gain(weathervane_gain);
     }
+    // Apply controller desaturation
+    float tilt_left_before_sat = tilt_left;
+    float tilt_right_before_sat = tilt_right;
+    float pitch_phi = (tilt_left + tilt_right) / 2;
+    float yaw_phi   = (tilt_right - tilt_left) / 2;
+    float pitch_phi_limited = constrain_float(pitch_phi, -4500.0f, 4500.0f);
+    float yaw_phi_headroom = 4500.0f - abs(pitch_phi_limited);
+    float yaw_phi_limited = constrain_float(yaw_phi, -yaw_phi_headroom, yaw_phi_headroom);
+    tilt_left = pitch_phi - yaw_phi_limited;
+    tilt_right = pitch_phi + yaw_phi_limited;
     quadplane.attitude_control->get_tilt_motor_angle((constrain_float(tilt_left, -4500.0f, 4500.0f) + constrain_float(tilt_right, -4500.0f, 4500.0f)) / 2.0f);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
 
     // Add logging for desired thrust vectoring angles
-    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,AhrsPitch,WVGain,WVGainS",
-            "sddd--", // seconds, degrees
-            "F00000", // micro (1e-6), no mult (1e0)
-            "Qfffff", // uint64_t, float
-            AP_HAL::micros64(), tilt_left/100, tilt_right/100,pitch_cd/100,weathervane_gain,gain_slope);
+    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,DesLPst,DesRPst,AhrsPitch,WVGain,WVGainS",
+            "sddddd--", // seconds, degrees
+            "F0000000", // micro (1e-6), no mult (1e0)
+            "Qfffffff", // uint64_t, float
+            AP_HAL::micros64(), tilt_left_before_sat/100,tilt_right_before_sat/100,tilt_left/100,tilt_right/100,pitch_cd/100,weathervane_gain,gain_slope);
 
     // Check for saturated limits
     bool tilt_lim = _is_vectored && ((fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorLeft)) >= SERVO_MAX) || (fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorRight)) >= SERVO_MAX));
