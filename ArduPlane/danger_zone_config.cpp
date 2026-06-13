@@ -188,16 +188,16 @@ void Plane::danger_zone_update()
                         danger_zone.get_reason(), (unsigned)level);
 
         // Zone 4: autobailout to QLOITER
-        if (level >= 3 && danger_zone_last_level < 3) {
+        if (level >= 4 && danger_zone_last_level < 4) {
             set_mode_by_number(Mode::Number::QLOITER, ModeReason::DANGERZONE_BAILOUT);
         }
 
         // // Mission resumption after exiting Zone 4
-        // if (level < 3 && danger_zone_last_level >= 3) {
+        // if (level < 4 && danger_zone_last_level >= 4) {
         // }
 
         // Zone 5: Disarm and deploy parachute
-        if (level >= 4 && danger_zone_last_level < 4) {
+        if (level >= 5 && danger_zone_last_level < 5) {
 #if PARACHUTE == ENABLED
             parachute_release_with_disarm();
 #endif

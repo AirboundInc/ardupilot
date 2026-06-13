@@ -9,7 +9,7 @@
 #include "DZ_Zone.h"
 
 // Vehicle-agnostic implementation of the Danger Zone framework
-// The zone definitions, metric getters and the actions all live in the vehicle code (e.g. ArduPlane/danger_zone.cpp).
+// The zone definitions, metric getters and the actions all live in the vehicle code (e.g. ArduPlane/danger_zone_config.cpp).
 // This library only evaluates the registered checks and tracks the current zone level.
 
 class AP_DangerZone {
@@ -29,8 +29,8 @@ public:
     // at most one level per call; escalation takes priority over de-escalation.
     void update(uint32_t now_ms);
 
-    // Current danger zone level. 0 is the baseline (nominal) zone.
-    uint8_t get_current_danger_zone() const { return _zone; }
+    // Current danger zone level
+    uint8_t get_current_danger_zone() const { return _zone + 1; }
 
     // Name of the zone entered/exited at the most recent transition.
     const char *get_reason() const { return _reason; }
@@ -54,7 +54,7 @@ private:
     const DZ_Zone *_zones{nullptr};
     DZ_CheckState *_states{nullptr};
     uint8_t  _num_zones{0};
-    uint8_t  _zone{0};                  // current zone level
+    uint8_t  _zone{0};                  // current zone index
     const char *_reason{""};            // last transition cause
     uint32_t _last_transition_ms{0};
     uint8_t  _entry_bits{0};            // next-zone entry checks satisfied this tick
