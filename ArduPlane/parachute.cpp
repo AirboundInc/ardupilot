@@ -58,12 +58,12 @@ bool Plane::parachute_manual_release()
 
     // if we get this far release parachute
     parachute_release();
-    
+
 #if AP_LANDINGGEAR_ENABLED
     // deploy landing gear
     g2.landing_gear.set_position(AP_LandingGear::LandingGear_Deploy);
 #endif
-    return true;    
+    return true;
 }
 
 bool Plane::parachute_release_with_disarm()
@@ -78,11 +78,11 @@ bool Plane::parachute_release_with_disarm()
         gcs().send_text(MAV_SEVERITY_WARNING, "Parachute: Too low");
         return false;
     }
-    
+
     // if we get this far release parachute
     parachute_release();
-    
-    //Disarm when parachute release commanded 
+
+    //Disarm when parachute release commanded
     plane.arming.disarm(AP_Arming::Method::PARACHUTE_RELEASE, false);
 
     return true;

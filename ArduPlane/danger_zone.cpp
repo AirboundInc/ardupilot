@@ -55,6 +55,25 @@ public:
         }
         return fabsf(degrees(view->pitch));
     }
+
+    // EKF pitch
+    static float raw_pitch_deg()
+    {
+        return degrees(AP::ahrs().get_pitch());
+    }
+
+    // Same-direction tilt vectoring saturation (DesL/DesR)
+    // Returns the lesser-magnitude of the left/right tilt outputs when both share a
+    // sign, else 0, so abs(value) > thresh means BOTH tilts are maxed the same way.
+    static float tilt_same_dir()
+    {
+        const float l = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
+        const float r = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
+        if ((l >= 0) != (r >= 0)) {
+            return 0.0f;
+        }
+        return (fabsf(l) < fabsf(r)) ? l : r;
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -63,7 +82,7 @@ public:
 static constexpr DZ_Zone dz_zones[] = {
     { .name = "zone1" },   // baseline: nominal vertical flight
 
-    // ---- zone2 - Caution: weathervaning disabled --------------------------
+    // Zone 2: Weathervaning disabled
     // entry: control effort > 0.1
     // exit:  rolling-avg pitch error < 5 deg AND peak < 10 deg over 5 s
     //        AND control effort < 0.08
@@ -79,7 +98,7 @@ static constexpr DZ_Zone dz_zones[] = {
           DZ_Check::Threshold(DZ_Metrics::control_effort,
               { .thresh = 0.08f, .cmp = DZ_Cmp::BELOW })) },
 
-    // ---- zone3 - Warning: relax attitude + disable yaw rate ---------------
+    // Zone 3: relax attitude + disable yaw rate
     // entry: pitch error > 20 deg
     //        OR DesPitch oscillation range > 10 deg
     //        OR |att pitch| > 45 deg
@@ -97,6 +116,37 @@ static constexpr DZ_Zone dz_zones[] = {
               { .stat = DZ_Stat::MEAN, .thresh = 10.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 }),
           DZ_Check::Window(DZ_Metrics::pitch_error_deg,
               { .stat = DZ_Stat::PEAK, .thresh = 15.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 })) },
+
+    // Zone 4: autobailout
+    // entry: raw pitch < 40 deg for 200 ms
+    //        OR both tilts maxed same direction (> 45 or < -45) for 100 ms
+    // exit:  rolling-avg pitch error < 20 deg AND peak < 30 deg over 5 s
+    { .name = "zone4",
+      .entry = dz::OR(
+          DZ_Check::Duration(DZ_Metrics::raw_pitch_deg,
+              { .thresh = 40.0f, .cmp = DZ_Cmp::BELOW, .duration_ms = 200 }),
+          DZ_Check::Duration(DZ_Metrics::tilt_same_dir,
+              { .thresh = 45.0f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 100 }),
+          DZ_Check::Duration(DZ_Metrics::tilt_same_dir,
+              { .thresh = -45.0f, .cmp = DZ_Cmp::BELOW, .duration_ms = 100 })),
+      .exit = dz::AND(
+          DZ_Check::Window(DZ_Metrics::pitch_error_deg,
+              { .stat = DZ_Stat::MEAN, .thresh = 20.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 }),
+          DZ_Check::Window(DZ_Metrics::pitch_error_deg,
+              { .stat = DZ_Stat::PEAK, .thresh = 30.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 })) },
+
+    // Zone 5: deploy parachute + disarm
+    // entry: raw pitch < -15 deg for 100 ms
+    //        OR TVs maxed same direction (> 45 or < -45) for 500 ms
+    // exit:  none
+    { .name = "zone5",
+      .entry = dz::OR(
+          DZ_Check::Duration(DZ_Metrics::raw_pitch_deg,
+              { .thresh = -15.0f, .cmp = DZ_Cmp::BELOW, .duration_ms = 100 }),
+          DZ_Check::Duration(DZ_Metrics::tilt_same_dir,
+              { .thresh = 45.0f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 500 }),
+          DZ_Check::Duration(DZ_Metrics::tilt_same_dir,
+              { .thresh = -45.0f, .cmp = DZ_Cmp::BELOW, .duration_ms = 500 })) },
 };
 
 // Parallel check-state storage (debounce timers), sized from the table.
@@ -132,10 +182,27 @@ void Plane::danger_zone_update()
                                 danger_zone.get_exit_bits());
 #endif
 
-    // Send a warning on a zone change
+    // Zone actions
     if (level != danger_zone_last_level) {
         gcs().send_text(MAV_SEVERITY_WARNING, "DangerZone: %s (level %u)",
                         danger_zone.get_reason(), (unsigned)level);
+
+        // Zone 4: autobailout to QLOITER
+        if (level >= 3 && danger_zone_last_level < 3) {
+            set_mode_by_number(Mode::Number::QLOITER, ModeReason::DANGERZONE_BAILOUT);
+        }
+
+        // // Mission resumption after exiting Zone 4
+        // if (level < 3 && danger_zone_last_level >= 3) {
+        // }
+
+        // Zone 5: Disarm and deploy parachute
+        if (level >= 4 && danger_zone_last_level < 4) {
+#if PARACHUTE == ENABLED
+            parachute_release_with_disarm();
+#endif
+        }
+
         danger_zone_last_level = level;
     }
 }
