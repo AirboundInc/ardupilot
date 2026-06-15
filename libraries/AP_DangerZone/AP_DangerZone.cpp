@@ -9,15 +9,31 @@ void AP_DangerZone::init(const DZ_Zone *zones, uint8_t num_zones, DZ_CheckState 
     _zones = zones;
     _num_zones = num_zones;
     _states = states;
-    _zone = 0;
-    _reason = "";
-    _last_transition_ms = 0;
 
     // Use a buffer for each windowed check
     uint8_t next = 0;
     for (uint8_t z = 0; z < num_zones; z++) {
         wire_group_buffers(zones[z].entry, states_for(z, false), buffers, num_buffers, next);
         wire_group_buffers(zones[z].exit,  states_for(z, true),  buffers, num_buffers, next);
+    }
+
+    reset();
+}
+
+void AP_DangerZone::reset()
+{
+    _zone = 0;
+    _reason = "";
+    _last_transition_ms = 0;
+    _entry_bits = 0;
+    _exit_bits = 0;
+
+    // Clear each check's debounce timer and rolling buffer (buffer wiring is
+    // preserved; only the accumulated data is dropped).
+    if (_states != nullptr) {
+        for (uint16_t i = 0; i < (uint16_t)_num_zones * DZ_ZONE_STATE_SLOTS; i++) {
+            _states[i].reset();
+        }
     }
 }
 
