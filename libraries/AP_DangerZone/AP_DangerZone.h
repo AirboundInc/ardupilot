@@ -25,8 +25,10 @@ public:
     void init(const DZ_Zone *zones, uint8_t num_zones, DZ_CheckState *states,
               DZ_RingBuffer *buffers = nullptr, uint8_t num_buffers = 0);
 
-    // Evaluate entry of the next zone and exit of the current zone. Advances by
-    // at most one level per call; escalation takes priority over de-escalation.
+    // Evaluate entry of the next zone, and exit + entry of the current zone.
+    // Advances by at most one level per call.
+    // De-escalation requires the current zone's own entry must have cleared and 
+    // the zone's dwell timer should have elapsed; escalation is always immediate.
     void update(uint32_t now_ms);
 
     // Return to the baseline zone and clear all check state (debounce timers and
@@ -46,6 +48,9 @@ public:
     uint8_t get_entry_bits() const { return _entry_bits; }
     uint8_t get_exit_bits() const { return _exit_bits; }
 
+    // Bitmask of the current zone's own entry checks satisfied this tick
+    uint8_t get_self_entry_bits() const { return _self_bits; }
+
 private:
     // Base of the entry (is_exit=false) or exit (is_exit=true) check-state block
     // for a given zone.
@@ -63,6 +68,7 @@ private:
     uint32_t _last_transition_ms{0};
     uint8_t  _entry_bits{0};            // next-zone entry checks satisfied this tick
     uint8_t  _exit_bits{0};             // current-zone exit checks satisfied this tick
+    uint8_t  _self_bits{0};             // current-zone own-entry checks satisfied this tick
 };
 
 #endif  // AP_DANGERZONE_ENABLED

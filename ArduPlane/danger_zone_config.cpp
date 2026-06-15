@@ -178,11 +178,12 @@ void Plane::danger_zone_update()
 #if HAL_LOGGING_ENABLED
     // Log the current zone level and bitmasks of the evaluations of 
     // the entry and exit conditions for each zone
-    AP::logger().WriteStreaming("DZ", "TimeUS,Zone,Ent,Ext", "QBBB",
+    AP::logger().WriteStreaming("DZ", "TimeUS,Zone,Ent,Ext,SEnt", "QBBBB",
                                 AP_HAL::micros64(),
                                 level,
                                 danger_zone.get_entry_bits(),
-                                danger_zone.get_exit_bits());
+                                danger_zone.get_exit_bits(),
+                                danger_zone.get_self_entry_bits());
 #endif
 
     // Zone actions
