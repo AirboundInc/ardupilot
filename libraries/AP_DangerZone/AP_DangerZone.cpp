@@ -27,6 +27,7 @@ void AP_DangerZone::reset()
     _last_transition_ms = 0;
     _entry_bits = 0;
     _exit_bits = 0;
+    _self_bits = 0;
 
     // Clear each check's debounce timer and rolling buffer (buffer wiring is
     // preserved; only the accumulated data is dropped).
@@ -66,8 +67,10 @@ void AP_DangerZone::update(uint32_t now_ms)
 
     _entry_bits = 0;
     _exit_bits = 0;
+    _self_bits = 0;
     bool want_escalate = false;
     bool want_deescalate = false;
+    bool self_entry = false;
 
     // Check the entry conditions for the next zone
     if (_zone + 1 < _num_zones) {
@@ -75,10 +78,14 @@ void AP_DangerZone::update(uint32_t now_ms)
         want_escalate = _zones[_zone + 1].entry.update(entry_states, now_ms, &_entry_bits);
     }
 
-    // Check the exit conditions for the current zone
     if (_zone > 0) {
+        // Check the exit conditions for the current zone
         DZ_CheckState *exit_states = states_for(_zone, true);
         want_deescalate = _zones[_zone].exit.update(exit_states, now_ms, &_exit_bits);
+
+        // Re-evaluate the current zone's own entry conditions
+        DZ_CheckState *self_states = states_for(_zone, false);
+        self_entry = _zones[_zone].entry.update(self_states, now_ms, &_self_bits);
     }
 
     if (want_escalate) {
@@ -86,8 +93,10 @@ void AP_DangerZone::update(uint32_t now_ms)
         _zone++;
         _reason = _zones[_zone].name;
         _last_transition_ms = now_ms;
-    } else if (want_deescalate) {
-        // Exit condition triggered, enter the previous zone
+    } else if (want_deescalate && !self_entry &&
+               (now_ms - _last_transition_ms) >= _zones[_zone].hold_ms) {
+        // De-escalate only when the exit condition holds, the zone's own entry
+        // condition has cleared, and the minimum dwell time has elapsed.
         _zone--;
         _reason = _zones[_zone].name;
         _last_transition_ms = now_ms;

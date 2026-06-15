@@ -8,16 +8,19 @@
 
 // A single danger zone level.
 //
-//   entry: conditions that escalate INTO this zone from the level below.
-//   exit:  conditions that de-escalate OUT of this zone to the level below.
-//          An empty exit group makes the zone terminal (never de-escalates).
+//   entry:   conditions that escalate INTO this zone from the level below.
+//   exit:    conditions that de-escalate OUT of this zone to the level below.
+//            An empty exit group makes the zone terminal (never de-escalates).
+//   hold_ms: minimum dwell time in this zone before de-escalation is allowed.
 //
-// Exit debouncing is expressed directly in the exit conditions (e.g. a rolling
-// Window check), so there is no separate zone-level hysteresis.
+// De-escalation requires ALL of: the exit conditions hold, this zone's own
+// entry conditions have cleared, and hold_ms has elapsed since this zone was entered.
+// Escalation is never gated by either mechanism.
 struct DZ_Zone {
     const char* name;
     DZ_Group    entry;
     DZ_Group    exit;
+    uint32_t    hold_ms;
 };
 
 // DZ_CheckState slots required per zone: one block for entry checks and one for
