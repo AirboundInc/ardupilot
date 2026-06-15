@@ -986,6 +986,139 @@ void Tailsitter_Transition::update()
     switch (transition_state) {
 
     case TRANSITION_ANGLE_WAIT_FW: {
+        
+        const uint32_t now_ = AP_HAL::millis();
+        // -----------------------------------------------------------
+        // 1. INITIALIZATION
+        // -----------------------------------------------------------
+        quadplane.set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
+
+        // -----------------------------------------------------------
+        // 2. TAILSITTER HEADING ALIGNMENT & WAIT
+        // -----------------------------------------------------------
+        if (quadplane.tailsitter.enabled()) {
+
+            // Constants
+            const int32_t  ALIGN_TOLERANCE_CD   = 1000;   // 10.0 degrees
+            const float    MAX_SPIN_RATE_DEG    = 3.0f;  // Max yaw rate allowed
+            const uint32_t ALIGN_PHASE_LIMIT_MS = 10000; // 10s Total Timeout
+            const uint32_t WAIT_DELAY_MS        = 2000;  // 2s Wait
+
+            // Static Variables (State Tracking)
+            static uint32_t align_phase_start_ms = 0;
+            static uint32_t alignment_done_ms = 0;
+            static uint32_t last_run_ms = 0;
+            static uint32_t last_log_ms = 0;
+            // NEW: One-Shot Flag to prevent infinite loops
+            static bool alignment_completed_for_this_flight = false; 
+
+            // --- DETECT NEW FLIGHT/TRANSITION ENTRY ---
+            // If this function hasn't run for >200ms, assume it's a new attempt.
+            if (now_ - last_run_ms > 200) {
+                align_phase_start_ms = now_;
+                alignment_done_ms = 0;
+                last_log_ms = 0;
+                alignment_completed_for_this_flight = false; // Reset flag for new transition
+            }
+            last_run_ms = now_;
+
+            // Check Validity & Only run if we haven't finished aligning yet
+            bool should_run_alignment = !alignment_completed_for_this_flight &&
+                                        (plane.control_mode == &plane.mode_auto || plane.control_mode == &plane.mode_guided) &&
+                                        (plane.nav_controller != nullptr);
+
+            if (should_run_alignment) {
+                // Disable weathervane during alignment
+                if (quadplane.weathervane != nullptr) {
+                    quadplane.weathervane->allow_weathervaning(false);
+                }
+                
+                int32_t target_bearing_cd = plane.nav_controller->target_bearing_cd();
+                int32_t current_yaw_cd = quadplane.ahrs.yaw_sensor;
+                int32_t error_cd = wrap_180_cd(target_bearing_cd - current_yaw_cd);
+                Vector3f gyro = quadplane.ahrs.get_gyro();
+                float yaw_rate_deg = degrees(gyro.z); 
+
+                // LOGIC: Are we aligned right now?
+                bool is_aligned = (abs(error_cd) <= ALIGN_TOLERANCE_CD) && (abs(yaw_rate_deg) <= MAX_SPIN_RATE_DEG);
+
+                // TIMER LOGIC
+                if (is_aligned) {
+                    if (alignment_done_ms == 0) alignment_done_ms = now_;
+                } else {
+                    alignment_done_ms = 0; // Reset if we drift out
+                }
+
+                // EXIT CRITERIA
+                bool wait_complete = (alignment_done_ms != 0) && (now_ - alignment_done_ms >= WAIT_DELAY_MS);
+                bool timeout_expired = (now_ - align_phase_start_ms >= ALIGN_PHASE_LIMIT_MS);
+
+                // --- BLOCKING CONTROL LOOP ---
+                // Run this ONLY if we are NOT done waiting AND haven't timed out
+                if (!wait_complete && !timeout_expired) {
+                    
+                    // Log (1Hz)
+                    if (now_ - last_log_ms > 1000) { 
+                        if (is_aligned) {
+                             float remaining = (WAIT_DELAY_MS - (now_ - alignment_done_ms)) * 0.001f;
+                             gcs().send_text(MAV_SEVERITY_INFO, "Aligned. Waiting: %.1fs", (double)remaining);
+                        } else {
+                             gcs().send_text(MAV_SEVERITY_INFO, "Aligning: Err %.1f", error_cd * 0.01f);
+                        }
+                        last_log_ms = now_;
+                    }
+                    //Force zero climb rate (Altitude Hold)
+                    quadplane.pos_control->set_pos_target_z_from_climb_rate_cm(0.0f);
+
+                    // Control
+                    quadplane.pos_control->update_z_controller();
+                    quadplane.pos_control->update_xy_controller();
+                    quadplane.attitude_control->input_euler_angle_roll_pitch_yaw(
+                        quadplane.pos_control->get_roll_cd(),
+                        quadplane.pos_control->get_pitch_cd(),
+                        (float)target_bearing_cd,
+                        true
+                    );
+
+                    quadplane.motors_output();
+                    set_last_fw_pitch(); // Keep tracking pitch so we don't snap later
+                    return; // BLOCK TRANSITION
+                }
+                
+                // --- HANDOVER LOGIC (Runs ONCE when done) ---
+                
+                if (timeout_expired) {
+                     gcs().send_text(MAV_SEVERITY_WARNING, "Align Timeout: Proceeding");
+                } else {
+                     gcs().send_text(MAV_SEVERITY_INFO, "Alignment Complete: Transitioning");
+                }
+                
+                // 1. Mark as complete so we NEVER enter this 'if' block again for this flight
+                alignment_completed_for_this_flight = true;
+
+                // 2. Reset Standard Transition Timer to now
+                fw_transition_start_ms = now_;
+
+                // 3. Reset Integrators and Pitch Target
+                quadplane.attitude_control->reset_rate_controller_I_terms();
+                plane.nav_pitch_cd = constrain_float(quadplane.ahrs.pitch_sensor, -8500, 8500);
+                plane.nav_roll_cd = 0;
+                set_last_fw_pitch();
+                // --- RE-ENABLE WEATHERVANE AFTER ALIGNMENT ---
+                if (quadplane.weathervane != nullptr) {
+                    quadplane.weathervane->allow_weathervaning(true);
+                }
+            }
+             else {
+                // --- ENSURE WEATHERVANE IS ENABLED WHEN NOT ALIGNING ---
+                if (quadplane.weathervane != nullptr) {
+                    quadplane.weathervane->allow_weathervaning(true);
+                }    
+            }
+        }
+        
+        // Normal transition code continues here for non-tailsitters
+        // or after tailsitter alignment completes...
         if (tailsitter.transition_fw_complete()) {
             // To inform the attitude controller that FW_DONE
             quadplane.attitude_control->set_tailsitter_transition(false);
