@@ -29,6 +29,10 @@ public:
     // at most one level per call; escalation takes priority over de-escalation.
     void update(uint32_t now_ms);
 
+    // Return to the baseline zone and clear all check state (debounce timers and
+    // rolling buffers), so evaluation starts fresh. Used e.g. on disarm.
+    void reset();
+
     // Current danger zone level
     uint8_t get_current_danger_zone() const { return _zone + 1; }
 

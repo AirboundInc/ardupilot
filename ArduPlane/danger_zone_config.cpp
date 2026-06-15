@@ -161,10 +161,13 @@ void Plane::danger_zone_init()
     danger_zone_last_level = danger_zone.get_current_danger_zone();
 }
 
-// 50Hz scheduler task. Runs only in the VTOL phase.
+// 50Hz scheduler task
 void Plane::danger_zone_update()
 {
-    if (!quadplane.in_vtol_mode()) {
+    // only run when armed and in the VTOL phase
+    if (!arming.is_armed() || !quadplane.in_vtol_mode()) {
+        danger_zone.reset();
+        danger_zone_last_level = danger_zone.get_current_danger_zone();
         return;
     }
 
