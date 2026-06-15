@@ -587,13 +587,13 @@ void Tailsitter::output(void)
     quadplane.attitude_control->get_tilt_motor_angle((constrain_float(tilt_left, -4500.0f, 4500.0f) + constrain_float(tilt_right, -4500.0f, 4500.0f)) / 2.0f);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
-
+    float position_pitch_sp = quadplane.pos_control->get_pitch_cd();
     // Add logging for desired thrust vectoring angles
-    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,DesLPst,DesRPst,AhrsPitch,WVGain,WVGainS,VHPow",
-            "sddddd---", // seconds, degrees
+    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,DesLPst,DesRPst,AhrsPit,WVGain,VHPwEe,PosPit",
+            "sddddd--d", // seconds, degrees
             "F00000000", // micro (1e-6), no mult (1e0)
             "Qffffffff", // uint64_t, float
-            AP_HAL::micros64(), tilt_left_before_sat/100,tilt_right_before_sat/100,tilt_left/100,tilt_right/100,pitch_cd/100,weathervane_gain,gain_slope,extra_elevator/100);
+            AP_HAL::micros64(), tilt_left_before_sat/100,tilt_right_before_sat/100,tilt_left/100,tilt_right/100,pitch_cd/100,weathervane_gain,extra_elevator/100,position_pitch_sp/100);
 
     // Check for saturated limits
     bool tilt_lim = _is_vectored && ((fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorLeft)) >= SERVO_MAX) || (fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorRight)) >= SERVO_MAX));
