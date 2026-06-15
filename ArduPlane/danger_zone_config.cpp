@@ -62,7 +62,7 @@ public:
         return degrees(AP::ahrs().get_pitch());
     }
 
-    // Same-direction tilt vectoring saturation (DesL/DesR)
+    // Same-direction tilt vectoring saturation (DesL/DesR), in centidegrees
     // Returns the lesser-magnitude of the left/right tilt outputs when both share a
     // sign, else 0, so abs(value) > thresh means BOTH tilts are maxed the same way.
     static float tilt_same_dir()
@@ -119,16 +119,17 @@ static constexpr DZ_Zone dz_zones[] = {
 
     // Zone 4: autobailout
     // entry: raw pitch < 40 deg for 200 ms
-    //        OR both tilts maxed same direction (> 45 or < -45) for 100 ms
+    //        OR both tilts maxed same direction (> 4499 or < -4499 cd, i.e. pinned
+    //        to the +/-4500 rail; strict > can't match 4500 exactly) for 100 ms
     // exit:  rolling-avg pitch error < 20 deg AND peak < 30 deg over 5 s
     { .name = "zone4",
       .entry = dz::OR(
           DZ_Check::Duration(DZ_Metrics::raw_pitch_deg,
               { .thresh = 40.0f, .cmp = DZ_Cmp::BELOW, .duration_ms = 200 }),
           DZ_Check::Duration(DZ_Metrics::tilt_same_dir,
-              { .thresh = 45.0f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 100 }),
+              { .thresh = 4499.0f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 100 }),
           DZ_Check::Duration(DZ_Metrics::tilt_same_dir,
-              { .thresh = -45.0f, .cmp = DZ_Cmp::BELOW, .duration_ms = 100 })),
+              { .thresh = -4499.0f, .cmp = DZ_Cmp::BELOW, .duration_ms = 100 })),
       .exit = dz::AND(
           DZ_Check::Window(DZ_Metrics::pitch_error_deg,
               { .stat = DZ_Stat::MEAN, .thresh = 20.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 }),
@@ -137,16 +138,17 @@ static constexpr DZ_Zone dz_zones[] = {
 
     // Zone 5: deploy parachute + disarm
     // entry: raw pitch < -15 deg for 100 ms
-    //        OR TVs maxed same direction (> 45 or < -45) for 500 ms
+    //        OR TVs maxed same direction (> 4499 or < -4499 cd, i.e. pinned to the
+    //        +/-4500 rail; strict > can't match 4500 exactly) for 500 ms
     // exit:  none
     { .name = "zone5",
       .entry = dz::OR(
           DZ_Check::Duration(DZ_Metrics::raw_pitch_deg,
               { .thresh = -15.0f, .cmp = DZ_Cmp::BELOW, .duration_ms = 100 }),
           DZ_Check::Duration(DZ_Metrics::tilt_same_dir,
-              { .thresh = 45.0f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 500 }),
+              { .thresh = 4499.0f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 500 }),
           DZ_Check::Duration(DZ_Metrics::tilt_same_dir,
-              { .thresh = -45.0f, .cmp = DZ_Cmp::BELOW, .duration_ms = 500 })) },
+              { .thresh = -4499.0f, .cmp = DZ_Cmp::BELOW, .duration_ms = 500 })) },
 };
 
 // Parallel check-state storage (debounce timers), sized from the table.
