@@ -184,6 +184,15 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("RELX_TC", 24, AC_AttitudeControl, _tc_tilt_relax, 1.0f),
 
+    // @Param: PIT_CLIP_MAX
+    // @DisplayName: Max Pitch angle in VTOL modes
+    // @Description: Maximum pitch angle allowed in all VTOL modes.
+    // @Units: deg
+    // @Range: 0 90
+    // @Increment: 0.01
+    // @User: Advanced
+    AP_GROUPINFO("PIT_CLIP_MAX", 25, AC_AttitudeControl, _att_max_pit, 25.0f),
+
     AP_GROUPEND
 };
 
@@ -772,6 +781,12 @@ void AC_AttitudeControl::attitude_controller_run_quat()
         relaxation_factor_lpf = constrain_float(relaxation_factor_lpf, 0.0f, 1.0f);
         euler_sp.y *= (1.0f - relaxation_factor_lpf);
         _ang_vel_target.y *= (1.0f - relaxation_factor_lpf);
+        _attitude_target.from_euler(euler_sp.x, euler_sp.y, euler_sp.z);
+    }
+    if(_ts_enabled && !_ts_in_transition){
+        Vector3f euler_sp;
+        _attitude_target.to_euler(euler_sp.x, euler_sp.y, euler_sp.z);
+        euler_sp.y = constrain_float(euler_sp.y,radians(-_att_max_pit),radians(_att_max_pit));
         _attitude_target.from_euler(euler_sp.x, euler_sp.y, euler_sp.z);
     }
     thrust_heading_rotation_angles(_attitude_target, attitude_body, attitude_error, _thrust_angle, _thrust_error_angle);
