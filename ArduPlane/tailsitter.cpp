@@ -658,6 +658,20 @@ bool Tailsitter::transition_fw_complete(void)
     if (labs(quadplane.ahrs_view->roll_sensor) > MAX(4500, plane.roll_limit_cd + 500)) {
     return false;  // inverted - do not enter FW mode, keep waiting
     }
+
+    if (quadplane.ahrs_view->pitch_sensor > 0) {
+        if (transition->fw_transition_initial_pitch < quadplane.ahrs_view->pitch_sensor) {
+            gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW: pitch over-back %.1f deg, recovering",
+                        (double)(quadplane.ahrs_view->pitch_sensor * 0.01f));
+            transition->prev_fw_initial_pitch = constrain_float(quadplane.ahrs_view->pitch_sensor, -8500, 8500);
+            transition->fw_transition_initial_pitch = constrain_float(quadplane.ahrs_view->pitch_sensor, -8500, 8500);
+            transition->fw_transition_start_ms = AP_HAL::millis();
+    }
+    return false;
+}
+
+
+
     if ((quadplane.ahrs_view->pitch_sensor) < -(transition_angle_fw*100)) {
     gcs().send_text(MAV_SEVERITY_INFO, "Transition FW done");
     return true;
@@ -666,18 +680,14 @@ bool Tailsitter::transition_fw_complete(void)
 
     uint32_t now = AP_HAL::millis();
      // Guard for large initial pitch value, if there need to reset the initial pitch again
-    if(abs(fw_initial_pitch_diff)>10.0f){
+    if(fabsf(fw_initial_pitch_diff)>10.0f){
         gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW, angle reset discontinuity");
         transition->restart();
-        transition->prev_fw_initial_pitch = transition->fw_transition_initial_pitch;
-        transition->fw_transition_initial_pitch = constrain_float(quadplane.attitude_control->get_attitude_target_quat().get_euler_pitch() * degrees(100.0),-8500,8500);
+        return false;
     }
-    if (now - transition->fw_transition_start_ms > ((transition_angle_fw+(transition->fw_transition_initial_pitch*0.01f))/transition_rate_fw)*1500) {
-        if (labs(quadplane.ahrs_view->roll_sensor) > MAX(4500, plane.roll_limit_cd + 500)) {
-            gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW timeout, inverted - retrying");
-            transition->fw_transition_start_ms = now;
-            return false;
-        }
+
+    float timeout_ms = MAX(((transition_angle_fw + (transition->fw_transition_initial_pitch*0.01f)) / transition_rate_fw) * 1500, 2000.0f);
+    if (now - transition->fw_transition_start_ms > timeout_ms) {
         gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW done, timeout");
         gcs().send_text(MAV_SEVERITY_WARNING, "FW transition_initial_pitch: %f",(float)transition->fw_transition_initial_pitch*0.01f);
         gcs().send_text(MAV_SEVERITY_WARNING, "FW current_time: %f, transition_start_ms: %f",(float)now,(float)transition->fw_transition_start_ms);
@@ -1177,9 +1187,10 @@ void Tailsitter_Transition::restart()
 {
     transition_state = TRANSITION_ANGLE_WAIT_FW;
     fw_transition_start_ms = AP_HAL::millis();
-    prev_fw_initial_pitch = fw_transition_initial_pitch;
     fw_transition_initial_pitch = constrain_float(quadplane.attitude_control->get_attitude_target_quat().get_euler_pitch() * degrees(100.0),-8500,8500);
+    prev_fw_initial_pitch = fw_transition_initial_pitch;
 }
+
 
 // force state to FW and setup for the transition back to VTOL
 void Tailsitter_Transition::force_transition_complete()
