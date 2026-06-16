@@ -507,6 +507,7 @@ protected:
     AP_Float            _high_tilt_relax;
     AP_Float            _low_tilt_relax;
     AP_Float            _tc_tilt_relax;
+    AP_Float            _att_max_pit;
 
     // Enable/Disable attitude relaxation
     AP_Int8             _att_relax_enabled;
