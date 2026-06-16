@@ -580,7 +580,7 @@ void Tailsitter::output(void)
     float pitch_phi = (tilt_left + tilt_right) / 2;
     float yaw_phi   = (tilt_right - tilt_left) / 2;
     float pitch_phi_limited = constrain_float(pitch_phi, -4500.0f, 4500.0f);
-    float yaw_phi_headroom = 4500.0f - abs(pitch_phi_limited);
+    float yaw_phi_headroom = 4500.0f - fabsf(pitch_phi_limited);
     float yaw_phi_limited = constrain_float(yaw_phi, -yaw_phi_headroom, yaw_phi_headroom);
     tilt_left = pitch_phi - yaw_phi_limited;
     tilt_right = pitch_phi + yaw_phi_limited;
