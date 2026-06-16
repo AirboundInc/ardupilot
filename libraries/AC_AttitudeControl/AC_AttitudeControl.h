@@ -635,6 +635,8 @@ protected:
     // ratio of normal gain to landed gain
     float               _landed_gain_ratio;
 
+    AP_Float            _relax_time_constant;
+
     // References to external libraries
     const AP_AHRS_View&  _ahrs;
     const AP_MultiCopter &_aparm;
