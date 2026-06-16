@@ -20,7 +20,7 @@
 #include <string.h>
 
 #include "lua/src/lauxlib.h"
-#include <AC_PID/AP_PIDInfo.h>
+
 
 extern const AP_HAL::HAL& hal;
 
@@ -959,6 +959,7 @@ int lua_range_finder_handle_script_msg(lua_State *L) {
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane) && HAL_QUADPLANE_ENABLED
 #include "../ArduPlane/quadplane.h"
+#include <AC_PID/AP_PIDInfo.h>
 int lua_get_rate_pid_info(lua_State *L) {
     binding_argcheck(L, 1);
 
@@ -992,9 +993,7 @@ int lua_get_rate_pid_info(lua_State *L) {
 
     return 1;
 }
-#endif
 
-#if APM_BUILD_TYPE(APM_BUILD_ArduPlane) && HAL_QUADPLANE_ENABLED
 int lua_get_att_target_euler_cd(lua_State *L) {
     binding_argcheck(L, 0);
 
