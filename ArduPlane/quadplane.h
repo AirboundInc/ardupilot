@@ -192,7 +192,7 @@ public:
     // Get pilot throttle input with deadzone, this will return 50% throttle in failsafe!
     float get_throttle_input() const;
 
-    void Log_Write_AttRate();
+    bool tailsitter_in_vtol_transition();
 
 private:
     AP_AHRS &ahrs;
@@ -286,6 +286,7 @@ private:
     bool should_relax(void);
     void motors_output(bool run_rate_controller = true);
     void Log_Write_QControl_Tuning();
+    void Log_Write_AttRate();
     void log_QPOS(void);
     float landing_descent_rate_cms(float height_above_ground);
     
