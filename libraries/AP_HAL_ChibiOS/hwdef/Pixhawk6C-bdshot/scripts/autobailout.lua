@@ -68,6 +68,7 @@ local WINDOW_SIZE     = 50
 local pitch_error_buf = {}
 local pitch_angle_buf = {}
 local buf_idx         = 1
+local post_bailout_sample_count = 0 --used to ensure sufficient samples have been collected to decide on resuming mode
 
 local function buf_avg(buf)
     local sum, count = 0, 0
@@ -247,6 +248,7 @@ function update()
                                 first_pitch_exceeded_t = nil
                                 active = true
                                 pre_bailout_mode = current_mode
+                                post_bailout_sample_count = 0 --Reset this variable only when autobailout is active
                                 gcs:send_text(2, "AUTOB: Switching to QLoiter" )
                             end
                         end
@@ -267,9 +269,11 @@ function update()
             gcs_announce_autobailout = false
             gcs:send_text(6, "AUTOB: Manual Override Detected")
         else
+            post_bailout_sample_count = post_bailout_sample_count + 1
+            post_bailout_sample_count = math.min(post_bailout_sample_count, WINDOW_SIZE)
             local avg_lim  = p_avg_lim:get()  or 20
             local peak_lim = p_peak_lim:get() or 30
-            if avg_err < avg_lim and peak_ang < peak_lim then
+            if post_bailout_sample_count >= WINDOW_SIZE and avg_err < avg_lim and peak_ang < peak_lim then
                 if pre_bailout_mode and vehicle:set_mode(pre_bailout_mode) then
                     local recovered_mode = pre_bailout_mode
                     active = false
