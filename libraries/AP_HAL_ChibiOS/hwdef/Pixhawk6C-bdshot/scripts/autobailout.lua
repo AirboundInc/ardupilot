@@ -190,13 +190,13 @@ function update()
 
     -- Detect Mode Changes
     if current_mode ~= last_mode_idx then
-            last_mode_idx = current_mode
-            first_pitch_exceeded_t = nil
-            if not active then        -- ADD THIS GUARD
-                pitch_error_buf = {}
-                pitch_angle_buf = {}
-                buf_idx = 1
-            end
+        last_mode_idx = current_mode
+        first_pitch_exceeded_t = nil
+        if not active then        -- ADD THIS GUARD
+            pitch_error_buf = {}
+            pitch_angle_buf = {}
+            buf_idx = 1
+        end
     end
 
     local win_n   = math.max(1, math.floor((p_win_s:get() or 5) * 1000 / loop_ms))
