@@ -999,10 +999,10 @@ void Tailsitter_Transition::update()
         if (quadplane.tailsitter.enabled()) {
 
             // Constants
-            const int32_t  ALIGN_TOLERANCE_CD   = 1000;   // 10.0 degrees
+            const int32_t  ALIGN_TOLERANCE_CD   = 2000;   // 20.0 degrees
             const float    MAX_SPIN_RATE_DEG    = 3.0f;  // Max yaw rate allowed
-            const uint32_t ALIGN_PHASE_LIMIT_MS = 10000; // 10s Total Timeout
-            const uint32_t WAIT_DELAY_MS        = 2000;  // 2s Wait
+            const uint32_t ALIGN_PHASE_LIMIT_MS = 6000; // 6s Total Timeout
+            const uint32_t WAIT_DELAY_MS        = 1500;  // 1.5s Wait
 
             // Static Variables (State Tracking)
             static uint32_t align_phase_start_ms = 0;
@@ -1068,7 +1068,7 @@ void Tailsitter_Transition::update()
                         last_log_ms = now_;
                     }
                     //Force zero climb rate (Altitude Hold)
-                    quadplane.pos_control->set_pos_target_z_from_climb_rate_cm(0.0f);
+                    quadplane.set_climb_rate_cms(0);
 
                     // Control
                     quadplane.pos_control->update_z_controller();
