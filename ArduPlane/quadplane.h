@@ -649,6 +649,8 @@ private:
     float takeoff_wp_bearing_cd;          // bearing to next WP in centidegrees, -1 if unknown
     AP_Float takeoff_yaw_tol;
     float takeoff_alt_hold_cm;  // Z position target (cm above EKF origin) captured at hold start
+    bool takeoff_alignment_z_relaxed;  // true once relax_z_controller() has been called at alignment start
+
 
     // End of Change *Stefard*
 
