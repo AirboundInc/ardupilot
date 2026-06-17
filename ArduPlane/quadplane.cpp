@@ -3304,7 +3304,7 @@ void QuadPlane::takeoff_controller(void)
         //set_climb_rate_cms(0);
         pos_control->relax_z_controller(motors->get_throttle_hover());
 
-        if (takeoff_wp_bearing_cd >= 0.0f) {
+        if (plane.takeoff_wp_bearing_cd >= 0.0f) {
             if (!takeoff_alignment_z_relaxed) {
                 takeoff_alignment_z_relaxed = true;
             }
