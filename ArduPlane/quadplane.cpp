@@ -3302,8 +3302,8 @@ void QuadPlane::takeoff_controller(void)
     if (takeoff_alt_hold_start_ms != 0) {
         // hold altitude and actively yaw to face next waypoint
         //set_climb_rate_cms(0);
-        float zero = 0;
-        pos_control->input_pos_vel_accel_z(takeoff_alt_hold_cm, zero, 0);
+        float zero_z = 0;
+        pos_control->input_pos_vel_accel_z(takeoff_alt_hold_cm, zero_z, 0);
 
         if (takeoff_wp_bearing_cd >= 0.0f) {
             disable_yaw_rate_time_constant();
