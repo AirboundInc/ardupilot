@@ -5,7 +5,7 @@ local para_ahrs_pitch_threshold_min = -50
 
 -- 1. SETUP PARAMETER TABLE
 local KEY = 110
-assert(param:add_table(KEY, "AUTOB_", 13), "AUTOB table failed")
+assert(param:add_table(KEY, "AUTOB_", 14), "AUTOB table failed")
 
 -- 2. ADD PARAMETERS
 assert(param:add_param(KEY, 1, "PIT_LIM",  40),  'could not add AUTOB_PIT_LIM')   -- AHRS pitch threshold to enter bailout (deg)
@@ -21,6 +21,7 @@ assert(param:add_param(KEY, 10, "WIN_SMP",   50),  'could not add AUTOB_WIN_SMP'
 assert(param:add_param(KEY, 11,  "AVG_LIM", 20),'could not add AUTOB_AVG_LIM')    -- Pitch limit
 assert(param:add_param(KEY, 12,"PEAK_LIM", 30),'could not add AUTOB_PEAK_LIM')
 assert(param:add_param(KEY, 13, "DBG_EN", 0), 'could not add AUTOB_DBG_EN')  -- 1 = enable dataflash logging
+assert(param:add_param(KEY, 14, "PRED_INT", 500), 'could not add AUTOB_DBG_EN')  -- Rate based VTOL pitch prediction interval
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
@@ -44,6 +45,7 @@ local p_loop_ms = bind_param("AUTOB_LOOP_MS")
 local p_win_s   = bind_param("AUTOB_WIN_TIM")
 local p_win_n   = bind_param("AUTOB_WIN_SMP")
 local p_dbg_en = bind_param("AUTOB_DBG_EN")
+local p_prediction_interval = bind_param("AUTOB_PRED_INT")
 
 -- Read Parachute trigger channel number from FCU parameter list 
 
@@ -212,11 +214,15 @@ function update()
 
     local desired          = qp_att_desired()
     local actual           = qp_att_actual()
-    local target_pitch_deg = desired and (desired.pitch_cd * 0.01) or 0
-    local actual_pitch_deg = actual  and (actual.pitch_cd  * 0.01) or 0
+    local target_vtol_pitch_deg = desired and (desired.pitch_cd * 0.01) or 0
+    local actual_vtol_pitch_deg = actual  and (actual.pitch_cd  * 0.01) or 0
+    local vtol_pitch_rate_pid = qp_rate_pid_info(1)
+    local current_instance_vtol_pitch_rate = rad2deg(vtol_pitch_rate_pid.actual or 0)
+    local pitch_prediction_interval = p_prediction_interval:get() or 0
+    local predicted_next_instance_vtol_pitch = actual_vtol_pitch_deg + current_instance_vtol_pitch_rate * pitch_prediction_interval/1000
 
-    pitch_error_buf[buf_idx] = math.abs(target_pitch_deg - actual_pitch_deg)
-    pitch_angle_buf[buf_idx] = math.abs(actual_pitch_deg)
+    pitch_error_buf[buf_idx] = math.abs(target_vtol_pitch_deg - actual_vtol_pitch_deg)
+    pitch_angle_buf[buf_idx] = math.abs(actual_vtol_pitch_deg)
     buf_idx = (buf_idx % WINDOW_SIZE) + 1
 
     local avg_err  = buf_avg(pitch_error_buf)
@@ -224,7 +230,7 @@ function update()
     local pitch_deg = rad2deg(ahrs:get_pitch() or 0)
 
     if p_dbg_en:get() == 1 then
-        logger:write('AUTB', 'AvgErr,PeakAng,PitchDeg', 'fff', avg_err, peak_ang, pitch_deg)
+        logger:write('AUTB', 'AvgErr,PeakAng,PitchDeg,QPredPit', 'ffff', avg_err, peak_ang, pitch_deg,predicted_next_instance_vtol_pitch)
     end
 
     -- ==========================================================
@@ -235,10 +241,9 @@ function update()
             -- Wait for Delay (settle time)
             local delay_ms = p_btrn_dly:get() or 1000
             if backtransition_complete_time_ms and (now - backtransition_complete_time_ms) > delay_ms then
-                local pitch_deg = rad2deg(ahrs:get_pitch() or 0)
                 local threshold = p_pit_lim:get() or 40
                 local pitch_timeout = p_pitch_timeout:get() or 100
-                if pitch_deg < threshold then
+                if math.abs(predicted_next_instance_vtol_pitch) > threshold then
                     if first_pitch_exceeded_t == nil then
                         first_pitch_exceeded_t = millis():tofloat()
                     else
