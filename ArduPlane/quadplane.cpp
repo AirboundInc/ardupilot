@@ -3301,7 +3301,10 @@ void QuadPlane::takeoff_controller(void)
     // takeoff yaw handling added on 02-June-2026 *Stefard*
     if (takeoff_alt_hold_start_ms != 0) {
         // hold altitude and actively yaw to face next waypoint
-        set_climb_rate_cms(0);
+        //set_climb_rate_cms(0);
+        float zero = 0;
+        pos_control->input_pos_vel_accel_z(takeoff_alt_hold_cm, zero, 0);
+
         if (takeoff_wp_bearing_cd >= 0.0f) {
             disable_yaw_rate_time_constant();
             attitude_control->input_euler_angle_roll_pitch_yaw(plane.nav_roll_cd,
@@ -3589,6 +3592,7 @@ if (plane.current_loc.alt < plane.next_WP_loc.alt) {
     // Hold altitude until heading aligns with next waypoint, then transition
     if (takeoff_alt_hold_start_ms == 0) {
         takeoff_alt_hold_start_ms = now;
+        takeoff_alt_hold_cm = pos_control->get_pos_target_z_cm();
         takeoff_start_time_ms = now;  // reset failure timeout for hold phase
         AP_Mission::Mission_Command next_cmd;
         if (plane.mission.get_next_nav_cmd(plane.mission.get_current_nav_index() + 1, next_cmd)
