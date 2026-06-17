@@ -3301,13 +3301,9 @@ void QuadPlane::takeoff_controller(void)
     // takeoff yaw handling added on 02-June-2026 *Stefard*
     if (takeoff_alt_hold_start_ms != 0) {
         // hold altitude and actively yaw to face next waypoint
-        //set_climb_rate_cms(0);
         pos_control->relax_z_controller(motors->get_throttle_hover());
 
-        if (plane.takeoff_wp_bearing_cd >= 0.0f) {
-            if (!takeoff_alignment_z_relaxed) {
-                takeoff_alignment_z_relaxed = true;
-            }
+        if (takeoff_wp_bearing_cd >= 0.0f) {
             disable_yaw_rate_time_constant();
             attitude_control->input_euler_angle_roll_pitch_yaw(plane.nav_roll_cd,
                                                                plane.nav_pitch_cd,
@@ -3318,7 +3314,7 @@ void QuadPlane::takeoff_controller(void)
                                                                           plane.nav_pitch_cd,
                                                                           get_pilot_input_yaw_rate_cds());
         }
-  
+          
     } else {
         attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
                                                                       plane.nav_pitch_cd,
@@ -3512,7 +3508,6 @@ bool QuadPlane::do_vtol_takeoff(const AP_Mission::Mission_Command& cmd)
     // takeoff yaw handling added on 02-June-2026 *Stefard*
     takeoff_alt_hold_start_ms = 0;
     takeoff_wp_bearing_cd = -1.0f;
-    takeoff_alignment_z_relaxed = false;
     // End of Change *Stefard*
 
     return true;
@@ -3587,15 +3582,14 @@ bool QuadPlane::verify_vtol_takeoff(const AP_Mission::Mission_Command &cmd)
     }
 #endif
 
-if (plane.current_loc.alt < plane.next_WP_loc.alt) {
-    return false;
+    if (plane.current_loc.alt < plane.next_WP_loc.alt) {
+        return false;
     }
 
 // takeoff yaw handling added on 02-June-2026 *Stefard*
     // Hold altitude until heading aligns with next waypoint, then transition
     if (takeoff_alt_hold_start_ms == 0) {
         takeoff_alt_hold_start_ms = now;
-        takeoff_alt_hold_cm = pos_control->get_pos_target_z_cm();
         takeoff_start_time_ms = now;  // reset failure timeout for hold phase
         AP_Mission::Mission_Command next_cmd;
         if (plane.mission.get_next_nav_cmd(plane.mission.get_current_nav_index() + 1, next_cmd)
