@@ -660,16 +660,14 @@ bool Tailsitter::transition_fw_complete(void)
     }
 
     if (quadplane.ahrs_view->pitch_sensor > 0) {
-        if (transition->fw_transition_initial_pitch < quadplane.ahrs_view->pitch_sensor) {
-            gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW: pitch over-back %.1f deg, recovering",
-                        (double)(quadplane.ahrs_view->pitch_sensor * 0.01f));
-            transition->prev_fw_initial_pitch = constrain_float(quadplane.ahrs_view->pitch_sensor, -8500, 8500);
-            transition->fw_transition_initial_pitch = constrain_float(quadplane.ahrs_view->pitch_sensor, -8500, 8500);
-            transition->fw_transition_start_ms = AP_HAL::millis();
-    }
+        if (transition->fw_transition_initial_pitch > 0) {
+            gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW: pitch over-back, clamping initial pitch");
+            transition->prev_fw_initial_pitch = 0;
+            transition->fw_transition_initial_pitch = 0;
+            // fw_transition_start_ms intentionally NOT reset — accumulated dt drives corrective force
+        }
     return false;
-}
-
+    }
 
 
     if ((quadplane.ahrs_view->pitch_sensor) < -(transition_angle_fw*100)) {
@@ -688,6 +686,9 @@ bool Tailsitter::transition_fw_complete(void)
 
     float timeout_ms = MAX(((transition_angle_fw + (transition->fw_transition_initial_pitch*0.01f)) / transition_rate_fw) * 1500, 2000.0f);
     if (now - transition->fw_transition_start_ms > timeout_ms) {
+        if (quadplane.ahrs_view->pitch_sensor > 0) {
+            return false;  // pitch inverted at timeout - corrective force still accumulating, don't complete
+        }
         gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW done, timeout");
         gcs().send_text(MAV_SEVERITY_WARNING, "FW transition_initial_pitch: %f",(float)transition->fw_transition_initial_pitch*0.01f);
         gcs().send_text(MAV_SEVERITY_WARNING, "FW current_time: %f, transition_start_ms: %f",(float)now,(float)transition->fw_transition_start_ms);
