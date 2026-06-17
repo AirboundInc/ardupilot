@@ -3305,7 +3305,7 @@ void QuadPlane::takeoff_controller(void)
         float zero_z = 0;
         pos_control->input_pos_vel_accel_z(takeoff_alt_hold_cm, zero_z, 0);
 
-        if (takeoff_wp_bearing_cd >= 0.0f) {
+        if (now - takeoff_alt_hold_start_ms >= 3000 && takeoff_wp_bearing_cd >= 0.0f) {
             disable_yaw_rate_time_constant();
             attitude_control->input_euler_angle_roll_pitch_yaw(plane.nav_roll_cd,
                                                                plane.nav_pitch_cd,
@@ -3607,6 +3607,11 @@ if (plane.current_loc.alt < plane.next_WP_loc.alt) {
     }
 
     if (takeoff_wp_bearing_cd >= 0.0f) {
+
+        if (now - takeoff_alt_hold_start_ms < 3000) {
+            return false;  // settling pause, don't check yaw yet
+        }
+        
         float yaw_error_cd = fabsf(wrap_180_cd((float)ahrs_view->yaw_sensor - takeoff_wp_bearing_cd));
         if (yaw_error_cd > takeoff_yaw_tol * 100.0f) {
             static uint32_t last_print_ms = 0;
