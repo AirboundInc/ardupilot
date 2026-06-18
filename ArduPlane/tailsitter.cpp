@@ -1000,15 +1000,16 @@ void Tailsitter_Transition::update()
 
             // Constants
             const int32_t  ALIGN_TOLERANCE_CD   = 2000;   // 20.0 degrees
-            const float    MAX_SPIN_RATE_DEG    = 3.0f;  // Max yaw rate allowed
-            const uint32_t ALIGN_PHASE_LIMIT_MS = 6000; // 6s Total Timeout
-            const uint32_t WAIT_DELAY_MS        = 1500;  // 1.5s Wait
+            const float    MAX_SPIN_RATE_DEG    = 12.0f;  // Max yaw rate allowed
+            const uint32_t ALIGN_PHASE_LIMIT_MS = 10000; // 10s Total Timeout
+            const uint32_t WAIT_DELAY_MS        = 500;  // 0.5s Wait
 
             // Static Variables (State Tracking)
             static uint32_t align_phase_start_ms = 0;
             static uint32_t alignment_done_ms = 0;
             static uint32_t last_run_ms = 0;
             static uint32_t last_log_ms = 0;
+            static int32_t target_bearing_cd = 0;
             // NEW: One-Shot Flag to prevent infinite loops
             static bool alignment_completed_for_this_flight = false; 
 
@@ -1019,6 +1020,7 @@ void Tailsitter_Transition::update()
                 alignment_done_ms = 0;
                 last_log_ms = 0;
                 alignment_completed_for_this_flight = false; // Reset flag for new transition
+                target_bearing_cd = 0;
             }
             last_run_ms = now_;
 
@@ -1028,16 +1030,15 @@ void Tailsitter_Transition::update()
                                         (plane.nav_controller != nullptr);
 
             if (should_run_alignment) {
-                // Disable weathervane during alignment
-                if (quadplane.weathervane != nullptr) {
-                    quadplane.weathervane->allow_weathervaning(false);
+                if (target_bearing_cd == 0) {
+                    target_bearing_cd = plane.prev_WP_loc.get_bearing_to(plane.next_WP_loc);
+                    gcs().send_text(MAV_SEVERITY_INFO, "Alignment start: Target Heading %.1f",
+                        target_bearing_cd * 0.01f);
                 }
-                
-                int32_t target_bearing_cd = plane.nav_controller->target_bearing_cd();
                 int32_t current_yaw_cd = quadplane.ahrs.yaw_sensor;
                 int32_t error_cd = wrap_180_cd(target_bearing_cd - current_yaw_cd);
                 Vector3f gyro = quadplane.ahrs.get_gyro();
-                float yaw_rate_deg = degrees(gyro.z); 
+                float yaw_rate_deg = degrees(gyro.x); 
 
                 // LOGIC: Are we aligned right now?
                 bool is_aligned = (abs(error_cd) <= ALIGN_TOLERANCE_CD) && (abs(yaw_rate_deg) <= MAX_SPIN_RATE_DEG);
@@ -1063,7 +1064,7 @@ void Tailsitter_Transition::update()
                              float remaining = (WAIT_DELAY_MS - (now_ - alignment_done_ms)) * 0.001f;
                              gcs().send_text(MAV_SEVERITY_INFO, "Aligned. Waiting: %.1fs", (double)remaining);
                         } else {
-                             gcs().send_text(MAV_SEVERITY_INFO, "Aligning: Err %.1f", error_cd * 0.01f);
+                             gcs().send_text(MAV_SEVERITY_INFO, "Aligning: Err %.1f", abs(error_cd) * 0.01f);
                         }
                         last_log_ms = now_;
                     }
@@ -1104,19 +1105,9 @@ void Tailsitter_Transition::update()
                 plane.nav_pitch_cd = constrain_float(quadplane.ahrs.pitch_sensor, -8500, 8500);
                 plane.nav_roll_cd = 0;
                 set_last_fw_pitch();
-                // --- RE-ENABLE WEATHERVANE AFTER ALIGNMENT ---
-                if (quadplane.weathervane != nullptr) {
-                    quadplane.weathervane->allow_weathervaning(true);
-                }
-            }
-             else {
-                // --- ENSURE WEATHERVANE IS ENABLED WHEN NOT ALIGNING ---
-                if (quadplane.weathervane != nullptr) {
-                    quadplane.weathervane->allow_weathervaning(true);
-                }    
             }
         }
-        
+
         // Normal transition code continues here for non-tailsitters
         // or after tailsitter alignment completes...
         if (tailsitter.transition_fw_complete()) {
