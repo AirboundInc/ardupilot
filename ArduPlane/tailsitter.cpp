@@ -666,6 +666,7 @@ bool Tailsitter::transition_fw_complete(void)
     if (quadplane.ahrs_view->pitch_sensor > 0) {
         if (transition->fw_transition_initial_pitch > 0) {
             gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW: pitch over-back, clamping initial pitch");
+            transition->prev_fw_initial_pitch = 0;
             transition->fw_transition_initial_pitch = 0;
             // fw_transition_start_ms intentionally NOT reset — accumulated dt drives corrective force
         }
@@ -697,6 +698,7 @@ bool Tailsitter::transition_fw_complete(void)
         gcs().send_text(MAV_SEVERITY_WARNING, "FW transition_initial_pitch: %f",(float)transition->fw_transition_initial_pitch*0.01f);
         gcs().send_text(MAV_SEVERITY_WARNING, "FW current_time: %lu, transition_start_ms: %lu",(unsigned long)now,(unsigned long)transition->fw_transition_start_ms);
         gcs().send_text(MAV_SEVERITY_WARNING, "Time delta: %lu",(unsigned long)(now - transition->fw_transition_start_ms));
+
         return true;
     }
     // still waiting
@@ -1035,7 +1037,7 @@ void Tailsitter_Transition::update()
         quadplane.assisted_flight = true;
         uint32_t dt = now - fw_transition_start_ms;
         // multiply by 0.1 to convert (degrees/second * milliseconds) to centi degrees
-        plane.nav_pitch_cd = constrain_float(fw_transition_initial_pitch - (quadplane.tailsitter.transition_rate_fw * dt) * 0.1f, -8500, 8500);
+        plane.nav_pitch_cd = constrain_float(fw_transition_initial_pitch - (quadplane.tailsitter.transition_rate_fw * dt) * 0.1f * (plane.fly_inverted()?-1.0f:1.0f), -8500, 8500);
         plane.nav_roll_cd = 0;
         quadplane.disable_yaw_rate_time_constant();
         quadplane.attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
@@ -1193,6 +1195,7 @@ void Tailsitter_Transition::restart()
     transition_state = TRANSITION_ANGLE_WAIT_FW;
     fw_transition_start_ms = AP_HAL::millis();
     fw_transition_initial_pitch = constrain_float(quadplane.attitude_control->get_attitude_target_quat().get_euler_pitch() * degrees(100.0),-8500,8500);
+    prev_fw_initial_pitch = fw_transition_initial_pitch;
 }
 
 
