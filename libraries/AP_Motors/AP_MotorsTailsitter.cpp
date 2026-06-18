@@ -226,7 +226,6 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     }
     _tilt_left  = pitch_thrust - yaw_thrust_limited;
     _tilt_right = pitch_thrust + yaw_thrust_limited;
-    gcs().send_text(MAV_SEVERITY_INFO, "Running");
     AP::logger().WriteStreaming("THRD", "TimeUS,ThLP,ThCom,ThMax,ThMi,ThAd,ThOu,ThQt",
         "s-------", // seconds,
         "F0000000", // micro (1e-6), no mult (1e0)
