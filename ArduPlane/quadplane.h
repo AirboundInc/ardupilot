@@ -648,10 +648,7 @@ private:
     uint32_t takeoff_alt_hold_start_ms;   // nonzero once takeoff altitude is reached
     float takeoff_wp_bearing_cd;          // bearing to next WP in centidegrees, -1 if unknown
     AP_Float takeoff_yaw_tol;
-    float takeoff_alt_hold_cm;  // Z position target (cm above EKF origin) captured at hold start
-    bool takeoff_alignment_z_relaxed;  // true once relax_z_controller() has been called at alignment start
-
-
+    AP_Float takeoff_yaw_align_timeout;
     // End of Change *Stefard*
 
     // oneshot with duration ARMING_DELAY_MS used by quadplane to delay spoolup after arming:

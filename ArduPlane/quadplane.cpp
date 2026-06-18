@@ -555,6 +555,13 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Standard
     AP_GROUPINFO("YAW_TOL", 41, QuadPlane, takeoff_yaw_tol, 20),
 
+    // @Param: YAW_ALGN_TO
+    // @DisplayName: Takeoff yaw alignment timeout
+    // @Description: Timeout in seconds for yaw alignment after VTOL takeoff altitude is reached. If heading not achieved within this time, vehicle switches to QLAND.
+    // @Units: s
+    // @Range: 1 30
+    // @User: Standard
+    AP_GROUPINFO("YAW_ALGN_TO", 42, QuadPlane, takeoff_yaw_align_timeout, 5.0f),
 
     AP_GROUPEND
 };
@@ -3612,6 +3619,10 @@ bool QuadPlane::verify_vtol_takeoff(const AP_Mission::Mission_Command &cmd)
                 last_print_ms = now;
                 gcs().send_text(MAV_SEVERITY_INFO, "Takeoff: waiting for heading, error %.0f deg",
                                 (double)(yaw_error_cd * 0.01f));
+            }
+            if (now - takeoff_alt_hold_start_ms > (uint32_t)(takeoff_yaw_align_timeout * 1000)) {
+                 gcs().send_text(MAV_SEVERITY_CRITICAL, "Takeoff: yaw alignment failed, switching to QLAND");
+                 plane.set_mode(plane.mode_qland, ModeReason::VTOL_FAILED_TAKEOFF);
             }
             return false;
         }
