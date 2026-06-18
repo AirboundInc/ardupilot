@@ -213,7 +213,7 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @Range: 0.01 10
     // @Increment: 0.01
     // @User: Advanced
-    AP_GROUPINFO("RELX_TC", 24, AC_AttitudeControl, _tc_tilt_relax, 1.0f),
+    AP_GROUPINFO("RELX_TLT_TC", 28, AC_AttitudeControl, _tc_tilt_relax, 1.0f),
 
     AP_GROUPEND
 };

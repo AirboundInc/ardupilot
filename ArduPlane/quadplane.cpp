@@ -571,7 +571,7 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Range: 1000 4000
     // @Increment: 100
     // @User: Standard
-    AP_GROUPINFO("LND_DET_TIM", 40, QuadPlane, landing_detect.timeout_ms, 200),
+    AP_GROUPINFO("LND_DET_TIM", 43, QuadPlane, landing_detect.timeout_ms, 200),
 
     // @Param: DARM_WDG_T
     // @DisplayName: Disarm watchdog timeout
