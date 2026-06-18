@@ -1001,7 +1001,7 @@ void Tailsitter_Transition::update()
             // Constants
             const int32_t  ALIGN_TOLERANCE_CD   = 2000;   // 20.0 degrees
             const float    MAX_SPIN_RATE_DEG    = 12.0f;  // Max yaw rate allowed
-            const uint32_t ALIGN_PHASE_LIMIT_MS = 10000; // 10s Total Timeout
+            const uint32_t ALIGN_PHASE_LIMIT_MS = 6000; // 6s Total Timeout
             const uint32_t WAIT_DELAY_MS        = 500;  // 0.5s Wait
 
             // Static Variables (State Tracking)
@@ -1010,8 +1010,8 @@ void Tailsitter_Transition::update()
             static uint32_t last_run_ms = 0;
             static uint32_t last_log_ms = 0;
             static int32_t target_bearing_cd = 0;
-            // NEW: One-Shot Flag to prevent infinite loops
-            static bool alignment_completed_for_this_flight = false; 
+            static bool alignment_completed_for_this_flight = false;
+            static bool target_bearing_latched = false;
 
             // --- DETECT NEW FLIGHT/TRANSITION ENTRY ---
             // If this function hasn't run for >200ms, assume it's a new attempt.
@@ -1020,6 +1020,7 @@ void Tailsitter_Transition::update()
                 alignment_done_ms = 0;
                 last_log_ms = 0;
                 alignment_completed_for_this_flight = false; // Reset flag for new transition
+                target_bearing_latched = false;
                 target_bearing_cd = 0;
             }
             last_run_ms = now_;
@@ -1030,10 +1031,12 @@ void Tailsitter_Transition::update()
                                         (plane.nav_controller != nullptr);
 
             if (should_run_alignment) {
-                if (target_bearing_cd == 0) {
+                if (!target_bearing_latched) {
                     target_bearing_cd = plane.prev_WP_loc.get_bearing_to(plane.next_WP_loc);
+                    quadplane.attitude_control->reset_rate_controller_I_terms();
                     gcs().send_text(MAV_SEVERITY_INFO, "Alignment start: Target Heading %.1f",
                         target_bearing_cd * 0.01f);
+                    target_bearing_latched = true;
                 }
                 int32_t current_yaw_cd = quadplane.ahrs.yaw_sensor;
                 int32_t error_cd = wrap_180_cd(target_bearing_cd - current_yaw_cd);
@@ -1078,7 +1081,7 @@ void Tailsitter_Transition::update()
                         quadplane.pos_control->get_roll_cd(),
                         quadplane.pos_control->get_pitch_cd(),
                         (float)target_bearing_cd,
-                        true
+                        false
                     );
 
                     quadplane.motors_output();
