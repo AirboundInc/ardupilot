@@ -8,19 +8,19 @@ local KEY = 110
 assert(param:add_table(KEY, "AUTOB_", 14), "AUTOB table failed")
 
 -- 2. ADD PARAMETERS
-assert(param:add_param(KEY, 1, "PIT_LIM",  40),  'could not add AUTOB_PIT_LIM')   -- AHRS pitch threshold to enter bailout (deg)
+assert(param:add_param(KEY, 1, "PIT_LIM",  50),  'could not add AUTOB_PIT_LIM')   -- ATT pitch(VTOL frame) threshold to enter bailout (deg)
 assert(param:add_param(KEY, 2, "ENABLE", 1),'could not add AUTOB_ENABLE')    -- 1 = Enabled
 assert(param:add_param(KEY, 3, "BTRN_DLY", 2500), 'could not add AUTOB_BTRN_DLY') -- Delay (ms) before checking pitch
 assert(param:add_param(KEY, 4, "PIT_TOUT", 100), 'could not add AUTOB_PIT_TOUT')  -- Sustained duration to enter bailout (ms)
 assert(param:add_param(KEY, 5, "PARA_EN", 1),'could not add AUTOB_PARA_EN')    -- 1 = Enabled
-assert(param:add_param(KEY, 6,"PARA_ANG", -15),'could not add AUTOB_PARA_ANG')
-assert(param:add_param(KEY, 7,"PARA_TOUT", 100),'could not add AUTOB_PARA_TOUT')
+assert(param:add_param(KEY, 6,"PARA_ANG", -15),'could not add AUTOB_PARA_ANG') -- AHRS Pitch(FW frame) threshold to trigger parachute(deg)
+assert(param:add_param(KEY, 7,"PARA_TOUT", 100),'could not add AUTOB_PARA_TOUT') -- Parachute pitch threshold timeout in ms
 assert(param:add_param(KEY, 8,  "LOOP_MS", 50), 'could not add AUTOB_LOOP_MS')  -- Loop rate (ms)
 assert(param:add_param(KEY, 9,  "WIN_TIM",   5),   'could not add AUTOB_WIN_TIM')    -- Rolling window duration (s)
 assert(param:add_param(KEY, 10, "WIN_SMP",   50),  'could not add AUTOB_WIN_SMP')    -- Calculated samples (output, read-only)
 assert(param:add_param(KEY, 11,  "AVG_LIM", 20),'could not add AUTOB_AVG_LIM')    -- Pitch limit
 assert(param:add_param(KEY, 12,"PEAK_LIM", 30),'could not add AUTOB_PEAK_LIM')
-assert(param:add_param(KEY, 13, "DBG_EN", 0), 'could not add AUTOB_DBG_EN')  -- 1 = enable dataflash logging
+assert(param:add_param(KEY, 13, "DBG_EN", 1), 'could not add AUTOB_DBG_EN')  -- 1 = enable dataflash logging
 assert(param:add_param(KEY, 14, "PRED_INT", 500), 'could not add AUTOB_PRED_INT')  -- Rate based VTOL pitch prediction interval
 
 -- 3. BIND PARAMETERS
