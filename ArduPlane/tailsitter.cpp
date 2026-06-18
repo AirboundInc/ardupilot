@@ -638,7 +638,11 @@ void Tailsitter::output(void)
 bool Tailsitter::transition_fw_complete(void)
 {
     // Get the difference in the pitch initial value to the current pitch setpoint to track the discontinuity
-    float fw_initial_pitch_diff = (transition->prev_fw_initial_pitch - transition->fw_transition_initial_pitch)*0.01f;
+    
+    // dead code need to decide if we want to keep it
+    //float fw_initial_pitch_diff = (transition->prev_fw_initial_pitch - transition->fw_transition_initial_pitch)*0.01f;
+    //end of dead code.
+
     if (!plane.arming.is_armed_and_safety_off()) {
         // instant transition when disarmed, no message
         return true;
@@ -662,7 +666,6 @@ bool Tailsitter::transition_fw_complete(void)
     if (quadplane.ahrs_view->pitch_sensor > 0) {
         if (transition->fw_transition_initial_pitch > 0) {
             gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW: pitch over-back, clamping initial pitch");
-            transition->prev_fw_initial_pitch = 0;
             transition->fw_transition_initial_pitch = 0;
             // fw_transition_start_ms intentionally NOT reset — accumulated dt drives corrective force
         }
@@ -675,24 +678,25 @@ bool Tailsitter::transition_fw_complete(void)
     return true;
     }
 
-
     uint32_t now = AP_HAL::millis();
-     // Guard for large initial pitch value, if there need to reset the initial pitch again
-    if(fabsf(fw_initial_pitch_diff)>10.0f){
-        gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW, angle reset discontinuity");
-        transition->restart();
-        return false;
-    }
+    // dead code need to decide if we want to keep it
+    // Guard for large initial pitch value, if there need to reset the initial pitch again
+    //if(fabsf(fw_initial_pitch_diff)>10.0f){
+    //    gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW, angle reset discontinuity");
+    //    transition->restart();
+    //    return false;
+    //}
+    // end of dead code.
 
     float timeout_ms = MAX(((transition_angle_fw + (transition->fw_transition_initial_pitch*0.01f)) / transition_rate_fw) * 1500, 2000.0f);
     if (now - transition->fw_transition_start_ms > timeout_ms) {
-        if (quadplane.ahrs_view->pitch_sensor > 0) {
-            return false;  // pitch inverted at timeout - corrective force still accumulating, don't complete
+        if (quadplane.ahrs_view->pitch_sensor > -(transition_angle_fw * 50)) {
+            return false;  // pitch inverted at timeout - corrective force still accumulating, don't complete, not enough nose-down to safely enter FW
         }
         gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW done, timeout");
         gcs().send_text(MAV_SEVERITY_WARNING, "FW transition_initial_pitch: %f",(float)transition->fw_transition_initial_pitch*0.01f);
-        gcs().send_text(MAV_SEVERITY_WARNING, "FW current_time: %f, transition_start_ms: %f",(float)now,(float)transition->fw_transition_start_ms);
-        gcs().send_text(MAV_SEVERITY_WARNING, "Time delta: %f",(float)(now - transition->fw_transition_start_ms));
+        gcs().send_text(MAV_SEVERITY_WARNING, "FW current_time: %lu, transition_start_ms: %lu",(unsigned long)now,(unsigned long)transition->fw_transition_start_ms);
+        gcs().send_text(MAV_SEVERITY_WARNING, "Time delta: %lu",(unsigned long)(now - transition->fw_transition_start_ms));
         return true;
     }
     // still waiting
@@ -1031,7 +1035,7 @@ void Tailsitter_Transition::update()
         quadplane.assisted_flight = true;
         uint32_t dt = now - fw_transition_start_ms;
         // multiply by 0.1 to convert (degrees/second * milliseconds) to centi degrees
-        plane.nav_pitch_cd = constrain_float(fw_transition_initial_pitch - (quadplane.tailsitter.transition_rate_fw * dt) * 0.1f * (plane.fly_inverted()?-1.0f:1.0f), -8500, 8500);
+        plane.nav_pitch_cd = constrain_float(fw_transition_initial_pitch - (quadplane.tailsitter.transition_rate_fw * dt) * 0.1f, -8500, 8500);
         plane.nav_roll_cd = 0;
         quadplane.disable_yaw_rate_time_constant();
         quadplane.attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
@@ -1189,7 +1193,6 @@ void Tailsitter_Transition::restart()
     transition_state = TRANSITION_ANGLE_WAIT_FW;
     fw_transition_start_ms = AP_HAL::millis();
     fw_transition_initial_pitch = constrain_float(quadplane.attitude_control->get_attitude_target_quat().get_euler_pitch() * degrees(100.0),-8500,8500);
-    prev_fw_initial_pitch = fw_transition_initial_pitch;
 }
 
 

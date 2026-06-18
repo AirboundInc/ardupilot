@@ -3308,6 +3308,7 @@ void QuadPlane::takeoff_controller(void)
     // takeoff yaw handling added on 02-June-2026 *Stefard*
     if (takeoff_alt_hold_start_ms != 0) {
         // hold altitude and actively yaw to face next waypoint
+    
         pos_control->relax_z_controller(motors->get_throttle_hover());
 
         if (takeoff_wp_bearing_cd >= 0.0f) {
