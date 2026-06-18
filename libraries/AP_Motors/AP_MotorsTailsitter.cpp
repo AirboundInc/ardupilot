@@ -23,6 +23,7 @@
 #include "AP_MotorsTailsitter.h"
 #include <GCS_MAVLink/GCS.h>
 #include <SRV_Channel/SRV_Channel.h>
+#include <AP_Logger/AP_Logger.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -109,6 +110,12 @@ void AP_MotorsTailsitter::output_to_motors()
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, _tilt_left*SERVO_OUTPUT_RANGE);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, _tilt_right*SERVO_OUTPUT_RANGE);
+     AP::logger().WriteStreaming("THRE", "TUS,ThAETR",
+        "s-", // seconds,
+        "F0", // micro (1e-6), no mult (1e0)
+        "Qf", // uint64_t, float
+        AP_HAL::micros64(),
+        _actuator[2]);
 
 }
 
@@ -147,6 +154,7 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     roll_thrust = (_roll_in + _roll_in_ff) * compensation_gain;
     pitch_thrust = _pitch_in + _pitch_in_ff;
     yaw_thrust = _yaw_in + _yaw_in_ff;
+    float throttle_lpf = get_throttle();
     throttle_thrust = get_throttle() * compensation_gain;
     const float max_boost_throttle = _throttle_avg_max * compensation_gain;
 
@@ -218,6 +226,12 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     }
     _tilt_left  = pitch_thrust - yaw_thrust_limited;
     _tilt_right = pitch_thrust + yaw_thrust_limited;
+    AP::logger().WriteStreaming("THRD", "TUS,ThLP,ThCom,ThMax,ThMi,ThAd,ThOu,ThQt",
+        "s-------", // seconds,
+        "F0000000", // micro (1e-6), no mult (1e0)
+        "Qfffffff", // uint64_t, float
+        AP_HAL::micros64(),
+        throttle_lpf, get_throttle() * compensation_gain, max_throttle_out, min_throttle_out,thr_adj,_throttle,_throttle_out);
 }
 
 // output_test_seq - spin a motor at the pwm value specified
