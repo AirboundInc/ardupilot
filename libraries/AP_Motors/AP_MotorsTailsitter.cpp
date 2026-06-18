@@ -110,7 +110,7 @@ void AP_MotorsTailsitter::output_to_motors()
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, _tilt_left*SERVO_OUTPUT_RANGE);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, _tilt_right*SERVO_OUTPUT_RANGE);
-     AP::logger().WriteStreaming("THRE", "TUS,ThAETR",
+     AP::logger().WriteStreaming("THRE", "TimeUS,ThAETR",
         "s-", // seconds,
         "F0", // micro (1e-6), no mult (1e0)
         "Qf", // uint64_t, float
@@ -226,7 +226,8 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     }
     _tilt_left  = pitch_thrust - yaw_thrust_limited;
     _tilt_right = pitch_thrust + yaw_thrust_limited;
-    AP::logger().WriteStreaming("THRD", "TUS,ThLP,ThCom,ThMax,ThMi,ThAd,ThOu,ThQt",
+    gcs().send_text(MAV_SEVERITY_INFO, "Running");
+    AP::logger().WriteStreaming("THRD", "TimeUS,ThLP,ThCom,ThMax,ThMi,ThAd,ThOu,ThQt",
         "s-------", // seconds,
         "F0000000", // micro (1e-6), no mult (1e0)
         "Qfffffff", // uint64_t, float
