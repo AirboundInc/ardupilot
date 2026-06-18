@@ -481,8 +481,6 @@ public:
     // To check the transition state
     void set_tailsitter_transition(bool in_transition) { _ts_in_transition = in_transition; }
 
-    // To check the back transition complete state
-    void set_tailsitter_back_transition_done(bool back_transition_done) { _ts_back_transition_done = back_transition_done; }
 protected:
 
     // Update rate_target_ang_vel using attitude_error_rot_vec_rad
@@ -506,8 +504,9 @@ protected:
     AP_Float            _ang_vel_pitch_max;
     AP_Float            _ang_vel_yaw_max;
 
-    AP_Float            _max_tilt_relax;
-    AP_Float            _relax_time_constant;
+    AP_Float            _high_tilt_relax;
+    AP_Float            _low_tilt_relax;
+    AP_Float            _tc_tilt_relax;
 
     // Enable/Disable attitude relaxation
     AP_Int8             _att_relax_enabled;
@@ -636,17 +635,14 @@ protected:
     // ratio of normal gain to landed gain
     float               _landed_gain_ratio;
 
+    AP_Float            _relax_time_constant;
+
     // References to external libraries
     const AP_AHRS_View&  _ahrs;
     const AP_MultiCopter &_aparm;
     AP_Motors&          _motors;
 
     static AC_AttitudeControl *_singleton;
-
-    // Relaxed pitch and roll setpoint values
-    float               _relaxed_roll = 0.0f;
-    float               _relaxed_pitch = 0.0f;
-
 
 protected:
     /*
@@ -668,7 +664,6 @@ protected:
     bool _inverted_flight;
     bool _ts_enabled = false;  // tailsitter enabled flag
     bool _ts_in_transition = false;  // tailsitter transition flag
-    bool _ts_back_transition_done = false;  // tailsitter back transition done flag
 
 public:
     // log a CTRL message
