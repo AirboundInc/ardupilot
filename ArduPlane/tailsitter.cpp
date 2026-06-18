@@ -666,7 +666,6 @@ bool Tailsitter::transition_fw_complete(void)
     if (quadplane.ahrs_view->pitch_sensor > 0) {
         if (transition->fw_transition_initial_pitch > 0) {
             gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW: pitch over-back, clamping initial pitch");
-            transition->prev_fw_initial_pitch = 0;
             transition->fw_transition_initial_pitch = 0;
             // fw_transition_start_ms intentionally NOT reset — accumulated dt drives corrective force
         }
@@ -1195,7 +1194,6 @@ void Tailsitter_Transition::restart()
     transition_state = TRANSITION_ANGLE_WAIT_FW;
     fw_transition_start_ms = AP_HAL::millis();
     fw_transition_initial_pitch = constrain_float(quadplane.attitude_control->get_attitude_target_quat().get_euler_pitch() * degrees(100.0),-8500,8500);
-    prev_fw_initial_pitch = fw_transition_initial_pitch;
 }
 
 
