@@ -21,7 +21,7 @@ assert(param:add_param(KEY, 10, "WIN_SMP",   50),  'could not add AUTOB_WIN_SMP'
 assert(param:add_param(KEY, 11,  "AVG_LIM", 20),'could not add AUTOB_AVG_LIM')    -- Pitch limit
 assert(param:add_param(KEY, 12,"PEAK_LIM", 30),'could not add AUTOB_PEAK_LIM')
 assert(param:add_param(KEY, 13, "DBG_EN", 0), 'could not add AUTOB_DBG_EN')  -- 1 = enable dataflash logging
-assert(param:add_param(KEY, 14, "PRED_INT", 500), 'could not add AUTOB_DBG_EN')  -- Rate based VTOL pitch prediction interval
+assert(param:add_param(KEY, 14, "PRED_INT", 500), 'could not add AUTOB_PRED_INT')  -- Rate based VTOL pitch prediction interval
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
@@ -217,7 +217,7 @@ function update()
     local target_vtol_pitch_deg = desired and (desired.pitch_cd * 0.01) or 0
     local actual_vtol_pitch_deg = actual  and (actual.pitch_cd  * 0.01) or 0
     local vtol_pitch_rate_pid = qp_rate_pid_info(1)
-    local current_instance_vtol_pitch_rate = rad2deg(vtol_pitch_rate_pid.actual or 0)
+    local current_instance_vtol_pitch_rate =  vtol_pitch_rate_pid and rad2deg(vtol_pitch_rate_pid.actual or 0) or 0
     local pitch_prediction_interval = p_prediction_interval:get() or 0
     local predicted_next_instance_vtol_pitch = actual_vtol_pitch_deg + current_instance_vtol_pitch_rate * pitch_prediction_interval/1000
 
