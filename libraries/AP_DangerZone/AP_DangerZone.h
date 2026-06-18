@@ -6,18 +6,36 @@
 
 #include <stdint.h>
 #include <AP_Common/AP_Common.h>
+#include <AP_Param/AP_Param.h>
 #include "DZ_Zone.h"
 
 // Vehicle-agnostic implementation of the Danger Zone framework
 // The zone definitions, metric getters and the actions all live in the vehicle code (e.g. ArduPlane/danger_zone_config.cpp).
 // This library only evaluates the registered checks and tracks the current zone level.
 
+// Operating mode selected by the DZ_ENABLE parameter.
+enum class DZ_Enable : uint8_t {
+    OFF        = 0,   // Danger Zone module disabled
+    LOG        = 1,   // Run checks and logging, but take no actions
+    FULL       = 2,   // Run checks and logging, and take zone actions
+};
+
 class AP_DangerZone {
 public:
-    AP_DangerZone() {}
+    AP_DangerZone() { AP_Param::setup_object_defaults(this, var_info); }
 
     /* Do not allow copies */
     CLASS_NO_COPY(AP_DangerZone);
+
+    static const struct AP_Param::GroupInfo var_info[];
+
+    // Operating mode (DZ_ENABLE). Zero means the module is disabled.
+    DZ_Enable enabled() const { return DZ_Enable(_enable.get()); }
+
+    // True only in FULL mode, i.e. when zone actions should be taken. Consumers
+    // of get_current_danger_zone() that actuate must gate on this so LOG mode
+    // tracks and logs without changing behaviour.
+    bool actions_enabled() const { return enabled() == DZ_Enable::FULL; }
 
     // Register the vehicle-owned zone table and the parallel state storage.
     // `states` must hold num_zones * DZ_ZONE_STATE_SLOTS entries.
@@ -69,6 +87,9 @@ private:
     uint8_t  _entry_bits{0};            // next-zone entry checks satisfied this tick
     uint8_t  _exit_bits{0};             // current-zone exit checks satisfied this tick
     uint8_t  _self_bits{0};             // current-zone own-entry checks satisfied this tick
+
+    AP_Int8  _enable;                   // DZ_ENABLE operating mode
+    AP_Int32 _hyst_timer;               // DZ_HYST_TIMER de-escalation hysteresis timer (ms)
 };
 
 #endif  // AP_DANGERZONE_ENABLED

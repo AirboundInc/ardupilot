@@ -2,6 +2,24 @@
 
 #if AP_DANGERZONE_ENABLED
 
+const AP_Param::GroupInfo AP_DangerZone::var_info[] = {
+    // @Param: ENABLE
+    // @DisplayName: Danger Zone enable
+    // @Description: Enables the Danger Zone module. In Log mode the zone checks run and are logged but no actions are taken; in Enabled mode the zone actions are also executed.
+    // @Values: 0:Disabled,1:Log (checks and logging only),2:Enabled (checks, logging and actions)
+    // @User: Standard
+    AP_GROUPINFO_FLAGS("ENABLE", 1, AP_DangerZone, _enable, 0, AP_PARAM_FLAG_ENABLE),
+
+    // @Param: HYST_TIMER
+    // @DisplayName: Danger Zone hysteresis timer
+    // @Description: Minimum time to remain in a zone before de-escalating to the previous zone. Applied to every zone to suppress flicker; a zone may specify a larger minimum of its own.
+    // @Units: ms
+    // @Range: 0 30000
+    // @User: Standard
+    AP_GROUPINFO("HYST_TIMER", 2, AP_DangerZone, _hyst_timer, 0),
+
+    AP_GROUPEND
+};
 
 void AP_DangerZone::init(const DZ_Zone *zones, uint8_t num_zones, DZ_CheckState *states,
                          DZ_RingBuffer *buffers, uint8_t num_buffers)
@@ -93,13 +111,16 @@ void AP_DangerZone::update(uint32_t now_ms)
         _zone++;
         _reason = _zones[_zone].name;
         _last_transition_ms = now_ms;
-    } else if (want_deescalate && !self_entry &&
-               (now_ms - _last_transition_ms) >= _zones[_zone].hold_ms) {
-        // De-escalate only when the exit condition holds, the zone's own entry
-        // condition has cleared, and the minimum dwell time has elapsed.
-        _zone--;
-        _reason = _zones[_zone].name;
-        _last_transition_ms = now_ms;
+    } else {
+        // Use the DZ_HYST_TIMER value for de-escalation
+        const uint32_t hyst_ms = _hyst_timer > 0 ? (uint32_t)_hyst_timer.get() : 0;
+        if (want_deescalate && !self_entry && (now_ms - _last_transition_ms) >= hyst_ms) {
+            // For de-escalation, the exit condition should hold, the current zone's entry condition should clear,
+            // and the hysteresis timers should have elapsed
+            _zone--;
+            _reason = _zones[_zone].name;
+            _last_transition_ms = now_ms;
+        }
     }
 }
 

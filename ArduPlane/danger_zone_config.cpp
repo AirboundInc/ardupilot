@@ -167,7 +167,8 @@ void Plane::danger_zone_init()
 void Plane::danger_zone_update()
 {
     // only run when armed and in the VTOL phase
-    if (!arming.is_armed() || !quadplane.in_vtol_mode()) {
+    if (danger_zone.enabled() == DZ_Enable::OFF ||
+        !arming.is_armed() || !quadplane.in_vtol_mode()) {
         danger_zone.reset();
         danger_zone_last_level = danger_zone.get_current_danger_zone();
         return;
@@ -193,20 +194,23 @@ void Plane::danger_zone_update()
         gcs().send_text(MAV_SEVERITY_WARNING, "DangerZone: %s (level %u)",
                         danger_zone.get_reason(), (unsigned)level);
 
-        // Zone 4: autobailout to QLOITER
-        if (level >= 4 && danger_zone_last_level < 4) {
-            set_mode_by_number(Mode::Number::QLOITER, ModeReason::DANGERZONE_BAILOUT);
-        }
+        // Only run actions in Full mode
+        if (danger_zone.actions_enabled()) {
+            // Zone 4: autobailout to QLOITER
+            if (level >= 4 && danger_zone_last_level < 4) {
+                set_mode_by_number(Mode::Number::QLOITER, ModeReason::DANGERZONE_BAILOUT);
+            }
 
-        // // Mission resumption after exiting Zone 4
-        // if (level < 4 && danger_zone_last_level >= 4) {
-        // }
+            // // Mission resumption after exiting Zone 4
+            // if (level < 4 && danger_zone_last_level >= 4) {
+            // }
 
-        // Zone 5: Disarm and deploy parachute
-        if (level >= 5 && danger_zone_last_level < 5) {
+            // Zone 5: Disarm and deploy parachute
+            if (level >= 5 && danger_zone_last_level < 5) {
 #if PARACHUTE == ENABLED
-            parachute_release_with_disarm();
+                parachute_release_with_disarm();
 #endif
+            }
         }
 
         danger_zone_last_level = level;
