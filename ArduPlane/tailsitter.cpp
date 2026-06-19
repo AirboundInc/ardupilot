@@ -1000,9 +1000,9 @@ void Tailsitter_Transition::update()
 
             // Constants
             const int32_t  ALIGN_TOLERANCE_CD   = 2000;   // 20.0 degrees
-            const float    MAX_SPIN_RATE_DEG    = 12.0f;  // Max yaw rate allowed
+            const float    MAX_SPIN_RATE_DEG    = 8.0f;  // Max yaw rate allowed
             const uint32_t ALIGN_PHASE_LIMIT_MS = 6000; // 6s Total Timeout
-            const uint32_t WAIT_DELAY_MS        = 500;  // 0.5s Wait
+            const uint32_t WAIT_DELAY_MS        = 1000;  // 1s Wait
 
             // Static Variables (State Tracking)
             static uint32_t align_phase_start_ms = 0;
@@ -1038,7 +1038,7 @@ void Tailsitter_Transition::update()
                         target_bearing_cd * 0.01f);
                     target_bearing_latched = true;
                 }
-                int32_t current_yaw_cd = quadplane.ahrs.yaw_sensor;
+                int32_t current_yaw_cd = quadplane.ahrs_view->yaw_sensor;
                 int32_t error_cd = wrap_180_cd(target_bearing_cd - current_yaw_cd);
                 Vector3f gyro = quadplane.ahrs.get_gyro();
                 float yaw_rate_deg = degrees(gyro.x); 
@@ -1061,8 +1061,8 @@ void Tailsitter_Transition::update()
                 // Run this ONLY if we are NOT done waiting AND haven't timed out
                 if (!wait_complete && !timeout_expired) {
                     
-                    // Log (1Hz)
-                    if (now_ - last_log_ms > 1000) { 
+                    // Log (2Hz)
+                    if (now_ - last_log_ms > 500) { 
                         if (is_aligned) {
                              float remaining = (WAIT_DELAY_MS - (now_ - alignment_done_ms)) * 0.001f;
                              gcs().send_text(MAV_SEVERITY_INFO, "Aligned. Waiting: %.1fs", (double)remaining);
