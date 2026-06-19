@@ -110,12 +110,13 @@ void AP_MotorsTailsitter::output_to_motors()
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, _tilt_left*SERVO_OUTPUT_RANGE);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, _tilt_right*SERVO_OUTPUT_RANGE);
-     AP::logger().WriteStreaming("THRE", "TimeUS,ThAETR",
-        "s-", // seconds,
-        "F0", // micro (1e-6), no mult (1e0)
-        "Qf", // uint64_t, float
+    float thrust_lin = thr_lin.apply_thrust_curve_and_volt_scaling(_throttle);
+     AP::logger().WriteStreaming("THRE", "TimeUS,ThAETR.ThLin",
+        "s--", // seconds,
+        "F00", // micro (1e-6), no mult (1e0)
+        "Qff", // uint64_t, float
         AP_HAL::micros64(),
-        _actuator[2]);
+        _actuator[2],thrust_lin);
 
 }
 
