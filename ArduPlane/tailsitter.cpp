@@ -695,8 +695,8 @@ bool Tailsitter::transition_fw_complete(void)
         }
         gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW done, timeout");
         gcs().send_text(MAV_SEVERITY_WARNING, "FW transition_initial_pitch: %f",(float)transition->fw_transition_initial_pitch*0.01f);
-        gcs().send_text(MAV_SEVERITY_WARNING, "FW current_time: %lu, transition_start_ms: %lu",(unsigned long)now,(unsigned long)transition->fw_transition_start_ms);
-        gcs().send_text(MAV_SEVERITY_WARNING, "Time delta: %lu",(unsigned long)(now - transition->fw_transition_start_ms));
+        gcs().send_text(MAV_SEVERITY_WARNING, "FW current_time: %f, transition_start_ms: %f",(float)now,(float)transition->fw_transition_start_ms);
+        gcs().send_text(MAV_SEVERITY_WARNING, "Time delta: %f",(float)(now - transition->fw_transition_start_ms));
 
         return true;
     }
