@@ -60,7 +60,7 @@ local AUTOBAILOUT_EXCLUDE_MODES = {
     [23] = true,  -- QACRO
 }
 -- 5. STATE VARIABLES
-local active = false
+local autobailout_active = false
 local last_mode_idx = 0
 local pre_bailout_mode = nil
 local first_pitch_exceeded_t = nil
@@ -118,6 +118,7 @@ function is_parachute_angle_threshold_valid(threshold_angle)
 end
 
 function para_deploy()
+    
     if p_para_enable:get() ~= 1 then return end
 
     para_trigger_rc_chan = nil
@@ -177,6 +178,54 @@ function para_deploy()
     end
 end
 
+function trigger_autobailout(current_mode)
+    if autobailout_active then
+        gcs:send_text(2, "AUTOB: Autobailout already active")
+        gcs:send_text(2, "AUTOB: Trigger rejected")
+        return false
+    end
+    if vehicle:set_mode(MODE_QLOITER) then
+        autobailout_active = true
+        pre_bailout_mode = current_mode
+        post_bailout_sample_count = 0 --Reset this variable only when autobailout is active
+        gcs:send_text(2, "AUTOB: Switching to QLoiter" )
+        return true
+    end
+    return false
+end
+
+function is_vtol_pitch_within_limits(pitch)
+    local threshold = p_pit_lim:get() or 40
+    local pitch_timeout = p_pitch_timeout:get() or 100
+    
+    --dont check if not armed or not in vtol phase
+    if not in_vtol_flight() or not arming:is_armed() then
+        -- Wait for Delay (settle time)
+        return true
+    end
+    
+    --dont check if within delay_ms post backtransition
+    local delay_ms = p_btrn_dly:get() or 1000
+    if backtransition_complete_time_ms and (now - backtransition_complete_time_ms) < delay_ms then
+        return true
+    end
+    
+    if math.abs(pitch) > threshold then
+        if first_pitch_exceeded_t == nil then
+            first_pitch_exceeded_t = millis():tofloat()
+        else
+            local time_diff = now - first_pitch_exceeded_t
+            if time_diff > pitch_timeout then
+                first_pitch_exceeded_t = nil   
+                return false     
+            end
+        end
+    else
+        first_pitch_exceeded_t = nil
+    end
+    return true
+end    
+
 function update()
     local loop_ms = p_loop_ms:get() or 100
     para_deploy()
@@ -194,7 +243,7 @@ function update()
     if current_mode ~= last_mode_idx then
         last_mode_idx = current_mode
         first_pitch_exceeded_t = nil
-        if not active then        -- ADD THIS GUARD
+        if not autobailout_active then        -- ADD THIS GUARD
             pitch_error_buf = {}
             pitch_angle_buf = {}
             buf_idx = 1
@@ -204,7 +253,7 @@ function update()
     local win_n   = math.max(1, math.floor((p_win_s:get() or 5) * 1000 / loop_ms))
     if win_n ~= WINDOW_SIZE then
         WINDOW_SIZE = win_n
-        if not active then
+        if not autobailout_active then
             pitch_error_buf = {}
             pitch_angle_buf = {}
             buf_idx = 1
@@ -236,40 +285,17 @@ function update()
     -- ==========================================================
     -- LOGIC: MONITORING (Checking Pitch)
     -- ==========================================================
-    if not active then
-        if in_vtol_flight() and arming:is_armed() then
-            -- Wait for Delay (settle time)
-            local delay_ms = p_btrn_dly:get() or 1000
-            if backtransition_complete_time_ms and (now - backtransition_complete_time_ms) > delay_ms then
-                local threshold = p_pit_lim:get() or 40
-                local pitch_timeout = p_pitch_timeout:get() or 100
-                if math.abs(predicted_next_instance_vtol_pitch) > threshold then
-                    if first_pitch_exceeded_t == nil then
-                        first_pitch_exceeded_t = millis():tofloat()
-                    else
-                        time_diff = now - first_pitch_exceeded_t
-                        if time_diff > pitch_timeout then
-                            if vehicle:set_mode(MODE_QLOITER) then
-                                first_pitch_exceeded_t = nil
-                                active = true
-                                pre_bailout_mode = current_mode
-                                post_bailout_sample_count = 0 --Reset this variable only when autobailout is active
-                                gcs:send_text(2, "AUTOB: Switching to QLoiter" )
-                            end
-                        end
-                    end
-                else
-                    first_pitch_exceeded_t = nil
-                end          
-            end
+    if not autobailout_active then
+        if not is_vtol_pitch_within_limits(actual_vtol_pitch_deg) then
+            trigger_autobailout(current_mode)
         end
-    elseif active then
+    elseif autobailout_active then
         if not gcs_announce_autobailout then
             gcs:send_text(2, "AUTOB: Autobailout Active")
             gcs_announce_autobailout = true
         end
         if current_mode ~= MODE_QLOITER then
-            active = false
+            autobailout_active = false
             pre_bailout_mode = nil
             gcs_announce_autobailout = false
             gcs:send_text(6, "AUTOB: Manual Override Detected")
@@ -281,7 +307,7 @@ function update()
             if post_bailout_sample_count >= WINDOW_SIZE and avg_err < avg_lim and peak_ang < peak_lim then
                 if pre_bailout_mode and vehicle:set_mode(pre_bailout_mode) then
                     local recovered_mode = pre_bailout_mode
-                    active = false
+                    autobailout_active = false
                     pre_bailout_mode = nil
                     gcs_announce_autobailout = false
                     gcs:send_text(2, "AUTOB: Recovering to mode " .. tostring(recovered_mode))
