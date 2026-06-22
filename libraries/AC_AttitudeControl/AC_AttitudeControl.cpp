@@ -184,6 +184,15 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("RELX_TC", 24, AC_AttitudeControl, _tc_tilt_relax, 1.0f),
 
+    // @Param: PIT_CLIP_MAX
+    // @DisplayName: Max Pitch angle in VTOL modes
+    // @Description: Maximum pitch angle allowed in all VTOL modes.
+    // @Units: deg
+    // @Range: 0 90
+    // @Increment: 0.01
+    // @User: Advanced
+    AP_GROUPINFO("PIT_CLIP_MAX", 25, AC_AttitudeControl, _att_max_pit, 25.0f),
+
     AP_GROUPEND
 };
 
@@ -774,6 +783,12 @@ void AC_AttitudeControl::attitude_controller_run_quat()
         _ang_vel_target.y *= (1.0f - relaxation_factor_lpf);
         _attitude_target.from_euler(euler_sp.x, euler_sp.y, euler_sp.z);
     }
+    if(_ts_enabled && !_ts_in_transition){
+        Vector3f euler_sp;
+        _attitude_target.to_euler(euler_sp.x, euler_sp.y, euler_sp.z);
+        euler_sp.y = constrain_float(euler_sp.y,radians(-_att_max_pit),radians(_att_max_pit));
+        _attitude_target.from_euler(euler_sp.x, euler_sp.y, euler_sp.z);
+    }
     thrust_heading_rotation_angles(_attitude_target, attitude_body, attitude_error, _thrust_angle, _thrust_error_angle);
 
     // Compute the angular velocity corrections in the body frame from the attitude error
@@ -794,7 +809,7 @@ void AC_AttitudeControl::attitude_controller_run_quat()
         _ang_vel_body.z = _ahrs.get_gyro().z;
         get_rate_yaw_pid().reset_I();
     } else if (_thrust_error_angle > AC_ATTITUDE_THRUST_ERROR_ANGLE * 2.0f) {
-        _feedforward_scalar = (1.0f - (_thrust_error_angle - AC_ATTITUDE_THRUST_ERROR_ANGLE) / AC_ATTITUDE_THRUST_ERROR_ANGLE);
+        _feedforward_scalar = (1.0f - (_thrust_error_angle - AC_ATTITUDE_THRUST_ERROR_ANGLE * 2.0f) / AC_ATTITUDE_THRUST_ERROR_ANGLE);
         _ang_vel_body.x += ang_vel_body_feedforward.x * _feedforward_scalar;
         _ang_vel_body.y += ang_vel_body_feedforward.y * _feedforward_scalar;
         _ang_vel_body.z += ang_vel_body_feedforward.z;
