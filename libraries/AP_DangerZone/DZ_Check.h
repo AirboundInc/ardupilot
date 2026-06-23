@@ -34,7 +34,7 @@
 
 // Number of samples retained per windowed check.
 static const uint16_t DZ_CHECK_BUFFER_SAMPLES =
-    (DZ_BUFFER_MAX_WINDOW_MS / 1000) * DZ_UPDATE_RATE_HZ;
+    (DZ_BUFFER_MAX_WINDOW_MS * DZ_UPDATE_RATE_HZ) / 1000;
 
 // Maximum checks combined within a single AND/OR group.
 static const uint8_t DZ_MAX_CHECKS = 4;
