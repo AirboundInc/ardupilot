@@ -148,7 +148,7 @@ function para_deploy()
         return
     end
     
-    para_threshold = p_para_ang:get() or -45
+    local para_threshold = p_para_ang:get() or -45
     if not is_parachute_angle_threshold_valid(para_threshold) then
         gcs:send_text(2, string.format("AUTOB:AUTB_PARA_ANG invalid. Range(%.1f, %.1f)",para_ahrs_pitch_threshold_min, para_ahrs_pitch_threshold_max))    
         return
@@ -194,37 +194,62 @@ function trigger_autobailout(current_mode)
     return false
 end
 
-function is_vtol_pitch_within_limits(pitch)
+function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight)
     local threshold = p_pit_lim:get() or 40
     local pitch_timeout = p_pitch_timeout:get() or 100
     
     --dont check if not armed or not in vtol phase
-    if not in_vtol_flight() or not arming:is_armed() then
+    if not is_vtol_flight or not arming:is_armed() then
         -- Wait for Delay (settle time)
-        return true
+        return false
     end
     
     --dont check if within delay_ms post backtransition
     local delay_ms = p_btrn_dly:get() or 1000
     if backtransition_complete_time_ms and (now - backtransition_complete_time_ms) < delay_ms then
-        return true
+        return false
     end
     
-    if math.abs(pitch) > threshold then
+    if math.abs(vtolpitch) > threshold then
         if first_pitch_exceeded_t == nil then
             first_pitch_exceeded_t = millis():tofloat()
         else
             local time_diff = now - first_pitch_exceeded_t
             if time_diff > pitch_timeout then
-                first_pitch_exceeded_t = nil   
-                return false     
+                first_pitch_exceeded_t = nil  
+                gcs:send_text(2, "AUTOB: VTOL pitch exceeding threshold")
+                return true     
             end
         end
     else
         first_pitch_exceeded_t = nil
     end
-    return true
+    return false
 end    
+
+function is_predicted_vtol_pitch_exceeding_parathreshold(current_vtol_pitch_deg, current_vtol_pitch_rate, is_vtol_flight)
+    local pitch_prediction_interval = p_prediction_interval:get() or 0
+    --convert to VTOL frame
+    local para_threshold = 90 - (p_para_ang:get() or -45) 
+
+    if not is_vtol_flight or not arming:is_armed() then
+        -- Wait for Delay (settle time)
+        return false
+    end
+    
+    --dont check if within delay_ms post backtransition
+    local delay_ms = p_btrn_dly:get() or 1000
+    if backtransition_complete_time_ms and (now - backtransition_complete_time_ms) < delay_ms then
+        return false
+    end
+
+    local predicted_next_instance_vtol_pitch = current_vtol_pitch_deg + current_vtol_pitch_rate * (pitch_prediction_interval/1000)
+    if math.abs(predicted_next_instance_vtol_pitch) > para_threshold then
+        gcs:send_text(2, "AUTOB: PredPitch exceeds limit: " .. tostring(predicted_next_instance_vtol_pitch))
+        return true
+    end
+    return false
+end
 
 function update()
     local loop_ms = p_loop_ms:get() or 100
@@ -266,9 +291,7 @@ function update()
     local target_vtol_pitch_deg = desired and (desired.pitch_cd * 0.01) or 0
     local actual_vtol_pitch_deg = actual  and (actual.pitch_cd  * 0.01) or 0
     local vtol_pitch_rate_pid = qp_rate_pid_info(1)
-    local current_instance_vtol_pitch_rate =  vtol_pitch_rate_pid and rad2deg(vtol_pitch_rate_pid.actual or 0) or 0
-    local pitch_prediction_interval = p_prediction_interval:get() or 0
-    local predicted_next_instance_vtol_pitch = actual_vtol_pitch_deg + current_instance_vtol_pitch_rate * pitch_prediction_interval/1000
+    local actual_vtol_pitch_rate =  vtol_pitch_rate_pid and rad2deg(vtol_pitch_rate_pid.actual or 0) or 0
 
     pitch_error_buf[buf_idx] = math.abs(target_vtol_pitch_deg - actual_vtol_pitch_deg)
     pitch_angle_buf[buf_idx] = math.abs(actual_vtol_pitch_deg)
@@ -279,16 +302,22 @@ function update()
     local pitch_deg = rad2deg(ahrs:get_pitch() or 0)
 
     if p_dbg_en:get() == 1 then
-        logger:write('AUTB', 'AvgErr,PeakAng,PitchDeg,QPredPit', 'ffff', avg_err, peak_ang, pitch_deg,predicted_next_instance_vtol_pitch)
+        logger:write('AUTB', 'AvgErr,PeakAng,PitchDeg,QPit,QRateP', 'fffff', avg_err, peak_ang, pitch_deg, actual_vtol_pitch_deg, actual_vtol_pitch_rate)
     end
-
+    
+    is_vtol_flight = in_vtol_flight()
     -- ==========================================================
     -- LOGIC: MONITORING (Checking Pitch)
     -- ==========================================================
     if not autobailout_active then
-        if not is_vtol_pitch_within_limits(actual_vtol_pitch_deg) then
+        if is_vtol_pitch_exceeding_limit(actual_vtol_pitch_deg, is_vtol_flight) then
+            trigger_autobailout(current_mode)
+        elseif is_predicted_vtol_pitch_exceeding_parathreshold(actual_vtol_pitch_deg, actual_vtol_pitch_rate, is_vtol_flight) then
             trigger_autobailout(current_mode)
         end
+    -- ==========================================================
+    -- LOGIC: RECOVERY
+    -- ==========================================================
     elseif autobailout_active then
         if not gcs_announce_autobailout then
             gcs:send_text(2, "AUTOB: Autobailout Active")
