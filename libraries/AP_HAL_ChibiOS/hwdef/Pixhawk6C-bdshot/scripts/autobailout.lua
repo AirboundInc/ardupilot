@@ -264,7 +264,7 @@ function is_predicted_vtol_pitch_exceeding_parathreshold(current_vtol_pitch_deg,
     local predicted_next_instance_vtol_pitch = current_vtol_pitch_deg + current_vtol_pitch_rate * (pitch_prediction_interval/1000)
 
     if math.abs(predicted_next_instance_vtol_pitch) > para_threshold then
-        gcs:send_text(2, "AUTOB: PredPitch exceeds threshold: " .. tostring(predicted_next_instance_vtol_pitch))
+        gcs:send_text(2, "AUTOB: PredPitch exceeds Parathresh: " .. tostring(predicted_next_instance_vtol_pitch))
         return true
     end
     return false
