@@ -97,7 +97,6 @@ local backtransition_complete_time_ms = nil
 local function rad2deg(r) return r * 57.2958 end
 
 function in_vtol_flight()
-    local mode = vehicle:get_mode()
     local vtol_active = not quadplane:tailsitter_in_vtol_transition() and quadplane:in_vtol_mode()
     if vtol_active then
         if backtransition_complete_time_ms == nil then
