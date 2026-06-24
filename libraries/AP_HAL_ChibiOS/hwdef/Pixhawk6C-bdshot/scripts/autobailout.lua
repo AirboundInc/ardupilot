@@ -217,7 +217,7 @@ function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight)
             local time_diff = now - first_pitch_exceeded_t
             if time_diff > pitch_timeout then
                 first_pitch_exceeded_t = nil  
-                gcs:send_text(2, "AUTOB: VTOL pitch exceeding threshold")
+                gcs:send_text(2, "AUTOB: VTOL pitch exceeding threshold: " .. tostring(vtolpitch))
                 return true     
             end
         end
@@ -245,7 +245,7 @@ function is_predicted_vtol_pitch_exceeding_parathreshold(current_vtol_pitch_deg,
 
     local predicted_next_instance_vtol_pitch = current_vtol_pitch_deg + current_vtol_pitch_rate * (pitch_prediction_interval/1000)
     if math.abs(predicted_next_instance_vtol_pitch) > para_threshold then
-        gcs:send_text(2, "AUTOB: PredPitch exceeds limit: " .. tostring(predicted_next_instance_vtol_pitch))
+        gcs:send_text(2, "AUTOB: PredPitch exceeds threshold: " .. tostring(predicted_next_instance_vtol_pitch))
         return true
     end
     return false
