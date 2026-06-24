@@ -98,7 +98,7 @@ local function rad2deg(r) return r * 57.2958 end
 
 function in_vtol_flight()
     local mode = vehicle:get_mode()
-    local vtol_active = not quadplane:tailsitter_in_vtol_transition() and quadplane:in_vtol_mode() and not AUTOBAILOUT_EXCLUDE_MODES[mode]
+    local vtol_active = not quadplane:tailsitter_in_vtol_transition() and quadplane:in_vtol_mode()
     if vtol_active then
         if backtransition_complete_time_ms == nil then
             backtransition_complete_time_ms = millis():tofloat()
@@ -154,7 +154,7 @@ function para_deploy()
         return
     end
 
-    now = millis():tofloat()
+    local now = millis():tofloat()
     ahrs_pitch = rad2deg(ahrs:get_pitch() or 0)
     para_ang_timeout = p_para_timeout:get() or 200
     check_pitch = ahrs_pitch < para_threshold and (trigger_para_script == false) and quadplane:in_vtol_mode() and arming:is_armed()
@@ -194,9 +194,14 @@ function trigger_autobailout(current_mode)
     return false
 end
 
-function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight)
+function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode)
     local threshold = p_pit_lim:get() or 40
     local pitch_timeout = p_pitch_timeout:get() or 100
+
+    --Dont check for pitch in AUTOBAILOUT_EXCLUDE_MODES
+    if AUTOBAILOUT_EXCLUDE_MODES[flightmode] then
+        return false
+    end
     
     --dont check if not armed or not in vtol phase
     if not is_vtol_flight or not arming:is_armed() then
@@ -205,16 +210,17 @@ function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight)
     end
     
     --dont check if within delay_ms post backtransition
+    local current_time = millis():tofloat()
     local delay_ms = p_btrn_dly:get() or 1000
-    if backtransition_complete_time_ms and (now - backtransition_complete_time_ms) < delay_ms then
+    if backtransition_complete_time_ms and (current_time - backtransition_complete_time_ms) < delay_ms then
         return false
     end
-    
+
     if math.abs(vtolpitch) > threshold then
         if first_pitch_exceeded_t == nil then
             first_pitch_exceeded_t = millis():tofloat()
         else
-            local time_diff = now - first_pitch_exceeded_t
+            local time_diff = current_time - first_pitch_exceeded_t
             if time_diff > pitch_timeout then
                 first_pitch_exceeded_t = nil  
                 gcs:send_text(2, "AUTOB: VTOL pitch exceeding threshold: " .. tostring(vtolpitch))
@@ -227,8 +233,19 @@ function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight)
     return false
 end    
 
-function is_predicted_vtol_pitch_exceeding_parathreshold(current_vtol_pitch_deg, current_vtol_pitch_rate, is_vtol_flight)
+function is_predicted_vtol_pitch_exceeding_parathreshold(current_vtol_pitch_deg, current_vtol_pitch_rate, is_vtol_flight, flightmode)
     local pitch_prediction_interval = p_prediction_interval:get() or 0
+
+    --Disable prediction based check
+    if pitch_prediction_interval < 0 then
+        return false
+    end
+
+    --Dont check for pitch in AUTOBAILOUT_EXCLUDE_MODES
+    if AUTOBAILOUT_EXCLUDE_MODES[flightmode] then
+        return false
+    end
+
     --convert to VTOL frame
     local para_threshold = 90 - (p_para_ang:get() or -45) 
 
@@ -238,12 +255,14 @@ function is_predicted_vtol_pitch_exceeding_parathreshold(current_vtol_pitch_deg,
     end
     
     --dont check if within delay_ms post backtransition
+    local current_time = millis():tofloat()
     local delay_ms = p_btrn_dly:get() or 1000
-    if backtransition_complete_time_ms and (now - backtransition_complete_time_ms) < delay_ms then
+    if backtransition_complete_time_ms and (current_time - backtransition_complete_time_ms) < delay_ms then
         return false
     end
-
+    
     local predicted_next_instance_vtol_pitch = current_vtol_pitch_deg + current_vtol_pitch_rate * (pitch_prediction_interval/1000)
+
     if math.abs(predicted_next_instance_vtol_pitch) > para_threshold then
         gcs:send_text(2, "AUTOB: PredPitch exceeds threshold: " .. tostring(predicted_next_instance_vtol_pitch))
         return true
@@ -261,8 +280,6 @@ function update()
 
     local current_mode = vehicle:get_mode()
     if not current_mode then return update, loop_ms end
-
-    local now = millis():tofloat()
 
     -- Detect Mode Changes
     if current_mode ~= last_mode_idx then
@@ -310,9 +327,9 @@ function update()
     -- LOGIC: MONITORING (Checking Pitch)
     -- ==========================================================
     if not autobailout_active then
-        if is_vtol_pitch_exceeding_limit(actual_vtol_pitch_deg, is_vtol_flight) then
+        if is_vtol_pitch_exceeding_limit(actual_vtol_pitch_deg, is_vtol_flight, current_mode) then
             trigger_autobailout(current_mode)
-        elseif is_predicted_vtol_pitch_exceeding_parathreshold(actual_vtol_pitch_deg, actual_vtol_pitch_rate, is_vtol_flight) then
+        elseif is_predicted_vtol_pitch_exceeding_parathreshold(actual_vtol_pitch_deg, actual_vtol_pitch_rate, is_vtol_flight,current_mode) then
             trigger_autobailout(current_mode)
         end
     -- ==========================================================
