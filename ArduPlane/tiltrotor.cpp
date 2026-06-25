@@ -414,7 +414,7 @@ void Tiltrotor::binary_update(void)
 void Tiltrotor::update(void)
 {
     //if (!enabled() || tilt_mask == 0) {
-    if (!enabled() || (tilt_mask == 0 && type != TILT_TYPE_DUAL_AXIS && type != TILT_TYPE_BICOPTER)) {
+    if (!enabled() || (tilt_mask == 0 )) {
         // no motors to tilt
         return;
     }
@@ -427,6 +427,10 @@ void Tiltrotor::update(void)
 
     if (type == TILT_TYPE_VECTORED_YAW) {
         vectoring();
+    }
+
+    if (type == TILT_TYPE_DUAL_AXIS) {
+        dual_axis_output();
     }
 }
 
