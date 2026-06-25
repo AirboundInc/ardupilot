@@ -354,6 +354,7 @@ void Tiltrotor::continuous_update(void)
         float settilt = constrain_float((SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)-MAX(plane.aparm.throttle_min.get(),0)) * 0.02, 0, 1);
        slew(MIN(settilt * max_angle_deg * (1/90.0), get_forward_flight_tilt())); 
         */
+
         float settilt = 0;
         if (_have_fw_motor) {
             settilt = constrain_float((SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)-MAX(plane.aparm.throttle_min.get(),0)) * 0.02, 0, 1);
@@ -412,7 +413,8 @@ void Tiltrotor::binary_update(void)
  */
 void Tiltrotor::update(void)
 {
-    if (!enabled() || tilt_mask == 0) {
+    //if (!enabled() || tilt_mask == 0) {
+    if (!enabled() || (tilt_mask == 0 && type != TILT_TYPE_DUAL_AXIS && type != TILT_TYPE_BICOPTER)) {
         // no motors to tilt
         return;
     }
