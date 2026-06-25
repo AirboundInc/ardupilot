@@ -41,6 +41,7 @@ public:
     void binary_update();
     void vectoring();
     void bicopter_output();
+    void dual_axis_output();
     void tilt_compensate_angle(float *thrust, uint8_t num_motors, float non_tilted_mul, float tilted_mul);
     void tilt_compensate(float *thrust, uint8_t num_motors);
     bool tilt_over_max_angle(void) const;
@@ -83,6 +84,8 @@ public:
     AP_Float fixed_angle;
     AP_Float fixed_gain;
     AP_Float flap_angle_deg;
+    AP_Float vectoring_gain_hvr;
+    AP_Float vectoring_gain_fw;
 
     float current_tilt;
     float current_throttle;
@@ -95,7 +98,8 @@ public:
     enum {TILT_TYPE_CONTINUOUS    =0,
           TILT_TYPE_BINARY        =1,
           TILT_TYPE_VECTORED_YAW  =2,
-          TILT_TYPE_BICOPTER      =3
+          TILT_TYPE_BICOPTER      =3,
+          TILT_TYPE_DUAL_AXIS     =4 // new v22 tilt + thrust vectoring
     };
 
     static const struct AP_Param::GroupInfo var_info[];

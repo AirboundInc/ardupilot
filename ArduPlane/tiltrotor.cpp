@@ -40,7 +40,7 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @Param: TYPE
     // @DisplayName: Tiltrotor type
     // @Description: This is the type of tiltrotor when TILT_MASK is non-zero. A continuous tiltrotor can tilt the rotors to any angle on demand. A binary tiltrotor assumes a retract style servo where the servo is either fully forward or fully up. In both cases the servo can't move faster than Q_TILT_RATE. A vectored yaw tiltrotor will use the tilt of the motors to control yaw in hover, Bicopter tiltrotor must use the tailsitter frame class (10)
-    // @Values: 0:Continuous,1:Binary,2:VectoredYaw,3:Bicopter
+    // @Values: 0:Continuous,1:Binary,2:VectoredYaw,3:Bicopter,4:DualAxis
     AP_GROUPINFO("TYPE", 5, Tiltrotor, type, TILT_TYPE_CONTINUOUS),
 
     // @Param: RATE_DN
@@ -82,6 +82,20 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("WING_FLAP", 10, Tiltrotor, flap_angle_deg, 0),
 
+    // @Param: HVGAIN
+    // @DisplayName: Hover tiltrotor vectoring gain
+    // @Description: how strongly the attitude vectoring acts in hover (0-1)
+    // @Range: 0 1
+    // @User: Standard
+    AP_GROUPINFO("HVGAIN", 11, Tiltrotor, vectoring_gain_hvr, 0),
+
+    // @Param: FWGAIN
+    // @DisplayName: Fixed wing tiltrotor vectoring gain
+    // @Description: how strongly the attitude vectoring acts in fixed wing flight (0-1)
+    // @Range: 0 1
+    // @User: Standard
+    AP_GROUPINFO("FWGAIN", 12, Tiltrotor, vectoring_gain_fw, 0),
+
     AP_GROUPEND
 };
 
@@ -98,7 +112,7 @@ Tiltrotor::Tiltrotor(QuadPlane& _quadplane, AP_MotorsMulticopter*& _motors):quad
 void Tiltrotor::setup()
 {
 
-    if (!enable.configured() && ((tilt_mask != 0) || (type == TILT_TYPE_BICOPTER))) {
+    if (!enable.configured() && ((tilt_mask != 0) || (type == TILT_TYPE_BICOPTER) || (type == TILT_TYPE_DUAL_AXIS) )) {
         enable.set_and_save(1);
     }
 
@@ -114,7 +128,7 @@ void Tiltrotor::setup()
     // bicopter tiltrotors use throttle left and right as tilting motors, so they don't count in that case.
     _have_fw_motor = SRV_Channels::function_assigned(SRV_Channel::k_throttle) ||
                     ((SRV_Channels::function_assigned(SRV_Channel::k_throttleLeft) || SRV_Channels::function_assigned(SRV_Channel::k_throttleRight))
-                        && (type != TILT_TYPE_BICOPTER));
+                        && (type != TILT_TYPE_BICOPTER) && (type != TILT_TYPE_DUAL_AXIS));
 
 
     // check if there are any permanent VTOL motors
