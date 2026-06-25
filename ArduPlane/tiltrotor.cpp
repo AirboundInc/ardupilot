@@ -732,6 +732,80 @@ void Tiltrotor::bicopter_output(void)
 }
 
 /*
+  control dual-axis tiltrotor. Axis 1 (V22-style 0-90 transition tilt)
+  is driven by continuous_update(). This function handles Axis 2
+  (independent attitude vectoring servos) called from servos.cpp.
+ */
+void Tiltrotor::dual_axis_output(void)
+{
+    if (type != TILT_TYPE_DUAL_AXIS || quadplane.motor_test.running) {
+        return;
+    }
+
+    const float axis1_pos = -(current_tilt * SERVO_MAX);
+
+    if (quadplane.in_vtol_mode() || quadplane.assisted_flight) {
+        const float throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
+        if (quadplane.assisted_flight) {
+            quadplane.hold_stabilize(throttle * 0.01f);
+            quadplane.motors_output(true);
+        } else {
+            quadplane.motors_output(false);
+        }
+
+        // in FW transition: also write stick throttle directly to ESCs
+        if (!quadplane.in_vtol_mode()) {
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle, 0, 100));
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle, 0, 100));
+        }
+
+        float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
+        float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
+        const float scaling = cosf(current_tilt * M_PI_2);
+        tilt_left  *= scaling * vectoring_gain_hvr;
+        tilt_right *= scaling * vectoring_gain_hvr;
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
+                                        constrain_float(tilt_left,  -SERVO_MAX, SERVO_MAX));
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
+                                        constrain_float(tilt_right, -SERVO_MAX, SERVO_MAX));
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
+        return;
+    }
+
+
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
+
+    const float throttle = plane.control_mode->does_auto_throttle()
+    ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
+    : plane.get_throttle_input(true);
+
+    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle, 0, 100));
+    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle, 0, 100));
+
+    // forward flight: Axis 1 is at 90deg (motors fully forward)
+    // use rudder for differential yaw vectoring via Axis 2
+    // set Q_TILT_VEC_FWGAIN > 0 to enable; default 0 disables it
+    if (!is_positive(vectoring_gain_fw)) {
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,  0);
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec, 0);
+        return;
+    }
+    const float scaler = (plane.control_mode == &plane.mode_manual) ? 1.0f :
+                         (quadplane.FW_vector_throttle_scaling() / plane.get_speed_scaler());
+    const float gain   = vectoring_gain_fw * scaler;
+    const float elevator = SRV_Channels::get_output_scaled(SRV_Channel::k_elevator) * (1.0f / 4500.0f);
+    const float aileron  = SRV_Channels::get_output_scaled(SRV_Channel::k_aileron)  * (1.0f / 4500.0f);
+    const float rudder = SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / 4500.0f);
+
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
+                                constrain_float((elevator + aileron + rudder) * gain, -1.0f, 1.0f) * SERVO_MAX);
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
+                                constrain_float((elevator - aileron - rudder) * gain, -1.0f, 1.0f) * SERVO_MAX);
+}
+
+/*
   when doing a forward transition of a tilt-vectored quadplane we use
   euler angle control to maintain good yaw. This updates the yaw
   target based on pilot input and target roll
