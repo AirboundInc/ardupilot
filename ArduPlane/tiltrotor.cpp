@@ -323,8 +323,22 @@ void Tiltrotor::continuous_update(void)
         // forward thrust equivalent to what would have been produced by a forward thrust motor
         // set to quadplane.forward_throttle_pct()
         const float fwd_g_demand = 0.01 * quadplane.forward_throttle_pct();
-        const float fwd_tilt_deg = MIN(degrees(atanf(fwd_g_demand)), (float)max_angle_deg);
-        slew(MIN(fwd_tilt_deg * (1/90.0), get_forward_flight_tilt()));
+        //const float fwd_tilt_deg = MIN(degrees(atanf(fwd_g_demand)), (float)max_angle_deg);
+        //slew(MIN(fwd_tilt_deg * (1/90.0), get_forward_flight_tilt()));
+        
+        if (type == TILT_TYPE_DUAL_AXIS) {
+            // Low-pass filter: only the persistent CG offset reaches axis 1.
+            // Pitch commands (fast, transient) are rejected.
+            const float tc = 5.0f;  // time constant in seconds — tune to taste
+            const float alpha = plane.G_Dt / (plane.G_Dt + tc);
+            _cg_demand_filtered += alpha * (fwd_g_demand - _cg_demand_filtered);
+            const float fwd_tilt_deg = MIN(degrees(atanf(_cg_demand_filtered)), (float)max_angle_deg);
+            slew(MIN(fwd_tilt_deg * (1/90.0), get_forward_flight_tilt()));
+            } else {
+            const float fwd_tilt_deg = MIN(degrees(atanf(fwd_g_demand)), (float)max_angle_deg);
+            slew(MIN(fwd_tilt_deg * (1/90.0), get_forward_flight_tilt()));
+        }
+
         return;
     } else if (!quadplane.assisted_flight &&
                (plane.control_mode == &plane.mode_qacro ||

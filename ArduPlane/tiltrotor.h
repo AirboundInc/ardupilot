@@ -89,6 +89,7 @@ public:
 
     float current_tilt;
     float current_throttle;
+    float _cg_demand_filtered;
     bool _motors_active:1;
     float transition_yaw_cd;
     uint32_t transition_yaw_set_ms;
