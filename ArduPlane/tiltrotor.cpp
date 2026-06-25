@@ -241,7 +241,10 @@ void Tiltrotor::continuous_update(void)
     // the maximum rate of throttle change
     float max_change;
 
-    if (!quadplane.in_vtol_mode() && (!plane.arming.is_armed_and_safety_off() || !quadplane.assisted_flight)) {
+    //if (!quadplane.in_vtol_mode() && (!plane.arming.is_armed_and_safety_off() || !quadplane.assisted_flight)) {
+    if (!quadplane.in_vtol_mode() && (!plane.arming.is_armed_and_safety_off() || !quadplane.assisted_flight || type == TILT_TYPE_DUAL_AXIS)) {
+   
+    
         // we are in pure fixed wing mode. Move the tiltable motors all the way forward and run them as
         // a forward motor
 
@@ -414,7 +417,7 @@ void Tiltrotor::binary_update(void)
 void Tiltrotor::update(void)
 {
     //if (!enabled() || tilt_mask == 0) {
-    if (!enabled() || (tilt_mask == 0 )) {
+    if (!enabled() || (tilt_mask == 0 && type != TILT_TYPE_DUAL_AXIS && type != TILT_TYPE_BICOPTER)) {
         // no motors to tilt
         return;
     }
@@ -565,11 +568,21 @@ void Tiltrotor::tilt_compensate(float *thrust, uint8_t num_motors)
  */
 bool Tiltrotor::fully_fwd(void) const
 {
+    /*
     if (!enabled() || (tilt_mask == 0)) {
         return false;
     }
     return (current_tilt >= get_fully_forward_tilt());
+    */
+    if (!enabled()) {
+        return false;
+    }
+    if (tilt_mask == 0 && type != TILT_TYPE_DUAL_AXIS && type != TILT_TYPE_BICOPTER) {
+        return false;
+    }
+    return (current_tilt >= get_fully_forward_tilt());
 }
+
 
 /*
   return true if the rotors are fully tilted up
