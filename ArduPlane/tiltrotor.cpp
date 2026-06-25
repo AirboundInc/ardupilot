@@ -145,6 +145,14 @@ void Tiltrotor::setup()
         motors->disable_yaw_torque();
     }
 
+    if (type == TILT_TYPE_DUAL_AXIS) {
+        // Set the range for Axis 2 servo channels
+        SRV_Channels::set_angle(SRV_Channel::k_tiltMotorLeftVec,  4500);
+        SRV_Channels::set_angle(SRV_Channel::k_tiltMotorRightVec, 4500);
+        // Tell the motor library not to use yaw torque (we'll vector it)
+        motors->disable_yaw_torque();
+    }
+
     if (tilt_mask != 0) {
         // setup tilt compensation
         motors->set_thrust_compensation_callback(FUNCTOR_BIND_MEMBER(&Tiltrotor::tilt_compensate, void, float *, uint8_t));
