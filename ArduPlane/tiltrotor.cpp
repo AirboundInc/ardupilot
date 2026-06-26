@@ -805,14 +805,16 @@ void Tiltrotor::dual_axis_output(void)
         
         float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
         float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
+
         const float scaling = cosf(current_tilt * M_PI_2);
         tilt_left  *= scaling * vectoring_gain_hvr;
         tilt_right *= scaling * vectoring_gain_hvr;
+
+        
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
                                         constrain_float(tilt_left,  -SERVO_MAX, SERVO_MAX));
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
                                         constrain_float(tilt_right, -SERVO_MAX, SERVO_MAX));
-        
         
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
@@ -823,6 +825,7 @@ void Tiltrotor::dual_axis_output(void)
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
 
+    /*
     // TODO: Fix this for auto mode throttle control
     const float throttle = plane.control_mode->does_auto_throttle()
     ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
@@ -830,6 +833,18 @@ void Tiltrotor::dual_axis_output(void)
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle, 0, 100));
     SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle, 0, 100));
+    */
+
+    const float throttle = plane.control_mode->does_auto_throttle()
+        ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
+        : plane.get_throttle_input(true);
+
+    const float rud_gain  = float(plane.g2.rudd_dt_gain) * 0.01f;
+    const float rudder_dt = rud_gain * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
+
+    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle + 50.0f * rudder_dt, 0, 100));
+    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle - 50.0f * rudder_dt, 0, 100));
+
 
     // forward flight: Axis 1 is at 90deg (motors fully forward)
     // use rudder for differential yaw vectoring via Axis 2

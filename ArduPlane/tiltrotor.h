@@ -86,6 +86,8 @@ public:
     AP_Float flap_angle_deg;
     AP_Float vectoring_gain_hvr;
     AP_Float vectoring_gain_fw;
+   
+
 
     float current_tilt;
     float current_throttle;
