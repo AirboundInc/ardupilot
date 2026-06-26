@@ -314,6 +314,20 @@ void Tiltrotor::continuous_update(void)
     }
 #endif
 
+    // DUAL_AXIS: drive axis 1 from pitch rate I-term for CG compensation.
+    // The I-term is the persistent torque the attitude controller applies to fight the CG offset.
+    // When axis 1 tilts to compensate, the I-term decays toward zero.
+    if (type == TILT_TYPE_DUAL_AXIS && !quadplane.assisted_flight && quadplane.is_flying_vtol()) {
+        const float pitch_i = quadplane.attitude_control->get_rate_pitch_pid().get_i();
+        const float tilt_target = constrain_float(
+            pitch_i * float(quadplane.q_fwd_thr_gain),
+            0.0f,
+            get_forward_flight_tilt()
+        );
+        slew(tilt_target);
+        return;
+    }
+
     if (!quadplane.assisted_flight &&
         quadplane.get_vfwd_method() == QuadPlane::ActiveFwdThr::NEW &&
         quadplane.is_flying_vtol())
@@ -326,6 +340,7 @@ void Tiltrotor::continuous_update(void)
         //const float fwd_tilt_deg = MIN(degrees(atanf(fwd_g_demand)), (float)max_angle_deg);
         //slew(MIN(fwd_tilt_deg * (1/90.0), get_forward_flight_tilt()));
         
+        /* Remove below code block, because i term based tilt adjustment works better
         if (type == TILT_TYPE_DUAL_AXIS) {
             // Low-pass filter: only the persistent CG offset reaches axis 1.
             // Pitch commands (fast, transient) are rejected.
@@ -338,6 +353,7 @@ void Tiltrotor::continuous_update(void)
             const float fwd_tilt_deg = MIN(degrees(atanf(fwd_g_demand)), (float)max_angle_deg);
             slew(MIN(fwd_tilt_deg * (1/90.0), get_forward_flight_tilt()));
         }
+        */ Remove above code block, because i term based tilt adjustment works better
 
         return;
     } else if (!quadplane.assisted_flight &&
@@ -825,15 +841,8 @@ void Tiltrotor::dual_axis_output(void)
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
 
-    /*
-    // TODO: Fix this for auto mode throttle control
-    const float throttle = plane.control_mode->does_auto_throttle()
-    ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
-    : plane.get_throttle_input(true);
 
-    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle, 0, 100));
-    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle, 0, 100));
-    */
+    // TODO: Fix this for auto mode throttle control
 
     const float throttle = plane.control_mode->does_auto_throttle()
         ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
