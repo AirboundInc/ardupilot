@@ -77,6 +77,25 @@ DZ_CheckState *AP_DangerZone::states_for(uint8_t zone, bool is_exit) const
     return &_states[zone * DZ_ZONE_STATE_SLOTS + (is_exit ? DZ_MAX_CHECKS : 0)];
 }
 
+void AP_DangerZone::reset_active_checks(uint8_t zone)
+{
+    if (_states == nullptr) {
+        return;
+    }
+    DZ_CheckState *ex = states_for(zone, true);    // current zone exit
+    DZ_CheckState *en = states_for(zone, false);   // current zone own-entry
+    for (uint8_t i = 0; i < DZ_MAX_CHECKS; i++) {
+        ex[i].reset();
+        en[i].reset();
+    }
+    if (zone + 1 < _num_zones) {
+        DZ_CheckState *nx = states_for(zone + 1, false);   // next zone entry
+        for (uint8_t i = 0; i < DZ_MAX_CHECKS; i++) {
+            nx[i].reset();
+        }
+    }
+}
+
 void AP_DangerZone::update(uint32_t now_ms)
 {
     if (_zones == nullptr || _states == nullptr || _num_zones == 0) {
@@ -111,6 +130,7 @@ void AP_DangerZone::update(uint32_t now_ms)
         _zone++;
         _reason = _zones[_zone].name;
         _last_transition_ms = now_ms;
+        reset_active_checks(_zone);
     } else {
         // Use the DZ_HYST_TIMER value for de-escalation
         const uint32_t hyst_ms = _hyst_timer > 0 ? (uint32_t)_hyst_timer.get() : 0;
@@ -120,6 +140,7 @@ void AP_DangerZone::update(uint32_t now_ms)
             _zone--;
             _reason = _zones[_zone].name;
             _last_transition_ms = now_ms;
+            reset_active_checks(_zone);
         }
     }
 }

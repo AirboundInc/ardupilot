@@ -78,6 +78,9 @@ private:
     void wire_group_buffers(const DZ_Group &group, DZ_CheckState *states,
                             DZ_RingBuffer *buffers, uint8_t num_buffers, uint8_t &next) const;
 
+    // Clear the check states that become active for a zone
+    void reset_active_checks(uint8_t zone);
+
     const DZ_Zone *_zones{nullptr};
     DZ_CheckState *_states{nullptr};
     uint8_t  _num_zones{0};
