@@ -129,8 +129,7 @@ local cs = {
     sim_probe_count = 0,
     cpin_probe_n = 0,
     csq_toggle = false,
-    post_reset = true,
-    cipopen_preclosed = false
+    post_reset = true
 }
 
 local function uart_read()
@@ -205,8 +204,17 @@ function cmux.encode_cmux_frame(dlc, dtype, data)
 end
 
 local found_cmux = false
+-- Session-sticky flag set when CMUX appears broken on the current modem firmware.
+-- When true, all subsequent CMUX attempts in this Lua session are skipped.
+-- This protects against new EC25 firmware that accepts AT+CMUX=0 but doesn't
+-- actually open DLC channels, causing CPIN to fail repeatedly.
+local cmux_force_disabled = false
+-- Tracks whether CMUX was successfully set on this attempt. If CPIN then fails,
+-- we infer the CMUX setup was a lie and disable CMUX for the rest of the session.
+local cmux_was_set = false
 
 local function cmux_enabled()
+    if cmux_force_disabled then return false end
     if found_cmux then return true end
     return modem and modem.cmux and not option_enabled(OPT.NOMUX)
 end
@@ -292,6 +300,7 @@ end
 local function data_send_connected(data)
     local s = cmux_enabled() and cmux.encode_cmux_frame(cmux.DLC_DATA, cmux.UIH, data) or data
     local n = uart_write(s)
+    stats.bytes_out = stats.bytes_out + n
     return n == #s
 end
 
@@ -304,16 +313,16 @@ end
 
 local function reset_state()
     step = "ATI"; modem = default_modem; found_cmux = false
+    cmux_was_set = false  -- cleared per attempt; cmux_force_disabled is sticky
     reset_buffers(); buf.uart = ""
     lte_track.band = nil; lte_track.cid = nil
     cs.cops_zero_sent = false; cs.qcsq_tries = 0
     cs.cipopen_retry = 0; cs.cipopen_sent = false; cs.cipopen_sent_ms = 0
-    cs.hard_reset_strikes = 0 
+    cs.hard_reset_strikes = 0
     cs.sim_probe_count = 0; cs.cpin_probe_n = 0
-    cs.cereg_drop_ms = nil      
+    cs.cereg_drop_ms = nil
     cs.step_times = {}; cs.step_timer_ms = millis():tofloat()
     cs.post_reset = true
-    cs.cipopen_preclosed = false
 end
 
 local function reset_to_ATI()
@@ -471,7 +480,7 @@ local function step_ATI()
         if not cmux_enabled() then step = "BAUD" else step = "CMUX" end
         return
     end
-    if not option_enabled(OPT.NOMUX) and s and #s >= 4 and s:byte(1) == cmux.FLAG and s:byte(-1) == cmux.FLAG then
+    if not option_enabled(OPT.NOMUX) and not cmux_force_disabled and s and #s >= 4 and s:byte(1) == cmux.FLAG and s:byte(-1) == cmux.FLAG then
         found_cmux = true; gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: in CMUX mode"); log_data("{INCMUX}", '***')
         AT_send('ATI\r'); return
     end
@@ -543,7 +552,7 @@ local function step_CPIN()
         return
     end
 
-    -- Phase 2: 1–5s — probe once per second (5 probes max), then hard reset
+    -- Phase 2: 1–5s — probe once per second (3 probes max), then hard reset
     local probe_tick = math.floor(time_in_step) -- integer seconds since step start
     if probe_tick > cs.cpin_probe_n then
         cs.cpin_probe_n = probe_tick
@@ -554,6 +563,20 @@ local function step_CPIN()
             AT_send('AT+CPIN?\r\n')
             if modem.sim_probe then AT_send(modem.sim_probe) end
         else
+            -- If CMUX was supposedly set up but CPIN still fails, the modem firmware
+            -- is broken: it accepted AT+CMUX=0 but never actually opened DLC channels,
+            -- so our framed CPIN queries go nowhere. Disable CMUX for the rest of the
+            -- session so the next attempt connects in plain AT mode.
+            if cmux_was_set and not cmux_force_disabled then
+                gcs:send_text(MAV_SEVERITY.WARNING, "LTE: CPIN failed after CMUX setup — disabling CMUX (broken firmware)")
+                cmux_force_disabled = true
+                -- Send a framed reset so the modem actually receives it
+                -- (its UART is in framing mode, plain bytes are dropped).
+                if modem.reset then
+                    uart_write(cmux.encode_cmux_frame(cmux.DLC_AT, cmux.UIH, modem.reset))
+                    uart_write_pending()
+                end
+            end
             gcs:send_text(MAV_SEVERITY.CRITICAL, "LTE: CPIN failed 5 probes, hard reset")
             reset_to_ATI()
         end
@@ -673,6 +696,7 @@ local function step_CMUX()
     if found_cmux then
         cmux.send_sabm()
         gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CMUX mode set')
+        cmux_was_set = true  -- marker for CPIN-failure fallback
         step = "BAUD"
         return
     end
@@ -681,6 +705,7 @@ local function step_CMUX()
         if s:find("CME ERROR") then AT_send('AT+CFUN=1\r\n')
         elseif #s >= 4 and (cmux.parse_cmux_frame(s) or s:find('CMUX=0\r\r\nOK\r') or s == string.char(cmux.FLAG,cmux.FLAG,cmux.FLAG,cmux.FLAG)) then
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CMUX mode set')
+            cmux_was_set = true  -- marker for CPIN-failure fallback
             cmux.send_sabm(); step = "BAUD"; return
         end
     end
@@ -792,11 +817,6 @@ end
 
 local function step_CIPOPEN()
     local raw = uart_read()
-
-    if cs.last_step == "CIPCLOSE" or cs.last_step == "SOCKET_STATE" then
-        cs.cipopen_preclosed = true
-    end
-
     if raw and #raw > 0 then buf.setup = buf.setup .. raw end
     
     -- Safety valve: Prevent infinite RAM growth if modem spams junk
@@ -804,14 +824,8 @@ local function step_CIPOPEN()
     
     local s = buf.setup
 
-    -- Pre-close stale socket on first entry only
-    if s == "" and modem.cipclose and not cs.cipopen_sent and not cs.cipopen_preclosed then
-        gcs:send_text(MAV_SEVERITY.INFO, "LTE: pre-close stale socket")
-        cs.cipopen_preclosed = true  -- ← dedicated flag, doesn't touch retry counter
-        step = "CIPCLOSE"
-        return
-    end
     if s and #s > 0 then
+        if s == "" and modem.cipclose and not modem.fast_connect then AT_send(modem.cipclose) end
         if s:find('+CAOPEN: 0,0') and s:find('OK\r\n') and modem.caswitch then 
             data_send(modem.caswitch)
             buf.setup = "" -- Clear after success
@@ -821,7 +835,6 @@ local function step_CIPOPEN()
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: connected')
             cs.cipopen_sent = false; cs.cipopen_retry = 0
             cs.hard_reset_strikes = 0 
-            cs.cipopen_preclosed = false
             reset_buffers(); step = "CONNECTED"; return
         end
     end
@@ -845,9 +858,7 @@ local function step_CIPOPEN()
                     reset_to_ATI()
                 else
                     gcs:send_text(MAV_SEVERITY.ERROR, 'LTE CIPOPEN failed 3x — soft reset to CREG')
-                    cs.cipopen_retry = 0;
-                    cs.cipopen_preclosed = false
-                    step = "CREG"
+                    cs.cipopen_retry = 0; step = "CREG"
                 end
             end
         end
@@ -859,11 +870,6 @@ local function step_CIPOPEN()
     if P.SERVER_PORT:get() <= 0 then gcs:send_text(MAV_SEVERITY.ERROR, "Must set LTE_SERVER_PORT"); return end
 
     local cipopen = option_enabled(OPT.TCP) and modem.cipopen_tcp or modem.cipopen_udp
-    if not cipopen then
-        gcs:send_text(MAV_SEVERITY.ERROR, "LTE: modem has no socket-open command")
-        step = "HALT"
-        return
-    end
     data_send(string.format(cipopen, P.SERVER_IP0:get(), P.SERVER_IP1:get(), P.SERVER_IP2:get(), P.SERVER_IP3:get(), P.SERVER_PORT:get()))
     cs.cipopen_sent = true; cs.cipopen_sent_ms = millis():tofloat()
 end
