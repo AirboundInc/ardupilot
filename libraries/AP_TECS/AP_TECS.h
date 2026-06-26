@@ -113,6 +113,14 @@ public:
         return _hgt_rate_dem;
     }
 
+
+    // height demand (m) currently being tracked by TECS
+    float get_hgt_dem(void) const { return _hgt_dem; }
+
+    // height estimate (m, above home) currently in use by TECS
+    float get_height(void) const { return _height; }
+
+
     // set path_proportion
     void set_path_proportion(float path_proportion) {
         _path_proportion = constrain_float(path_proportion, 0.0f, 1.0f);
