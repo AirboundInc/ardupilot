@@ -318,14 +318,7 @@ void Tiltrotor::continuous_update(void)
     // The I-term is the persistent torque the attitude controller applies to fight the CG offset.
     // When axis 1 tilts to compensate, the I-term decays toward zero.
     if (type == TILT_TYPE_DUAL_AXIS && !quadplane.assisted_flight && quadplane.is_flying_vtol()) {
-        /*
-        const float pitch_i = quadplane.attitude_control->get_rate_pitch_pid().get_i();
-        const float tilt_target = constrain_float(
-            pitch_i * float(quadplane.q_fwd_thr_gain),
-            0.0f,
-            get_forward_flight_tilt()
-        );
-        */
+
         const float pitch_i = quadplane.attitude_control->get_rate_pitch_pid().get_i();
         const float vtol_tilt_limit = float(max_angle_deg) * (1.0f/90.0f);
         const float tilt_target = constrain_float(
