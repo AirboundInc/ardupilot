@@ -1362,6 +1362,15 @@ float QuadPlane::get_pilot_input_yaw_rate_cds(void) const
  */
 float QuadPlane::get_desired_yaw_rate_cds(bool should_weathervane)
 {
+    if (tiltrotor.enabled() && in_vtol_mode() && tiltrotor.current_tilt > 0.1f) {
+        // Tilt rotors returning to vertical. Yaw authority = cosf(tilt × π/2) ≈ 0.
+        // Relax I-term continuously so it doesn't wind up during low-authority phase.
+        // Pattern taken from tailsitter.cpp transition handling.
+        const float dt = attitude_control->get_dt();
+        attitude_control->get_rate_yaw_pid().relax_integrator(0.0f, dt, AC_ATTITUDE_RATE_RELAX_TC);
+        attitude_control->reset_yaw_target_and_rate(false);
+        return 0.0f;
+    }
     float yaw_cds = 0;
     if (assisted_flight) {
         // use bank angle to get desired yaw rate
