@@ -318,12 +318,23 @@ void Tiltrotor::continuous_update(void)
     // The I-term is the persistent torque the attitude controller applies to fight the CG offset.
     // When axis 1 tilts to compensate, the I-term decays toward zero.
     if (type == TILT_TYPE_DUAL_AXIS && !quadplane.assisted_flight && quadplane.is_flying_vtol()) {
+        /*
         const float pitch_i = quadplane.attitude_control->get_rate_pitch_pid().get_i();
         const float tilt_target = constrain_float(
             pitch_i * float(quadplane.q_fwd_thr_gain),
             0.0f,
             get_forward_flight_tilt()
         );
+        */
+        const float pitch_i = quadplane.attitude_control->get_rate_pitch_pid().get_i();
+        const float vtol_tilt_limit = float(max_angle_deg) * (1.0f/90.0f);
+        const float tilt_target = constrain_float(
+            pitch_i * float(quadplane.q_fwd_thr_gain),
+            -vtol_tilt_limit,
+            vtol_tilt_limit
+        );
+
+
         slew(tilt_target);
         return;
     }
@@ -336,7 +347,9 @@ void Tiltrotor::continuous_update(void)
         // operate in all VTOL modes except Q_AUTOTUNE. Forward rotor tilt is used to produce
         // forward thrust equivalent to what would have been produced by a forward thrust motor
         // set to quadplane.forward_throttle_pct()
-        const float fwd_g_demand = 0.01 * quadplane.forward_throttle_pct();
+
+        //const float fwd_g_demand = 0.01 * quadplane.forward_throttle_pct();
+        
         //const float fwd_tilt_deg = MIN(degrees(atanf(fwd_g_demand)), (float)max_angle_deg);
         //slew(MIN(fwd_tilt_deg * (1/90.0), get_forward_flight_tilt()));
         
@@ -353,7 +366,8 @@ void Tiltrotor::continuous_update(void)
             const float fwd_tilt_deg = MIN(degrees(atanf(fwd_g_demand)), (float)max_angle_deg);
             slew(MIN(fwd_tilt_deg * (1/90.0), get_forward_flight_tilt()));
         }
-        */ Remove above code block, because i term based tilt adjustment works better
+        Remove above code block, because i term based tilt adjustment works better
+        */ 
 
         return;
     } else if (!quadplane.assisted_flight &&
