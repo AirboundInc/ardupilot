@@ -2166,6 +2166,30 @@ function vehicle:get_wp_crosstrack_error_m() end
 
 -- desc
 ---@return number|nil
+function vehicle:get_crosstrack_error_m() end
+
+-- desc
+---@return number|nil
+function vehicle:get_target_alt_rel_home_m() end
+
+-- desc
+---@return number|nil
+function vehicle:get_current_alt_rel_home_m() end
+
+-- desc
+---@return number|nil
+function vehicle:get_target_roll_deg() end
+
+-- desc
+---@return number|nil
+function vehicle:get_target_pitch_deg() end
+
+-- desc
+---@return boolean
+function vehicle:is_fixed_wing_flight() end
+
+-- desc
+---@return number|nil
 function vehicle:get_wp_bearing_deg() end
 
 -- desc
