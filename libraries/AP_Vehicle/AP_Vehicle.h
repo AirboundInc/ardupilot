@@ -100,6 +100,22 @@ public:
     // HAL::Callbacks implementation.
     void loop() override final;
 
+    // Target altitude relative to home for fixed wing flight- for lua bindings
+    virtual bool get_target_alt_rel_home_m(float &alt_m) const { return false; }
+
+    // Current altitude relative to home for fixed wing flight- for lua bindings
+    virtual bool get_current_alt_rel_home_m(float &alt_m) const { return false; }
+
+    // Target roll-pitch for fixed wing flight- for lua bindings
+    virtual bool get_target_roll_deg(float &roll_deg) const { return false; }
+    virtual bool get_target_pitch_deg(float &pitch_deg) const { return false; }
+
+    // Check for fixed wing flight- for lua bindings
+    virtual bool is_fixed_wing_flight(void) const { return false; }
+
+    // Crosstrack error for fixed wing flight - for lua bindings
+    virtual bool get_crosstrack_error_m(float &xte_m) const { return false; }
+
     // set_mode *must* set control_mode_reason
     virtual bool set_mode(const uint8_t new_mode, const ModeReason reason) = 0;
     virtual uint8_t get_mode() const = 0;

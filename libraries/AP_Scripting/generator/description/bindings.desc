@@ -340,6 +340,13 @@ singleton AP_Vehicle method has_ekf_failsafed boolean
 singleton AP_Vehicle method reboot void boolean
 singleton AP_Vehicle method is_landing boolean
 singleton AP_Vehicle method is_taking_off boolean
+singleton AP_Vehicle method get_target_alt_rel_home_m boolean float'Null
+singleton AP_Vehicle method get_current_alt_rel_home_m boolean float'Null
+singleton AP_Vehicle method get_target_roll_deg boolean float'Null
+singleton AP_Vehicle method get_target_pitch_deg boolean float'Null
+singleton AP_Vehicle method is_fixed_wing_flight boolean
+singleton AP_Vehicle method get_crosstrack_error_m boolean float'Null
+
 
 include AP_SerialLED/AP_SerialLED.h
 singleton AP_SerialLED rename serialLED

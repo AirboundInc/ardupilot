@@ -172,6 +172,22 @@ public:
     friend class ModeThermal;
     friend class ModeLoiterAltQLand;
 
+    // To get target altitude relative to hone - added for lua bindings
+    bool get_target_alt_rel_home_m(float &alt_m) const override;
+
+    // To get current altitude relative to hone - added for lua bindings
+    bool get_current_alt_rel_home_m(float &alt_m) const override;
+
+    // To get target roll-pitch - added for lua bindings
+    bool get_target_roll_deg(float &roll_deg) const override;
+    bool get_target_pitch_deg(float &pitch_deg) const override;
+
+    // Check for fixed wing flight
+    bool is_fixed_wing_flight(void) const override;
+
+    // Crosstrack error for fixed wing flight
+    bool get_crosstrack_error_m(float &xte_m) const override;
+
 #if AP_EXTERNAL_CONTROL_ENABLED
     friend class AP_ExternalControl_Plane;
 #endif
