@@ -254,7 +254,7 @@ local function warn_summary(mask_value)
    return table.concat(parts, ",")
 end
 
-local enable_mask = VTM_ENABLE:get() or 3
+local enable_mask = VTM_ENABLE:get() or 7
 local log_status  = (VTM_LOG_EN:get() or 1) > 0 and "ON" or "OFF"
 
 gcs:send_text(MAV_SEVERITY_INFO, string.format(
