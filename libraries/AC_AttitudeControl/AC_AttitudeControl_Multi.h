@@ -103,9 +103,6 @@ protected:
     // get maximum value throttle can be raised to based on throttle vs attitude prioritisation
     float get_throttle_avg_max(float throttle_in);
 
-    // suppress roll control effort in Danger Zone level 3 is active
-    void update_roll_gain_suppression();
-
     AP_MotorsMulticopter& _motors_multi;
     AC_PID                _pid_rate_roll {
         AC_PID::Defaults{

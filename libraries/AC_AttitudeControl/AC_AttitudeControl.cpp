@@ -743,7 +743,6 @@ void AC_AttitudeControl::attitude_controller_run_quat()
     Vector3f attitude_error;
     // Danger Zone level 3: low-pass filter the active flag into an intervention
     // factor, then relax the pitch setpoint toward zero in proportion to it.
-    // The same factor drives roll gain suppression and yaw disable (AC_AttitudeControl_Multi).
     if (_ts_enabled) {
         const float alpha = _dt / (_dt + _tc_tilt_relax);
         _dz_z3_factor += alpha * ((_dz_z3_active ? 1.0f : 0.0f) - _dz_z3_factor);

@@ -430,7 +430,7 @@ public:
     void set_tailsitter_transition(bool in_transition) { _ts_in_transition = in_transition; }
 
     // Danger Zone level 3 active flag, set by the vehicle each loop
-    // Used to perform pitch setpoint relaxation, yaw rate disabling and roll gain suppression
+    // Used to perform pitch setpoint relaxation and yaw rate disabling
     void set_danger_zone_z3_active(bool active) { _dz_z3_active = active; }
 protected:
 
