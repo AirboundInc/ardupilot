@@ -150,7 +150,7 @@ void Tiltrotor::setup()
         SRV_Channels::set_angle(SRV_Channel::k_tiltMotorLeftVec,  4500);
         SRV_Channels::set_angle(SRV_Channel::k_tiltMotorRightVec, 4500);
         // Tell the motor library not to use yaw torque (we'll vector it)
-        motors->disable_yaw_torque();
+    motors->disable_yaw_torque();
     }
 
     if (tilt_mask != 0) {
@@ -839,9 +839,35 @@ void Tiltrotor::dual_axis_output(void)
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
                                         constrain_float(tilt_right, -SERVO_MAX, SERVO_MAX));
         
+        
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
+        
+        
+        /*
+        const float tilt_left_raw  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft)  / SERVO_MAX;
+        const float tilt_right_raw = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight) / SERVO_MAX;
+
+        const float pitch_cmd = (tilt_left_raw + tilt_right_raw) * 0.5f;
+        const float yaw_cmd   = (tilt_right_raw - tilt_left_raw) * 0.5f;
+        
+
+
+        const float pitch_scale = cosf(current_tilt * M_PI_2) * vectoring_gain_hvr;
+        const float yaw_scale   = vectoring_gain_hvr;
+
+        
+        const float out_left  = (pitch_cmd * pitch_scale - yaw_cmd * yaw_scale) * SERVO_MAX;
+        const float out_right = (pitch_cmd * pitch_scale + yaw_cmd * yaw_scale) * SERVO_MAX;
+
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
+                                        constrain_float(out_left,  -SERVO_MAX, SERVO_MAX));
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
+                                        constrain_float(out_right, -SERVO_MAX, SERVO_MAX));
+        */
         return;
+        
+
     }
 
 
