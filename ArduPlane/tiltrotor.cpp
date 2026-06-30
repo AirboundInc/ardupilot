@@ -332,53 +332,6 @@ void Tiltrotor::continuous_update(void)
         return;
     }
 
-    if (!quadplane.assisted_flight &&
-        quadplane.get_vfwd_method() == QuadPlane::ActiveFwdThr::NEW &&
-        quadplane.is_flying_vtol())
-    {
-        // We are using the rotor tilt functionality controlled by Q_FWD_THR_GAIN which can
-        // operate in all VTOL modes except Q_AUTOTUNE. Forward rotor tilt is used to produce
-        // forward thrust equivalent to what would have been produced by a forward thrust motor
-        // set to quadplane.forward_throttle_pct()
-
-        //const float fwd_g_demand = 0.01 * quadplane.forward_throttle_pct();
-        
-        //const float fwd_tilt_deg = MIN(degrees(atanf(fwd_g_demand)), (float)max_angle_deg);
-        //slew(MIN(fwd_tilt_deg * (1/90.0), get_forward_flight_tilt()));
-        
-        /* Remove below code block, because i term based tilt adjustment works better
-        if (type == TILT_TYPE_DUAL_AXIS) {
-            // Low-pass filter: only the persistent CG offset reaches axis 1.
-            // Pitch commands (fast, transient) are rejected.
-            const float tc = 5.0f;  // time constant in seconds — tune to taste
-            const float alpha = plane.G_Dt / (plane.G_Dt + tc);
-            _cg_demand_filtered += alpha * (fwd_g_demand - _cg_demand_filtered);
-            const float fwd_tilt_deg = MIN(degrees(atanf(_cg_demand_filtered)), (float)max_angle_deg);
-            slew(MIN(fwd_tilt_deg * (1/90.0), get_forward_flight_tilt()));
-            } else {
-            const float fwd_tilt_deg = MIN(degrees(atanf(fwd_g_demand)), (float)max_angle_deg);
-            slew(MIN(fwd_tilt_deg * (1/90.0), get_forward_flight_tilt()));
-        }
-        Remove above code block, because i term based tilt adjustment works better
-        */ 
-
-        return;
-    } else if (!quadplane.assisted_flight &&
-               (plane.control_mode == &plane.mode_qacro ||
-               plane.control_mode == &plane.mode_qstabilize ||
-               plane.control_mode == &plane.mode_qhover))
-    {
-        if (quadplane.rc_fwd_thr_ch == nullptr) {
-            // no manual throttle control, set angle to zero
-            slew(0);
-        } else {
-            // manual control of forward throttle up to max VTOL angle
-            float settilt = .01f * quadplane.forward_throttle_pct();
-            slew(MIN(settilt * max_angle_deg * (1/90.0), get_forward_flight_tilt())); 
-        }
-        return;
-    }
-
     if (quadplane.assisted_flight &&
         transition->transition_state >= Tiltrotor_Transition::TRANSITION_TIMER) {
         // we are transitioning to fixed wing - tilt the motors all
@@ -825,46 +778,29 @@ void Tiltrotor::dual_axis_output(void)
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle, 0, 100));
         }
 
+
+        if (vectoring_gain_hvr > 0){
         
         float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
         float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
 
-        const float scaling = cosf(current_tilt * M_PI_2);
-        tilt_left  *= scaling * vectoring_gain_hvr;
-        tilt_right *= scaling * vectoring_gain_hvr;
+        //const float scaling = cosf(current_tilt * M_PI_2);
+        //tilt_left  *= scaling * vectoring_gain_hvr;
+        //tilt_right *= scaling * vectoring_gain_hvr;
 
+        tilt_left  = tilt_left * vectoring_gain_hvr;
+        tilt_right = tilt_right * vectoring_gain_hvr;
+        
         
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
                                         constrain_float(tilt_left,  -SERVO_MAX, SERVO_MAX));
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
                                         constrain_float(tilt_right, -SERVO_MAX, SERVO_MAX));
-        
-        
+        }
+
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
-        
-        
-        /*
-        const float tilt_left_raw  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft)  / SERVO_MAX;
-        const float tilt_right_raw = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight) / SERVO_MAX;
 
-        const float pitch_cmd = (tilt_left_raw + tilt_right_raw) * 0.5f;
-        const float yaw_cmd   = (tilt_right_raw - tilt_left_raw) * 0.5f;
-        
-
-
-        const float pitch_scale = cosf(current_tilt * M_PI_2) * vectoring_gain_hvr;
-        const float yaw_scale   = vectoring_gain_hvr;
-
-        
-        const float out_left  = (pitch_cmd * pitch_scale - yaw_cmd * yaw_scale) * SERVO_MAX;
-        const float out_right = (pitch_cmd * pitch_scale + yaw_cmd * yaw_scale) * SERVO_MAX;
-
-        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
-                                        constrain_float(out_left,  -SERVO_MAX, SERVO_MAX));
-        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
-                                        constrain_float(out_right, -SERVO_MAX, SERVO_MAX));
-        */
         return;
         
 
