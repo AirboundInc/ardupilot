@@ -96,6 +96,13 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("FWGAIN", 12, Tiltrotor, vectoring_gain_fw, 0),
 
+    // @Param: BTDELAY_MS
+    // @DisplayName: Back transition delay for running fixed wing controller
+    // @Description: how strongly the attitude vectoring acts in fixed wing flight (0-1)
+    // @Range: 0 10000
+    // @User: Standard
+    AP_GROUPINFO("BTDELAY_MS", 13, Tiltrotor, back_trans_delay, 0),
+
     AP_GROUPEND
 };
 
@@ -809,8 +816,15 @@ void Tiltrotor::dual_axis_output(void)
     }
 
     const float axis1_pos = -(current_tilt * SERVO_MAX);
+    const uint32_t now = AP_HAL::millis();
 
     if (quadplane.in_vtol_mode() || quadplane.assisted_flight) {
+
+        // on first entry from FW, start the backtransition delay timer
+        if ((now - last_fw_mode_ms) < 2000 && transition->backtrans_start_ms == 0) {
+            transition->backtrans_start_ms = now;
+        }
+
         const float throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
         if (quadplane.assisted_flight) {
             quadplane.hold_stabilize(throttle * 0.01f);
@@ -842,34 +856,14 @@ void Tiltrotor::dual_axis_output(void)
         
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
-        
-        
-        /*
-        const float tilt_left_raw  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft)  / SERVO_MAX;
-        const float tilt_right_raw = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight) / SERVO_MAX;
 
-        const float pitch_cmd = (tilt_left_raw + tilt_right_raw) * 0.5f;
-        const float yaw_cmd   = (tilt_right_raw - tilt_left_raw) * 0.5f;
-        
-
-
-        const float pitch_scale = cosf(current_tilt * M_PI_2) * vectoring_gain_hvr;
-        const float yaw_scale   = vectoring_gain_hvr;
-
-        
-        const float out_left  = (pitch_cmd * pitch_scale - yaw_cmd * yaw_scale) * SERVO_MAX;
-        const float out_right = (pitch_cmd * pitch_scale + yaw_cmd * yaw_scale) * SERVO_MAX;
-
-        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
-                                        constrain_float(out_left,  -SERVO_MAX, SERVO_MAX));
-        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
-                                        constrain_float(out_right, -SERVO_MAX, SERVO_MAX));
-        */
         return;
-        
-
     }
 
+
+    // track FW mode time and clear backtrans timer so next VTOL entry re-arms it
+    last_fw_mode_ms = now;
+    transition->backtrans_start_ms = 0;
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
@@ -982,6 +976,26 @@ bool Tiltrotor::tilt_over_max_angle(void) const
 {
     const float tilt_threshold = (max_angle_deg/90.0f);
     return (current_tilt > MIN(tilt_threshold, get_forward_flight_tilt()));
+}
+
+
+/*
+  return true if we are a tiltrotor transitioning to VTOL flight
+ */
+bool Tiltrotor::in_vtol_transition(uint32_t now) const
+{
+    if (!enabled() || !quadplane.in_vtol_mode()) {
+        return false;
+    }
+
+    // continue running FW controller for Q_BTDELAY_MS after backtransition
+    const uint32_t delay_ms = (uint32_t)(back_trans_delay * 1000.0f);
+    if (delay_ms > 0 && transition->backtrans_start_ms != 0 &&
+        (now - transition->backtrans_start_ms) < delay_ms) {
+        return true;
+    }
+
+    return false;
 }
 
 #endif  // HAL_QUADPLANE_ENABLED

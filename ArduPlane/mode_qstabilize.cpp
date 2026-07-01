@@ -47,6 +47,12 @@ void ModeQStabilize::run()
         return;
     }
 
+    if (quadplane.tiltrotor.in_vtol_transition(now)) {
+        // Tiltrotor in FW pull up phase of VTOL transition run FW controllers
+        Mode::run();
+        return;
+    }
+
     plane.quadplane.assign_tilt_to_fwd_thr();
 
     // special check for ESC calibration in QSTABILIZE

@@ -42,6 +42,8 @@ public:
     void vectoring();
     void bicopter_output();
     void dual_axis_output();
+    bool in_vtol_transition(uint32_t now) const;
+
     void tilt_compensate_angle(float *thrust, uint8_t num_motors, float non_tilted_mul, float tilted_mul);
     void tilt_compensate(float *thrust, uint8_t num_motors);
     bool tilt_over_max_angle(void) const;
@@ -86,9 +88,10 @@ public:
     AP_Float flap_angle_deg;
     AP_Float vectoring_gain_hvr;
     AP_Float vectoring_gain_fw;
-    AP_Float back_trans_angle;
-   
+    AP_Float back_trans_angle;  // TODO: Implement this
 
+    // Time to run FW controller after backtransition into VTOL mode (dual axis tiltrotor)
+    AP_Float back_trans_delay;
 
     float current_tilt;
     float current_throttle;
@@ -134,6 +137,9 @@ private:
     QuadPlane& quadplane;
     AP_MotorsMulticopter*& motors;
 
+    // time when we were last in a fw control mode
+    uint32_t last_fw_mode_ms;
+
     Tiltrotor_Transition* transition;
 
 };
@@ -153,6 +159,9 @@ public:
     bool use_multirotor_control_in_fwd_transition() const override;
 
 private:
+
+    // time when we entered VTOL mode from FW (for Q_BTDELAY_MS)
+    uint32_t backtrans_start_ms;
 
     Tiltrotor& tiltrotor;
 
