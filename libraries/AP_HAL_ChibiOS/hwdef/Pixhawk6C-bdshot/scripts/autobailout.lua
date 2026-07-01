@@ -210,6 +210,10 @@ function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode)
         return false
     end
     
+    if threshold < 0 then
+        return false
+    end
+
     --dont check if within delay_ms post backtransition
     local current_time = millis():tofloat()
     local delay_ms = p_btrn_dly:get() or 1000
