@@ -210,7 +210,8 @@ function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode)
         return false
     end
     
-    if threshold < 0 then
+    --Dont monitor vtol pitch if AUTOB_PIT_LIM is negative.
+    if pitch_timeout < 0 then
         return false
     end
 
