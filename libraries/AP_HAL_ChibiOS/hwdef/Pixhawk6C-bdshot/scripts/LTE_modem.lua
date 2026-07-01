@@ -142,6 +142,7 @@ local cs = {
     tx_pending = "",
     tx_ms = 0,
     dp_closed = false,
+    recv_nolen_warned = false,
     ati_dbg_ms = nil,
     dbg_qisend = 0, 
     dbg_prompt = 0, 
@@ -616,9 +617,9 @@ function dp.process_rx(now_ms)
             -- The only non-line token we care about is the QISEND prompt
             -- "\r\n> " (no trailing CRLF), and only while waiting for it.
             if cs.tx_state == "prompt" then
-                local gt = buf.dp:find(">", 1, true)
+                local gt = buf.dp:find("> ", 1, true)   -- Quectel prompt "\r\n> "; CRLF already consumed by line loop
                 if gt then
-                    buf.dp = buf.dp:sub(gt + 1)
+                    buf.dp = buf.dp:sub(gt + 2)
                     uart_write(cs.tx_pending)
                     cs.tx_state = "sendok";
                     cs.dbg_prompt = cs.dbg_prompt + 1
@@ -637,8 +638,15 @@ function dp.process_rx(now_ms)
             if line == "" then
                 -- skip blank line
             elseif line:find('"recv"', 1, true) then
-                local len = line:match('"recv",%s*%d+,%s*(%d+)') or line:match('"recv",%s*(%d+)')
-                if len then cs.rx_need = tonumber(len) end
+                local len = line:match('"recv",%s*%d+,%s*(%d+)')   -- direct-push form: connID,length
+                if len then
+                    cs.rx_need = tonumber(len)
+                else
+                    if not cs.recv_nolen_warned then
+                        cs.recv_nolen_warned = true
+                        gcs:send_text(MAV_SEVERITY.WARNING, 'LTE: recv URC without length - check QICFG recvind')
+                    end
+                end
                 cs.dbg_recv = cs.dbg_recv + 1
             elseif line:find('+QCSQ:', 1, true) then
                 check_QCSQ(line)
@@ -648,7 +656,10 @@ function dp.process_rx(now_ms)
                 if cs.tx_state == "sendok" then cs.tx_state = "idle"; cs.tx_pending = ""; cs.dbg_sendok = cs.dbg_sendok + 1 end
                 cs.last_data_ms = now_ms   -- uplink success proves the link is alive
             elseif line:find('SEND FAIL', 1, true) then
-                if cs.tx_state == "sendok" then cs.tx_state = "idle"; cs.tx_pending = "" end
+                if cs.tx_state == "sendok" then
+                    if #cs.tx_pending > 0 then buf.modem = cs.tx_pending .. buf.modem end  -- requeue for retry
+                    cs.tx_state = "idle"; cs.tx_pending = ""
+                end
             elseif line:find('+CEREG:', 1, true) or line:find('+CREG:', 1, true) then
                 if line:find('+CEREG: 0') or line:find('+CEREG: 2') or
                    line:find('+CREG: 0,0') or line:find('+CREG: 0,2') then
@@ -671,19 +682,26 @@ function dp.process_rx(now_ms)
 end
 
 -- Transmit pump. One QISEND in flight at a time, non-blocking across ticks.
-function dp.process_tx(now_ms)
+function dp.process_tx(now_ms, budget)
+
     if cs.tx_state ~= "idle" then
         if (now_ms:tofloat() - cs.tx_ms) > 2000 then
             gcs:send_text(MAV_SEVERITY.WARNING, 'LTE: QISEND handshake stalled, resetting')
+            -- Requeue the unconfirmed chunk rather than dropping it. Prevents a
+            -- permanent hole in the byte stream (critical for TCP; a possible
+            -- duplicate on UDP is harmless to MAVLink).
+            if #cs.tx_pending > 0 then buf.modem = cs.tx_pending .. buf.modem end
             cs.tx_state = "idle"; cs.tx_pending = "" ; cs.dbg_stall = cs.dbg_stall + 1
         end
         return
     end
     if #buf.modem == 0 then return end
+    if budget ~= nil and budget <= 0 then return end   -- rate quota exhausted this tick
     local n = #buf.modem
     if n > 1024 then n = 1024 end
+    if budget ~= nil and n > budget then n = budget end
     cs.tx_pending = buf.modem:sub(1, n)
-    buf.modem = buf.modem:sub(n + 1)   -- popped now; on SEND FAIL the chunk is dropped (UDP-tolerant)
+    buf.modem = buf.modem:sub(n + 1)   -- popped into tx_pending; requeued on stall/FAIL, cleared on SEND OK
     cs.last_send_data_ms = now_ms
     AT_send(string.format(modem.qisend, n))
     cs.dbg_qisend = cs.dbg_qisend + 1
@@ -797,7 +815,8 @@ local function step_CPIN()
             -- probes, the firmware is broken even though revision auto-detect
             -- didn't catch it. Add this revision to BROKEN_CMUX_REVISIONS so
             -- future boots will catch it via auto-detect.
-            if cmux_was_set and not cmux_force_disabled then
+            local is_known_good_fw = modem_revision:find(KNOWN_GOOD_EC25_PREFIX, 1, true) == 1
+            if cmux_was_set and not cmux_force_disabled and not is_known_good_fw then
                 gcs:send_text(MAV_SEVERITY.WARNING,
                     "LTE: CPIN failed after CMUX setup — disabling CMUX (firmware bug)")
                 if #modem_revision > 0 then
@@ -1130,7 +1149,7 @@ local function step_CIPOPEN()
         else cipopen = modem.cipopen_udp; dp_used = false end
     end
     cs.direct_push = dp_used
-    if dp_used then cs.qcsq_armed = false; cs.tx_state = "idle"; cs.tx_pending = ""; cs.rx_need = 0 end
+    if dp_used then cs.qcsq_armed = false; cs.tx_state = "idle"; cs.tx_pending = ""; cs.rx_need = 0; buf.dp = "" end
     if not cipopen then
         gcs:send_text(MAV_SEVERITY.ERROR, "LTE: modem has no socket-open command")
         step = "HALT"
@@ -1258,7 +1277,11 @@ local function step_CONNECTED()
 
     -- Uplink (vehicle -> modem -> GCS)
     if cs.direct_push then
-        dp.process_tx(now_ms)
+        local budget = 1024
+        if P.TX_RATE:get() > 0 then
+            budget = math.floor((now_ms - cs.last_send_data_ms):tofloat()*0.001 * P.TX_RATE:get())
+        end
+        dp.process_tx(now_ms, budget)
     else
         local quota = 0
         if P.TX_RATE:get() > 0 then quota = math.floor((now_ms - cs.last_send_data_ms):tofloat()*0.001 * P.TX_RATE:get()) end
