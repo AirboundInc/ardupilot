@@ -321,24 +321,6 @@ void Tiltrotor::continuous_update(void)
     }
 #endif
 
-    // DUAL_AXIS: drive axis 1 from pitch rate I-term for CG compensation.
-    // The I-term is the persistent torque the attitude controller applies to fight the CG offset.
-    // When axis 1 tilts to compensate, the I-term decays toward zero.
-    if (type == TILT_TYPE_DUAL_AXIS && !quadplane.assisted_flight && quadplane.is_flying_vtol()) {
-
-        const float pitch_i = quadplane.attitude_control->get_rate_pitch_pid().get_i();
-        const float vtol_tilt_limit = float(max_angle_deg) * (1.0f/90.0f);
-        const float tilt_target = constrain_float(
-            pitch_i * float(quadplane.q_fwd_thr_gain),
-            -vtol_tilt_limit,
-            vtol_tilt_limit
-        );
-
-
-        slew(tilt_target);
-        return;
-    }
-
     if (!quadplane.assisted_flight &&
         quadplane.get_vfwd_method() == QuadPlane::ActiveFwdThr::NEW &&
         quadplane.is_flying_vtol())
@@ -347,28 +329,9 @@ void Tiltrotor::continuous_update(void)
         // operate in all VTOL modes except Q_AUTOTUNE. Forward rotor tilt is used to produce
         // forward thrust equivalent to what would have been produced by a forward thrust motor
         // set to quadplane.forward_throttle_pct()
-
-        //const float fwd_g_demand = 0.01 * quadplane.forward_throttle_pct();
-        
-        //const float fwd_tilt_deg = MIN(degrees(atanf(fwd_g_demand)), (float)max_angle_deg);
-        //slew(MIN(fwd_tilt_deg * (1/90.0), get_forward_flight_tilt()));
-        
-        /* Remove below code block, because i term based tilt adjustment works better
-        if (type == TILT_TYPE_DUAL_AXIS) {
-            // Low-pass filter: only the persistent CG offset reaches axis 1.
-            // Pitch commands (fast, transient) are rejected.
-            const float tc = 5.0f;  // time constant in seconds — tune to taste
-            const float alpha = plane.G_Dt / (plane.G_Dt + tc);
-            _cg_demand_filtered += alpha * (fwd_g_demand - _cg_demand_filtered);
-            const float fwd_tilt_deg = MIN(degrees(atanf(_cg_demand_filtered)), (float)max_angle_deg);
-            slew(MIN(fwd_tilt_deg * (1/90.0), get_forward_flight_tilt()));
-            } else {
-            const float fwd_tilt_deg = MIN(degrees(atanf(fwd_g_demand)), (float)max_angle_deg);
-            slew(MIN(fwd_tilt_deg * (1/90.0), get_forward_flight_tilt()));
-        }
-        Remove above code block, because i term based tilt adjustment works better
-        */ 
-
+        const float fwd_g_demand = 0.01 * quadplane.forward_throttle_pct();
+        const float fwd_tilt_deg = MIN(degrees(atanf(fwd_g_demand)), (float)max_angle_deg);
+        slew(MIN(fwd_tilt_deg * (1/90.0), get_forward_flight_tilt()));
         return;
     } else if (!quadplane.assisted_flight &&
                (plane.control_mode == &plane.mode_qacro ||
@@ -396,19 +359,8 @@ void Tiltrotor::continuous_update(void)
         // Q_TILT_MAX. Anything above 50% throttle gets
         // Q_TILT_MAX. Below 50% throttle we decrease linearly. This
         // relies heavily on Q_VFWD_GAIN being set appropriately.
-       
-       /* commented out to test new code to stop tilt while adjusting throttle
-        float settilt = constrain_float((SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)-MAX(plane.aparm.throttle_min.get(),0)) * 0.02, 0, 1);
+       float settilt = constrain_float((SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)-MAX(plane.aparm.throttle_min.get(),0)) * 0.02, 0, 1);
        slew(MIN(settilt * max_angle_deg * (1/90.0), get_forward_flight_tilt())); 
-        */
-
-        float settilt = 0;
-        if (_have_fw_motor) {
-            settilt = constrain_float((SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)-MAX(plane.aparm.throttle_min.get(),0)) * 0.02, 0, 1);
-        }
-        slew(MIN(settilt * max_angle_deg * (1/90.0), get_forward_flight_tilt())); 
-
-
     }
 }
 
