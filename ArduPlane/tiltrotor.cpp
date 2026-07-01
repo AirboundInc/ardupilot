@@ -101,7 +101,7 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @Description: how strongly the attitude vectoring acts in fixed wing flight (0-1)
     // @Range: 0 10000
     // @User: Standard
-    AP_GROUPINFO("BTDELAY_MS", 13, Tiltrotor, back_trans_delay, 0),
+    AP_GROUPINFO("BTDELAY_MS", 13, Tiltrotor, back_trans_delay, 1000),
 
     AP_GROUPEND
 };
