@@ -795,9 +795,8 @@ void Tiltrotor::dual_axis_output(void)
         float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
         float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
 
-        const float scaling = cosf(current_tilt * M_PI_2);
-        tilt_left  *= scaling * vectoring_gain_hvr;
-        tilt_right *= scaling * vectoring_gain_hvr;
+        tilt_left  *= vectoring_gain_hvr;
+        tilt_right *= vectoring_gain_hvr;
 
         
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
