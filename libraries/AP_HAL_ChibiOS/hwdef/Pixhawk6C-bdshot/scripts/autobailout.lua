@@ -51,6 +51,29 @@ local active = false
 local last_mode_idx = 0
 local first_pitch_exceeded_t = nil
 
+-- Q_OPTIONS bit 16 (DISABLE_APPROACH): prevent forward transition during bailout recovery
+local DISABLE_APPROACH_BIT = 65536
+local p_q_options = Parameter("Q_OPTIONS")
+local saved_q_options = nil
+
+local function set_disable_approach(enable)
+    if p_q_options == nil then return end
+    local current = math.floor(p_q_options:get())
+    if enable then
+        if (current & DISABLE_APPROACH_BIT) == 0 then
+            saved_q_options = current
+            p_q_options:set(current | DISABLE_APPROACH_BIT)
+            gcs:send_text(6, "AUTOB: DisableApproach set (VTOL-only return)")
+        end
+    else
+        if saved_q_options ~= nil then
+            p_q_options:set(saved_q_options)
+            saved_q_options = nil
+            gcs:send_text(6, "AUTOB: DisableApproach cleared")
+        end
+    end
+end
+
 -- Parachute state variables
 local trigger_para_script = false
 local first_para_pitch_exceeded_t = nil
@@ -174,6 +197,7 @@ function update()
                             if vehicle:set_mode(MODE_QLOITER) then
                                 first_pitch_exceeded_t = nil
                                 active = true
+                                set_disable_approach(true)
                                 gcs:send_text(2, "AUTOB: Switching to QLoiter" )
                             end
                         end
@@ -187,6 +211,7 @@ function update()
         -- Cancel if pilot manually switched mode
         if current_mode ~= MODE_QLOITER then
             active = false
+            set_disable_approach(false)
             gcs:send_text(6, "AUTOB: Manual Override Detected")
         end
     end
