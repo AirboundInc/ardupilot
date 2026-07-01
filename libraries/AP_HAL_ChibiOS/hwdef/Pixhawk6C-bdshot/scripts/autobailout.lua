@@ -5,7 +5,7 @@ local para_ahrs_pitch_threshold_min = -50
 
 -- 1. SETUP PARAMETER TABLE
 local KEY = 110
-assert(param:add_table(KEY, "AUTOB_", 14), "AUTOB table failed")
+assert(param:add_table(KEY, "AUTOB_", 15), "AUTOB table failed")
 
 -- 2. ADD PARAMETERS
 assert(param:add_param(KEY, 1, "PIT_LIM",  50),  'could not add AUTOB_PIT_LIM')   -- ATT pitch(VTOL frame) threshold to enter bailout (deg)
@@ -22,6 +22,7 @@ assert(param:add_param(KEY, 11,  "AVG_LIM", 20),'could not add AUTOB_AVG_LIM')  
 assert(param:add_param(KEY, 12,"PEAK_LIM", 30),'could not add AUTOB_PEAK_LIM')
 assert(param:add_param(KEY, 13, "DBG_EN", 1), 'could not add AUTOB_DBG_EN')  -- 1 = enable dataflash logging
 assert(param:add_param(KEY, 14, "PRED_INT", 500), 'could not add AUTOB_PRED_INT')  -- Rate based VTOL pitch prediction interval
+assert(param:add_param(KEY, 15, "PRED_ANG", 105), 'could not add AUTOB_PRED_ANG') -- VTOL frame absolute rate based predicted angle threshold for autobailout
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
@@ -46,6 +47,7 @@ local p_win_s   = bind_param("AUTOB_WIN_TIM")
 local p_win_n   = bind_param("AUTOB_WIN_SMP")
 local p_dbg_en = bind_param("AUTOB_DBG_EN")
 local p_prediction_interval = bind_param("AUTOB_PRED_INT")
+local p_pred_angle_threshold = bind_param("AUTOB_PRED_ANG")
 
 -- Read Parachute trigger channel number from FCU parameter list 
 
@@ -232,7 +234,7 @@ function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode)
     return false
 end    
 
-function is_predicted_vtol_pitch_exceeding_parathreshold(current_vtol_pitch_deg, current_vtol_pitch_rate, is_vtol_flight, flightmode)
+function is_predicted_vtol_pitch_exceeding_threshold(current_vtol_pitch_deg, current_vtol_pitch_rate, is_vtol_flight, flightmode)
     local pitch_prediction_interval = p_prediction_interval:get() or 0
 
     --Disable prediction based check
@@ -245,8 +247,7 @@ function is_predicted_vtol_pitch_exceeding_parathreshold(current_vtol_pitch_deg,
         return false
     end
 
-    --convert to VTOL frame
-    local para_threshold = 90 - (p_para_ang:get() or -45) 
+    local predicted_angle_threshold = p_pred_angle_threshold:get() or 105
 
     if not is_vtol_flight or not arming:is_armed() then
         -- Wait for Delay (settle time)
@@ -262,8 +263,8 @@ function is_predicted_vtol_pitch_exceeding_parathreshold(current_vtol_pitch_deg,
     
     local predicted_next_instance_vtol_pitch = current_vtol_pitch_deg + current_vtol_pitch_rate * (pitch_prediction_interval/1000)
 
-    if math.abs(predicted_next_instance_vtol_pitch) > para_threshold then
-        gcs:send_text(2, "AUTOB: PredPitch exceeds Parathresh: " .. tostring(predicted_next_instance_vtol_pitch))
+    if math.abs(predicted_next_instance_vtol_pitch) > predicted_angle_threshold then
+        gcs:send_text(2, "AUTOB: PredPitch exceeds thresh: " .. tostring(predicted_next_instance_vtol_pitch))
         return true
     end
     return false
@@ -328,7 +329,7 @@ function update()
     if not autobailout_active then
         if is_vtol_pitch_exceeding_limit(actual_vtol_pitch_deg, is_vtol_flight, current_mode) then
             trigger_autobailout(current_mode)
-        elseif is_predicted_vtol_pitch_exceeding_parathreshold(actual_vtol_pitch_deg, actual_vtol_pitch_rate, is_vtol_flight,current_mode) then
+        elseif is_predicted_vtol_pitch_exceeding_threshold(actual_vtol_pitch_deg, actual_vtol_pitch_rate, is_vtol_flight,current_mode) then
             trigger_autobailout(current_mode)
         end
     -- ==========================================================
