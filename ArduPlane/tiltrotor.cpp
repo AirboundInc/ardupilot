@@ -96,12 +96,12 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("FWGAIN", 12, Tiltrotor, vectoring_gain_fw, 0),
 
-    // @Param: BTDELAY_MS
+    // @Param: BTDLY_MS
     // @DisplayName: Back transition delay for running fixed wing controller
     // @Description: how strongly the attitude vectoring acts in fixed wing flight (0-1)
     // @Range: 0 10000
     // @User: Standard
-    AP_GROUPINFO("BTDELAY_MS", 13, Tiltrotor, back_trans_delay, 1000),
+    AP_GROUPINFO("BTDLY_MS", 13, Tiltrotor, back_trans_delay, 1000),
 
     AP_GROUPEND
 };
