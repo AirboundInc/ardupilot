@@ -806,8 +806,12 @@ void Tiltrotor::dual_axis_output(void)
     }
 
 
-    // track FW mode time and clear backtrans timer so next VTOL entry re-arms it
-    last_fw_mode_ms = now;
+    // only record genuine FW flight time (i.e. actually airborne in FW mode), so that
+    // switching into a VTOL mode from a FW mode selected on the ground (e.g. MANUAL/FBWA
+    // before arming) isn't mistaken for a backtransition and doesn't arm Q_BTDELAY_MS
+    if (plane.is_flying()) {
+        last_fw_mode_ms = now;
+    }
     transition->backtrans_start_ms = 0;
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
