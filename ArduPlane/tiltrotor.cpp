@@ -812,10 +812,19 @@ void Tiltrotor::dual_axis_output(void)
 
 
     // TODO: Fix this for auto mode throttle control
-
+    /*
     const float throttle = plane.control_mode->does_auto_throttle()
         ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
         : plane.get_throttle_input(true);
+    */
+
+    float throttle;
+    if (plane.control_mode->does_auto_throttle()) {
+        throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
+    } else {
+        throttle = constrain_float(plane.get_throttle_input(true), plane.aparm.throttle_min.get(), plane.aparm.throttle_max.get());
+    }
+
 
     const float rud_gain  = float(plane.g2.rudd_dt_gain) * 0.01f;
     const float rudder_dt = rud_gain * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
@@ -837,9 +846,6 @@ void Tiltrotor::dual_axis_output(void)
     const float gain   = vectoring_gain_fw * scaler;
     const float elevator = SRV_Channels::get_output_scaled(SRV_Channel::k_elevator) * (1.0f / 4500.0f);
     const float aileron  = SRV_Channels::get_output_scaled(SRV_Channel::k_aileron)  * (1.0f / 4500.0f);
-
-    // TODO: Figure out how to use rudder for differential thrust in fixed wing
-    // const float rudder = SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / 4500.0f);
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
                                 constrain_float((elevator + aileron) * gain, -1.0f, 1.0f) * SERVO_MAX);
