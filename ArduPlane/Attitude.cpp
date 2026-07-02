@@ -128,6 +128,10 @@ float Plane::stabilize_roll_get_roll_out()
 {
     const float speed_scaler = get_speed_scaler();
 #if HAL_QUADPLANE_ENABLED
+    if (quadplane.in_vtol_mode()) {
+        rollController.decay_I();
+        return 0.0f;
+    }
     if (!quadplane.use_fw_attitude_controllers()) {
         // use the VTOL rate for control, to ensure consistency
         const auto &pid_info = quadplane.attitude_control->get_rate_roll_pid().get_pid_info();
@@ -181,6 +185,10 @@ float Plane::stabilize_pitch_get_pitch_out()
 {
     const float speed_scaler = get_speed_scaler();
 #if HAL_QUADPLANE_ENABLED
+    if (quadplane.in_vtol_mode()) {
+        pitchController.decay_I();
+        return 0.0f;
+    }
     if (!quadplane.use_fw_attitude_controllers()) {
         // use the VTOL rate for control, to ensure consistency
         const auto &pid_info = quadplane.attitude_control->get_rate_pitch_pid().get_pid_info();
@@ -480,6 +488,12 @@ void Plane::calc_throttle()
  */
 int16_t Plane::calc_nav_yaw_coordinated()
 {
+#if HAL_QUADPLANE_ENABLED
+    if (quadplane.in_vtol_mode()) {
+        yawController.decay_I();
+        return 0;
+    }
+#endif
     const float speed_scaler = get_speed_scaler();
     bool disable_integrator = false;
     int16_t rudder_in = rudder_input();
