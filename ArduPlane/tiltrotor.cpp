@@ -98,7 +98,7 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
 
     // @Param: BTDLY_MS
     // @DisplayName: Back transition delay for running fixed wing controller
-    // @Description: how strongly the attitude vectoring acts in fixed wing flight (0-1)
+    // @Description: How long to continue running the fixed wing controller after a backtransition into a VTOL mode
     // @Range: 0 10000
     // @User: Standard
     AP_GROUPINFO("BTDLY_MS", 13, Tiltrotor, back_trans_delay, 1000),
@@ -806,12 +806,8 @@ void Tiltrotor::dual_axis_output(void)
     }
 
 
-    // only record genuine FW flight time (i.e. actually airborne in FW mode), so that
-    // switching into a VTOL mode from a FW mode selected on the ground (e.g. MANUAL/FBWA
-    // before arming) isn't mistaken for a backtransition and doesn't arm Q_BTDELAY_MS
-    if (plane.is_flying()) {
-        last_fw_mode_ms = now;
-    }
+    // track FW mode time and clear backtrans timer so next VTOL entry re-arms it
+    last_fw_mode_ms = now;
     transition->backtrans_start_ms = 0;
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
@@ -938,7 +934,7 @@ bool Tiltrotor::in_vtol_transition(uint32_t now) const
     }
 
     // continue running FW controller for Q_BTDELAY_MS after backtransition
-    const uint32_t delay_ms = (uint32_t)(back_trans_delay * 1000.0f);
+    const uint32_t delay_ms = (uint32_t)(back_trans_delay_ms);
     if (delay_ms > 0 && transition->backtrans_start_ms != 0 &&
         (now - transition->backtrans_start_ms) < delay_ms) {
         return true;

@@ -91,7 +91,7 @@ public:
     AP_Float back_trans_angle;  // TODO: Implement this
 
     // Time to run FW controller after backtransition into VTOL mode (dual axis tiltrotor)
-    AP_Float back_trans_delay;
+    AP_Float back_trans_delay_ms;
 
     float current_tilt;
     float current_throttle;
