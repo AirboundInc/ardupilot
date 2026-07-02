@@ -101,7 +101,7 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @Description: How long to continue running the fixed wing controller after a backtransition into a VTOL mode
     // @Range: 0 10000
     // @User: Standard
-    AP_GROUPINFO("BTDLY_MS", 13, Tiltrotor, back_trans_delay, 1000),
+    AP_GROUPINFO("BTDLY_MS", 13, Tiltrotor, back_trans_delay_ms, 1000),
 
     AP_GROUPEND
 };
