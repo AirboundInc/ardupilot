@@ -829,8 +829,17 @@ void Tiltrotor::dual_axis_output(void)
     const float rud_gain  = float(plane.g2.rudd_dt_gain) * 0.01f;
     const float rudder_dt = rud_gain * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
 
-    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle + 50.0f * rudder_dt, 0, 100));
-    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle - 50.0f * rudder_dt, 0, 100));
+        if (!plane.arming.is_armed_and_safety_off()) {
+        // don't let stick throttle spin the motors while disarmed
+        SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft, 0);
+        SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, 0);
+    } else {
+        SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle + 50.0f * rudder_dt, 0, 100));
+        SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle - 50.0f * rudder_dt, 0, 100));
+    }
+
+    //SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle + 50.0f * rudder_dt, 0, 100));
+    //SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle - 50.0f * rudder_dt, 0, 100));
 
 
     // forward flight: Axis 1 is at 90deg (motors fully forward)
