@@ -89,6 +89,9 @@ public:
     // convert values to PWM min and max if not configured
     void                convert_pwm_min_max_param(int16_t radio_min, int16_t radio_max);
 
+    bool                _add_yaw_to_diff_thrust = false; // if true, add yaw to differential thrust for tailsitters
+    float               _yaw_to_diff_thrust = 0.0f; // yaw to differential
+
 #if HAL_LOGGING_ENABLED
     // 10hz logging of voltage scaling and max trust
     void                Log_Write() override;

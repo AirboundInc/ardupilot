@@ -584,6 +584,14 @@ void Tailsitter::output(void)
     float yaw_phi_limited = constrain_float(yaw_phi, -yaw_phi_headroom, yaw_phi_headroom);
     tilt_left = pitch_phi - yaw_phi_limited;
     tilt_right = pitch_phi + yaw_phi_limited;
+    if(fabsf(pitch_phi) > 4500){
+        motors->_add_yaw_to_diff_thrust = true;
+        motors->_yaw_to_diff_thrust = (yaw_phi/4500.0f)*0.5f;
+    }
+    else{
+        motors->_add_yaw_to_diff_thrust = false;
+        motors->_yaw_to_diff_thrust = 0.0f;
+    }
     quadplane.attitude_control->get_tilt_motor_angle((constrain_float(tilt_left, -4500.0f, 4500.0f) + constrain_float(tilt_right, -4500.0f, 4500.0f)) / 2.0f);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
