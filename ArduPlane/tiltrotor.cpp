@@ -146,11 +146,21 @@ void Tiltrotor::setup()
     }
 
     if (type == TILT_TYPE_DUAL_AXIS) {
+
+        /*
+        // Set the range for Axis 2 servo channels
+        SRV_Channels::set_angle(SRV_Channel::k_tiltMotorLeftVec,  4500);
+        SRV_Channels::set_angle(SRV_Channel::k_tiltMotorRightVec, 4500);
+        */
+
+       // Set the range for Axis 1 (CG-trim) servo channels
+        SRV_Channels::set_angle(SRV_Channel::k_tiltMotorLeft,  4500);
+        SRV_Channels::set_angle(SRV_Channel::k_tiltMotorRight, 4500);
         // Set the range for Axis 2 servo channels
         SRV_Channels::set_angle(SRV_Channel::k_tiltMotorLeftVec,  4500);
         SRV_Channels::set_angle(SRV_Channel::k_tiltMotorRightVec, 4500);
         // Tell the motor library not to use yaw torque (we'll vector it)
-    motors->disable_yaw_torque();
+        motors->disable_yaw_torque();
     }
 
     if (tilt_mask != 0) {
@@ -778,7 +788,7 @@ void Tiltrotor::dual_axis_output(void)
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle, 0, 100));
         }
 
-
+        /* removing to cancel axis1 contribution
         if (vectoring_gain_hvr > 0){
         
         float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
@@ -797,6 +807,32 @@ void Tiltrotor::dual_axis_output(void)
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
                                         constrain_float(tilt_right, -SERVO_MAX, SERVO_MAX));
         }
+        */
+
+        // Axis 2 baseline cancels Axis 1's rotation so the net thrust
+        // stays vertical in hover; pitch/yaw vectoring rides on top as a
+        // deviation from that baseline.
+
+        // tiltrotor.cpp, inside dual_axis_output()'s hover branch — replace the
+        // unconditional "-axis1_pos" baseline with one gated on CG-trim being active:
+
+        const bool cg_trim_active = !quadplane.assisted_flight && quadplane.is_flying_vtol();
+
+        float tilt_left  = cg_trim_active ? -axis1_pos : 0.0f;
+        float tilt_right = cg_trim_active ? -axis1_pos : 0.0f;
+                
+        //float tilt_left  = -axis1_pos;
+        //float tilt_right = -axis1_pos;
+
+        if (vectoring_gain_hvr > 0) {
+            tilt_left  += SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft)  * vectoring_gain_hvr;
+            tilt_right += SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight) * vectoring_gain_hvr;
+        }
+
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
+                                        constrain_float(tilt_left,  -SERVO_MAX, SERVO_MAX));
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
+                                        constrain_float(tilt_right, -SERVO_MAX, SERVO_MAX));
 
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
@@ -838,8 +874,6 @@ void Tiltrotor::dual_axis_output(void)
         SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle - 50.0f * rudder_dt, 0, 100));
     }
 
-    //SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle + 50.0f * rudder_dt, 0, 100));
-    //SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle - 50.0f * rudder_dt, 0, 100));
 
 
     // forward flight: Axis 1 is at 90deg (motors fully forward)
