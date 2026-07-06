@@ -564,15 +564,6 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("LND_FRZ_TIM", 40, QuadPlane, q_land_freeze_time, 7.0f),
 
-    // @Param: LND_DET_TIM
-    // @DisplayName: Qmode Land detection timeout
-    // @Description: The maximum time allowed for land detection in milliseconds
-    // @Units: ms
-    // @Range: 1000 4000
-    // @Increment: 100
-    // @User: Standard
-    AP_GROUPINFO("LND_DET_TIM", 40, QuadPlane, landing_detect.timeout_ms, 200),
-
     // @Param: DARM_WDG_T
     // @DisplayName: Disarm watchdog timeout
     // @Description: Time in seconds after landing detection starts in LAND_FINAL before an emergency disarm warning is issued. Set to 0 to disable.
@@ -582,6 +573,17 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Standard
 
     AP_GROUPINFO("DARM_WDG_T", 41, QuadPlane, landing_detect.wdg_timeout_s, 10.0),
+
+    // @Param: LND_DET_TIM
+    // @DisplayName: Qmode Land detection timeout
+    // @Description: The maximum time allowed for land detection in milliseconds
+    // @Units: ms
+    // @Range: 1000 4000
+    // @Increment: 100
+    // @User: Standard
+    AP_GROUPINFO("LND_DET_TIM", 42, QuadPlane, landing_detect.timeout_ms, 200),
+
+    
 
     AP_GROUPEND
 };
