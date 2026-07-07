@@ -584,7 +584,17 @@ void Tailsitter::output(void)
     float yaw_phi_limited = constrain_float(yaw_phi, -yaw_phi_headroom, yaw_phi_headroom);
     tilt_left = pitch_phi - yaw_phi_limited;
     tilt_right = pitch_phi + yaw_phi_limited;
-    if(fabsf(pitch_phi)>= SERVO_MAX){
+    // Yaw to differential thrust
+    bool was_engaged = motors->_add_yaw_to_diff_thrust;
+    bool engage;
+    const float TV_ENGAGE_THRESH    = 4500.0f;
+    const float TV_DISENGAGE_THRESH = 4300.0f;
+    if (was_engaged) {
+        engage = fabsf(pitch_phi) > TV_DISENGAGE_THRESH;
+    } else {
+        engage = fabsf(pitch_phi) >= TV_ENGAGE_THRESH;
+    }
+    if(engage){
         motors->_add_yaw_to_diff_thrust = true;
         float sign_of_tv = pitch_phi > 0?1:-1;
         motors->_yaw_to_diff_thrust = sign_of_tv*(yaw_phi/SERVO_MAX)*0.5f;
