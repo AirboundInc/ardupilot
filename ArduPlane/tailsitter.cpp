@@ -580,20 +580,23 @@ void Tailsitter::output(void)
     float pitch_phi = (tilt_left + tilt_right) / 2;
     float yaw_phi   = (tilt_right - tilt_left) / 2;
     float pitch_phi_limited = constrain_float(pitch_phi, -SERVO_MAX, SERVO_MAX);
-    float yaw_phi_headroom = SERVO_MAX - fabsf(pitch_phi_limited);
-    float yaw_phi_limited = constrain_float(yaw_phi, -yaw_phi_headroom, yaw_phi_headroom);
-    tilt_left = pitch_phi - yaw_phi_limited;
-    tilt_right = pitch_phi + yaw_phi_limited;
     // Yaw to differential thrust
     bool was_engaged = motors->_add_yaw_to_diff_thrust;
     bool engage;
-    const float TV_ENGAGE_THRESH    = 4500.0f;
-    const float TV_DISENGAGE_THRESH = 4300.0f;
+    const float TV_DISENGAGE_MARGIN = 200.0f;
+    const float TV_ENGAGE_THRESH    = SERVO_MAX;
+    const float TV_DISENGAGE_THRESH = SERVO_MAX - TV_DISENGAGE_MARGIN;
     if (was_engaged) {
         engage = fabsf(pitch_phi) > TV_DISENGAGE_THRESH;
     } else {
         engage = fabsf(pitch_phi) >= TV_ENGAGE_THRESH;
     }
+    // At 43 to 45 also only the yaw to differential thrust is applied, the tilt motors are not moved further to avoid saturation of the tilt motors.
+    float yaw_phi_headroom = engage ? 0.0f : (SERVO_MAX - fabsf(pitch_phi_limited));
+    float yaw_phi_limited = constrain_float(yaw_phi, -yaw_phi_headroom, yaw_phi_headroom);
+    tilt_left = pitch_phi - yaw_phi_limited;
+    tilt_right = pitch_phi + yaw_phi_limited;
+
     if(engage){
         motors->_add_yaw_to_diff_thrust = true;
         float sign_of_tv = pitch_phi > 0?1:-1;
