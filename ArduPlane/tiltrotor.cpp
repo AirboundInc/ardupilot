@@ -104,6 +104,14 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("CG_MAX", 13, Tiltrotor, cg_trim_limit_deg, 10),
 
+    // @Param: CG_GAIN
+    // @DisplayName: Tiltrotor CG trim gain
+    // @Description: Gain converting the pitch rate controller's I-term into an Axis-1 trim angle for CG-offset compensation in hover. Deliberately separate from Q_FWD_THR_GAIN, which is used for an unrelated forward-throttle-from-pitch-lean estimate. Set to 0 to disable CG-trim entirely without affecting Q_FWD_THR_GAIN's other use.
+    // @Range: 0 5
+    // @User: Standard
+    AP_GROUPINFO("CG_GAIN", 14, Tiltrotor, cg_trim_gain, 2.0),
+
+
     AP_GROUPEND
 };
 
@@ -340,7 +348,7 @@ void Tiltrotor::continuous_update(void)
         const float pitch_i = quadplane.attitude_control->get_rate_pitch_pid().get_i();
         const float vtol_tilt_limit = cg_trim_limit_deg * (1.0f/90.0f);
         const float tilt_target = constrain_float(
-            pitch_i * float(quadplane.q_fwd_thr_gain),
+            pitch_i * cg_trim_gain,
             -vtol_tilt_limit,
             vtol_tilt_limit
         );

@@ -87,6 +87,7 @@ public:
     AP_Float vectoring_gain_hvr;
     AP_Float vectoring_gain_fw;
     AP_Float cg_trim_limit_deg;
+    AP_Float cg_trim_gain;
     AP_Int16 back_trans_delay_ms;
 
 
