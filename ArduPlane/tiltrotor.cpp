@@ -796,67 +796,6 @@ void Tiltrotor::dual_axis_output(void)
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle, 0, 100));
         }
 
-        /* removing to cancel axis1 contribution
-        if (vectoring_gain_hvr > 0){
-        
-        float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
-        float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
-
-        //const float scaling = cosf(current_tilt * M_PI_2);
-        //tilt_left  *= scaling * vectoring_gain_hvr;
-        //tilt_right *= scaling * vectoring_gain_hvr;
-
-        tilt_left  = tilt_left * vectoring_gain_hvr;
-        tilt_right = tilt_right * vectoring_gain_hvr;
-        
-        
-        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
-                                        constrain_float(tilt_left,  -SERVO_MAX, SERVO_MAX));
-        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
-                                        constrain_float(tilt_right, -SERVO_MAX, SERVO_MAX));
-        }
-        */
-
-
-        /* removing to check new approach to remove pitch up when changing mode to Qstabilize
-        // Axis 2 baseline cancels Axis 1's rotation so the net thrust
-        // stays vertical in hover; pitch/yaw vectoring rides on top as a
-        // deviation from that baseline.
-
-        // tiltrotor.cpp, inside dual_axis_output()'s hover branch — replace the
-        // unconditional "-axis1_pos" baseline with one gated on CG-trim being active:
-
-        const bool cg_trim_active = !quadplane.assisted_flight && quadplane.is_flying_vtol();
-
-        float tilt_left  = cg_trim_active ? -axis1_pos : 0.0f;
-        float tilt_right = cg_trim_active ? -axis1_pos : 0.0f;
-                
-        //float tilt_left  = -axis1_pos;
-        //float tilt_right = -axis1_pos;
-
-        if (vectoring_gain_hvr > 0) {
-            tilt_left  += SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft)  * vectoring_gain_hvr;
-            tilt_right += SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight) * vectoring_gain_hvr;
-        }
-
-        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
-                                        constrain_float(tilt_left,  -SERVO_MAX, SERVO_MAX));
-        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
-                                        constrain_float(tilt_right, -SERVO_MAX, SERVO_MAX));
-        */
-
-
-        // Cancel only the small CG-trim portion of Axis 1's angle — this is
-        // a continuous function of current_tilt, so there is no boolean
-        // flip and therefore no single-tick jump when entering/leaving VTOL
-        // modes. Any rotation beyond the trim limit (i.e. Axis 1 doing a
-        // large-angle transition, not CG trim) is left uncanceled.
-
-        /*
-        const float vtol_tilt_limit = cg_trim_limit_deg * (1.0f/90.0f);
-        const float cancel_term = constrain_float(current_tilt, -vtol_tilt_limit, vtol_tilt_limit) * SERVO_MAX;
-        */
-
         const float vtol_tilt_limit = cg_trim_limit_deg * (1.0f/90.0f);
         const float tilt_mag = fabsf(current_tilt);
         // 1.0 (full cancel) inside the trim range, fading linearly to 0.0
