@@ -294,7 +294,7 @@ void Tiltrotor::continuous_update(void)
             // prevent motor shutdown
             _motors_active = true;
         }
-        if (!quadplane.motor_test.running) {
+        if (!quadplane.motor_test.running && type != TILT_TYPE_DUAL_AXIS) {
             // the motors are all the way forward, start using them for fwd thrust
             const uint16_t mask = is_zero(current_throttle)?0U:tilt_mask.get();
             motors->output_motor_mask(current_throttle, mask, plane.rudder_dt);
@@ -789,6 +789,19 @@ void Tiltrotor::dual_axis_output(void)
 
     const float axis1_pos = -(current_tilt * SERVO_MAX);
 
+    #if HAL_LOGGING_ENABLED
+    // Unconditional: fires every call regardless of which branch below is taken
+    AP::logger().WriteStreaming("DAXT", "TimeUS,KThr,Assist,VtolM,AutoThr",
+            "s----", // seconds, no unit x4
+            "F0000", // micro (1e-6), no mult (1e0) x4
+            "QfBBB", // uint64_t, float, uint8_t, uint8_t, uint8_t
+            AP_HAL::micros64(),
+            SRV_Channels::get_output_scaled(SRV_Channel::k_throttle),
+            (uint8_t)quadplane.assisted_flight,
+            (uint8_t)quadplane.in_vtol_mode(),
+            (uint8_t)plane.control_mode->does_auto_throttle());
+    #endif
+
     if (quadplane.in_vtol_mode() || quadplane.assisted_flight) {
         const float throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
         if (quadplane.assisted_flight) {
@@ -856,6 +869,7 @@ void Tiltrotor::dual_axis_output(void)
         ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
         : plane.get_throttle_input(true);
     */
+   
 
     float throttle;
     if (plane.control_mode->does_auto_throttle()) {
