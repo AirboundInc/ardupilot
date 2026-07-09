@@ -440,6 +440,10 @@ void Tiltrotor::write_log()
         LOG_PACKET_HEADER_INIT(LOG_TILT_MSG),
         time_us      : AP_HAL::micros64(),
         current_tilt : current_tilt * 90.0,
+        backtrans_elapsed_ms : backtrans_elapsed_ms,
+        fw_throttle  : last_fw_throttle,
+        pilot_throttle : backtrans_pilot_throttle,
+        blend_throttle : backtrans_blend_throttle,
     };
 
     if (type != TILT_TYPE_VECTORED_YAW) {
@@ -951,15 +955,21 @@ bool Tiltrotor::in_vtol_transition(uint32_t now) const
   during the Q_BTDLY_MS backtransition window, linearly blend from the
   last fixed wing throttle to the pilot's vertical throttle demand
 */
-float Tiltrotor::get_backtrans_throttle(uint32_t now, float pilot_throttle) const
+float Tiltrotor::get_backtrans_throttle(uint32_t now, float pilot_throttle)
 {
+    backtrans_pilot_throttle = pilot_throttle;
+
     const uint32_t delay_ms = (uint32_t)(back_trans_delay_ms);
     if (delay_ms == 0 || transition->backtrans_start_ms == 0) {
+        backtrans_elapsed_ms = 0;
+        backtrans_blend_throttle = pilot_throttle;
         return pilot_throttle;
     }
 
-    const float progress = constrain_float((now - transition->backtrans_start_ms) / (float)delay_ms, 0.0f, 1.0f);
-    return last_fw_throttle + (pilot_throttle - last_fw_throttle) * progress;
+    backtrans_elapsed_ms = now - transition->backtrans_start_ms;
+    const float progress = constrain_float(backtrans_elapsed_ms / (float)delay_ms, 0.0f, 1.0f);
+    backtrans_blend_throttle = last_fw_throttle + (pilot_throttle - last_fw_throttle) * progress;
+    return backtrans_blend_throttle;
 }
 
 #endif  // HAL_QUADPLANE_ENABLED

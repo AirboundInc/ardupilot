@@ -1793,7 +1793,13 @@ void QuadPlane::update(void)
     if (in_vtol_mode()) {
         // if enabled output forward throttle else 0
         float fwd_thr = 0;
-        if (allow_forward_throttle_in_vtol_mode()) {
+        if (tiltrotor.in_vtol_transition(now)) {
+            // during the backtransition delay window, drive k_throttle (which
+            // feeds throttle left/right on dual-axis tiltrotors) with the
+            // blend from the last fixed wing throttle to pilot throttle,
+            // rather than the normal forward throttle calculation
+            fwd_thr = tiltrotor.get_last_backtrans_throttle() * 100.0f;
+        } else if (allow_forward_throttle_in_vtol_mode()) {
             fwd_thr = forward_throttle_pct();
         }
         SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, fwd_thr);

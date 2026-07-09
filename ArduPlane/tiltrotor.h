@@ -46,7 +46,10 @@ public:
 
     // linearly blend from the last fixed wing throttle to the pilot's
     // vertical throttle demand over the Q_BTDLY_MS backtransition window
-    float get_backtrans_throttle(uint32_t now, float pilot_throttle) const;
+    float get_backtrans_throttle(uint32_t now, float pilot_throttle);
+
+    // most recent result from get_backtrans_throttle(), 0 to 1
+    float get_last_backtrans_throttle() const { return backtrans_blend_throttle; }
 
     void tilt_compensate_angle(float *thrust, uint8_t num_motors, float non_tilted_mul, float tilted_mul);
     void tilt_compensate(float *thrust, uint8_t num_motors);
@@ -123,6 +126,10 @@ private:
         float current_tilt;
         float front_left_tilt;
         float front_right_tilt;
+        uint32_t backtrans_elapsed_ms;
+        float fw_throttle;
+        float pilot_throttle;
+        float blend_throttle;
     };
 
     bool setup_complete;
@@ -145,7 +152,12 @@ private:
     uint32_t last_fw_mode_ms;
 
     // throttle (0 to 1) that was last commanded in fw control mode
-    float last_fw_throttle;
+    float last_fw_throttle = 0;
+
+    // debug state from the last get_backtrans_throttle() call, for TILT log
+    uint32_t backtrans_elapsed_ms = 0;
+    float backtrans_pilot_throttle = 0;
+    float backtrans_blend_throttle = 0;
 
     Tiltrotor_Transition* transition;
 
