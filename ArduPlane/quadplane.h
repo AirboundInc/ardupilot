@@ -133,6 +133,13 @@ public:
     float forward_throttle_pct();
     float get_weathervane_yaw_rate_cds(void);
 
+    // last raw forward_throttle_pct() output written to k_throttle, before
+    // Plane::set_throttle()'s battery-comp/limit post-processing, for debug logging
+    float get_last_fwd_thr_pct_raw() const { return fwd_thr_pct_raw; }
+
+    // number of motors_output() calls this tick, for debug logging
+    uint8_t get_motors_output_call_count() const { return motors_output_call_count; }
+
     // see if we are flying from vtol point of view
     bool is_flying_vtol(void) const;
 
@@ -438,6 +445,8 @@ private:
     Location last_auto_target;
 
     float q_fwd_throttle; // forward throttle used in q modes
+    float fwd_thr_pct_raw = 0; // last raw forward_throttle_pct() output written to k_throttle, for debug logging
+    uint8_t motors_output_call_count = 0; // number of motors_output() calls so far this tick, for debug logging
     float q_fwd_pitch_lim_cd; // forward pitch limit applied when using q_fwd_throttle
     float q_bck_pitch_lim_cd; // backward pitch limit applied when using Q_BCK_PIT_LIM
     uint32_t q_pitch_limit_update_ms; // last time the backward pitch limit was updated

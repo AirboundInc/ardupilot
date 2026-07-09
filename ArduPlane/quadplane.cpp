@@ -1712,6 +1712,9 @@ void QuadPlane::update(void)
         return;
     }
 
+    // reset per-tick debug counter of motors_output() calls
+    motors_output_call_count = 0;
+
     // keep motors interlock state upto date with E-stop
     motors->set_interlock(!SRV_Channels::get_emergency_stop());
 
@@ -1793,15 +1796,10 @@ void QuadPlane::update(void)
     if (in_vtol_mode()) {
         // if enabled output forward throttle else 0
         float fwd_thr = 0;
-        if (tiltrotor.in_vtol_transition(now)) {
-            // during the backtransition delay window, drive k_throttle (which
-            // feeds throttle left/right on dual-axis tiltrotors) with the
-            // blend from the last fixed wing throttle to pilot throttle,
-            // rather than the normal forward throttle calculation
-            fwd_thr = tiltrotor.get_last_backtrans_throttle() * 100.0f;
-        } else if (allow_forward_throttle_in_vtol_mode()) {
+        if (allow_forward_throttle_in_vtol_mode()) {
             fwd_thr = forward_throttle_pct();
         }
+        fwd_thr_pct_raw = fwd_thr;
         SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, fwd_thr);
     }
 
@@ -1962,6 +1960,8 @@ void QuadPlane::update_throttle_hover()
  */
 void QuadPlane::motors_output(bool run_rate_controller)
 {
+    motors_output_call_count++;
+
     /* Delay for ARMING_DELAY_MS after arming before allowing props to spin:
        1) for safety (OPTION_DELAY_ARMING)
        2) to allow motors to return to vertical (OPTION_DISARMED_TILT)

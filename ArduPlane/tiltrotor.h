@@ -48,8 +48,9 @@ public:
     // vertical throttle demand over the Q_BTDLY_MS backtransition window
     float get_backtrans_throttle(uint32_t now, float pilot_throttle);
 
-    // most recent result from get_backtrans_throttle(), 0 to 1
-    float get_last_backtrans_throttle() const { return backtrans_blend_throttle; }
+    // most recent k_throttle value written by AP_MotorsTailsitter's mixer
+    // inside dual_axis_output(), before it gets restored, for debug logging
+    float get_last_dual_axis_mixout_throttle() const { return dual_axis_mixout_throttle; }
 
     void tilt_compensate_angle(float *thrust, uint8_t num_motors, float non_tilted_mul, float tilted_mul);
     void tilt_compensate(float *thrust, uint8_t num_motors);
@@ -158,6 +159,11 @@ private:
     uint32_t backtrans_elapsed_ms = 0;
     float backtrans_pilot_throttle = 0;
     float backtrans_blend_throttle = 0;
+
+    // k_throttle value written by AP_MotorsTailsitter's collective-thrust
+    // actuator output inside dual_axis_output(), before it gets restored
+    // back to the fixed-wing forward-throttle value; for QTHR debug log
+    float dual_axis_mixout_throttle = 0;
 
     Tiltrotor_Transition* transition;
 

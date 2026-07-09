@@ -965,6 +965,9 @@ private:
     void Log_Write_RC(void);
     void Log_Write_Vehicle_Startup_Messages();
     void Log_Write_AETR();
+#if HAL_QUADPLANE_ENABLED
+    void Log_Write_QTHR();
+#endif
 #endif
 
     // Parameters.cpp
@@ -1171,6 +1174,15 @@ private:
     float apply_throttle_limits(float throttle_in);
     void set_throttle(void);
     void set_takeoff_expected(void);
+
+    // debug: k_throttle value right after set_throttle() finishes, before
+    // the slew limiter/ICE/disarm logic later in set_servos() touch it
+    float dbg_post_set_throttle = 0;
+
+    // debug: k_throttle value right after SRV_Channels::calc_pwm() runs
+    // (i.e. after slew-rate limiting), for the QTHR debug log
+    float post_calc_pwm_throttle = 0;
+
     void set_servos_old_elevons(void);
     void set_servos_flaps(void);
     void dspoiler_update(void);

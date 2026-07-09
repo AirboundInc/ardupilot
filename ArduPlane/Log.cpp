@@ -265,6 +265,39 @@ void Plane::Log_Write_AETR()
     logger.WriteBlock(&pkt, sizeof(pkt));
 }
 
+#if HAL_QUADPLANE_ENABLED
+struct PACKED log_QTHR {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    float raw;
+    float pset;
+    float mixout;
+    float final_thr;
+    uint8_t mocnt;
+    uint8_t flight_stage;
+};
+
+// debug log tracing k_throttle through the QuadPlane/Tiltrotor/servo output
+// pipeline on dual-axis tiltrotors using AP_MotorsTailsitter, where the
+// motor mixer's collective-thrust actuator output collides with
+// k_throttle's normal fixed-wing forward-throttle meaning
+void Plane::Log_Write_QTHR()
+{
+    struct log_QTHR pkt = {
+        LOG_PACKET_HEADER_INIT(LOG_QTHR_MSG)
+        ,time_us  : AP_HAL::micros64()
+        ,raw      : quadplane.get_last_fwd_thr_pct_raw()
+        ,pset     : dbg_post_set_throttle
+        ,mixout   : quadplane.tiltrotor.get_last_dual_axis_mixout_throttle()
+        ,final_thr : post_calc_pwm_throttle
+        ,mocnt    : quadplane.get_motors_output_call_count()
+        ,flight_stage : (uint8_t)flight_stage,
+        };
+
+    logger.WriteBlock(&pkt, sizeof(pkt));
+}
+#endif
+
 void Plane::Log_Write_RC(void)
 {
     logger.Write_RCIN();
@@ -275,6 +308,9 @@ void Plane::Log_Write_RC(void)
     }
 #endif
     Log_Write_AETR();
+#if HAL_QUADPLANE_ENABLED
+    Log_Write_QTHR();
+#endif
 }
 
 void Plane::Log_Write_Guided(void)
@@ -500,6 +536,20 @@ const struct LogStructure Plane::log_structure[] = {
 // @Field: SS: Surface movement / airspeed scaling value
     { LOG_AETR_MSG, sizeof(log_AETR),
       "AETR", "Qfffffff",  "TimeUS,Ail,Elev,Thr,Rudd,Flap,Steer,SS", "s-------", "F-------" , true },
+
+#if HAL_QUADPLANE_ENABLED
+// @LoggerMessage: QTHR
+// @Description: Debug trace of k_throttle through the QuadPlane/Tiltrotor/servo output pipeline, for dual-axis tiltrotors using AP_MotorsTailsitter
+// @Field: TimeUS: Time since system startup
+// @Field: Raw: raw forward_throttle_pct() output, before battery-comp/limit post-processing
+// @Field: PSet: k_throttle value right after Plane::set_throttle() finishes
+// @Field: MixOut: k_throttle value written by AP_MotorsTailsitter's collective-thrust actuator inside dual_axis_output(), before it is restored
+// @Field: Final: k_throttle value right after SRV_Channels::calc_pwm() runs (post slew-rate limiting)
+// @Field: MOCnt: number of motors_output() calls so far this tick
+// @Field: Stg: flight stage
+    { LOG_QTHR_MSG, sizeof(log_QTHR),
+      "QTHR", "QffffBB",  "TimeUS,Raw,PSet,MixOut,Final,MOCnt,Stg", "s------", "F------" , true },
+#endif
 
 #if AP_PLANE_OFFBOARD_GUIDED_SLEW_ENABLED
 // @LoggerMessage: OFG

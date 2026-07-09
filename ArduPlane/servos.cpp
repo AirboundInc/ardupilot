@@ -626,6 +626,7 @@ void Plane::set_throttle(void)
         }
     }
 
+    dbg_post_set_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
 }
 
 /*
@@ -1021,6 +1022,8 @@ void Plane::servos_output(void)
     }
 
     SRV_Channels::calc_pwm();
+
+    post_calc_pwm_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
 
     SRV_Channels::output_ch_all();
 
