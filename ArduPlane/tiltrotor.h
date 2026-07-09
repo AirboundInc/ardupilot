@@ -44,6 +44,10 @@ public:
     void dual_axis_output();
     bool in_vtol_transition(uint32_t now) const;
 
+    // linearly blend from the last fixed wing throttle to the pilot's
+    // vertical throttle demand over the Q_BTDLY_MS backtransition window
+    float get_backtrans_throttle(uint32_t now, float pilot_throttle) const;
+
     void tilt_compensate_angle(float *thrust, uint8_t num_motors, float non_tilted_mul, float tilted_mul);
     void tilt_compensate(float *thrust, uint8_t num_motors);
     bool tilt_over_max_angle(void) const;
@@ -139,6 +143,9 @@ private:
 
     // time when we were last in a fw control mode
     uint32_t last_fw_mode_ms;
+
+    // throttle (0 to 1) that was last commanded in fw control mode
+    float last_fw_throttle;
 
     Tiltrotor_Transition* transition;
 

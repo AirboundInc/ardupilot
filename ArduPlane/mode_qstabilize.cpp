@@ -47,10 +47,12 @@ void ModeQStabilize::run()
         return;
     }
 
+    float pilot_throttle_scaled = quadplane.get_pilot_throttle();
+
     if (quadplane.tiltrotor.in_vtol_transition(now)) {
-        // Tiltrotor in FW pull up phase of VTOL transition run FW controllers
-        Mode::run();
-        return;
+        // linearly blend from the last fixed wing throttle to the pilot's
+        // vertical throttle demand over the backtransition delay window
+        pilot_throttle_scaled = quadplane.tiltrotor.get_backtrans_throttle(now, pilot_throttle_scaled);
     }
 
     plane.quadplane.assign_tilt_to_fwd_thr();
@@ -64,7 +66,7 @@ void ModeQStabilize::run()
     }
 
     // normal QSTABILIZE mode
-    float pilot_throttle_scaled = quadplane.get_pilot_throttle();
+
     quadplane.hold_stabilize(pilot_throttle_scaled);
 
     // Stabilize with fixed wing surfaces

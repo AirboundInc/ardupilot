@@ -820,6 +820,10 @@ void Tiltrotor::dual_axis_output(void)
         ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
         : plane.get_throttle_input(true);
 
+    // remember the throttle we were using in FW flight so it can be
+    // blended with the pilot's vertical throttle after a backtransition
+    last_fw_throttle = throttle * 0.01f;
+
     const float rud_gain  = float(plane.g2.rudd_dt_gain) * 0.01f;
     const float rudder_dt = rud_gain * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
 
@@ -941,6 +945,21 @@ bool Tiltrotor::in_vtol_transition(uint32_t now) const
     }
 
     return false;
+}
+
+/*
+  during the Q_BTDLY_MS backtransition window, linearly blend from the
+  last fixed wing throttle to the pilot's vertical throttle demand
+*/
+float Tiltrotor::get_backtrans_throttle(uint32_t now, float pilot_throttle) const
+{
+    const uint32_t delay_ms = (uint32_t)(back_trans_delay_ms);
+    if (delay_ms == 0 || transition->backtrans_start_ms == 0) {
+        return pilot_throttle;
+    }
+
+    const float progress = constrain_float((now - transition->backtrans_start_ms) / (float)delay_ms, 0.0f, 1.0f);
+    return last_fw_throttle + (pilot_throttle - last_fw_throttle) * progress;
 }
 
 #endif  // HAL_QUADPLANE_ENABLED
