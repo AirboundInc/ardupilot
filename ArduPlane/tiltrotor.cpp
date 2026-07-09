@@ -822,6 +822,16 @@ void Tiltrotor::dual_axis_output(void)
             tilt_right += SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight) * vectoring_gain_hvr;
         }
 
+        #if HAL_LOGGING_ENABLED
+        // Log the Axis-2 CG-trim cancellation blend calculation
+        AP::logger().WriteStreaming("DUAL", "TimeUS,VTLM,TMag,CTilt,Blend,CTRM,TiltL,TiltR,Ax1Pos",
+                "sddd----d", // seconds, degrees, degrees, degrees, no unit x4, degrees
+                "F00000000", // micro (1e-6), no mult (1e0) x8
+                "Qffffffff", // uint64_t, float x8
+                AP_HAL::micros64(), vtol_tilt_limit*90.0f, tilt_mag*90.0f, current_tilt*90.0f, blend, cancel_term, tilt_left, tilt_right, axis1_pos*(1.0f/50.0f) + 90.0f);
+        #endif
+
+
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
                                         constrain_float(tilt_left,  -SERVO_MAX, SERVO_MAX));
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
