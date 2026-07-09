@@ -49,8 +49,9 @@ local P = {
     MCCMNC      = bind_add_param('MCCMNC', 14, -1),
     TX_RATE     = bind_add_param('TX_RATE',  20, 0),
     BAND        = bind_add_param('BAND', 21, -1),
-    GRACE       = bind_add_param('GRACE', 22, 3),    
-    STUCK_T     = bind_add_param('STUCK_T', 23, 15)  
+    GRACE       = bind_add_param('GRACE', 22, 3), 
+    STUCK_T     = bind_add_param('STUCK_T', 23, 15),
+    TX_DEAD     = bind_add_param('TX_DEAD', 24, 5)   -- consecutive QISEND stalls before declaring socket dead (0=disable)
 }
 
 local supports_routing = networking and networking.add_route -- luacheck: ignore 143
@@ -141,6 +142,7 @@ local cs = {
     tx_state = "idle",      -- idle | prompt | sendok
     tx_pending = "",
     tx_ms = 0,
+    consec_stall = 0,       -- consecutive QISEND stalls with no SEND OK between
     dp_closed = false,
     recv_nolen_warned = false,
     ati_dbg_ms = nil,
@@ -383,6 +385,7 @@ local function reset_state()
     cs.cipopen_preclosed = false
     cmux_was_set = false  -- per-attempt marker; cmux_force_disabled stays sticky
     cs.ati_dbg_ms = nil
+    cs.consec_stall = 0
 end
 
 local function reset_to_ATI()
@@ -686,12 +689,31 @@ function dp.process_tx(now_ms, budget)
 
     if cs.tx_state ~= "idle" then
         if (now_ms:tofloat() - cs.tx_ms) > 2000 then
-            gcs:send_text(MAV_SEVERITY.WARNING, 'LTE: QISEND handshake stalled, resetting')
-            -- Requeue the unconfirmed chunk rather than dropping it. Prevents a
-            -- permanent hole in the byte stream (critical for TCP; a possible
-            -- duplicate on UDP is harmless to MAVLink).
+            -- Requeue the unconfirmed chunk rather than dropping it.
             if #cs.tx_pending > 0 then buf.modem = cs.tx_pending .. buf.modem end
-            cs.tx_state = "idle"; cs.tx_pending = "" ; cs.dbg_stall = cs.dbg_stall + 1
+            cs.tx_state = "idle"; cs.tx_pending = ""; cs.dbg_stall = cs.dbg_stall + 1
+            cs.consec_stall = cs.consec_stall + 1
+
+            local dead_n = math.floor(P.TX_DEAD:get())
+            if dead_n > 0 and cs.consec_stall >= dead_n then
+                -- N stalls, zero SEND OKs in between: bearer silently died under
+                -- the UDP socket (post-handover). No URC will ever fire for this.
+                -- Go straight to the recovery path that provably works:
+                -- QISTATE? -> QICLOSE -> QIOPEN (~150ms), skipping blind reopens
+                -- that fail while the modem still thinks socket 0 is in use.
+                gcs:send_text(MAV_SEVERITY.ERROR,
+                    string.format('LTE: %d consecutive stalls - socket dead, fast recover', cs.consec_stall))
+                cs.consec_stall = 0
+                if not cs.disconnect_ms then
+                    cs.disconnect_ms = now_ms:tofloat() - (dead_n * 2000)
+                end
+                cs.last_data_ms = now_ms
+                cs.cipopen_sent = false
+                step = modem.socket_state and "SOCKET_STATE" or "CIPOPEN"
+                return
+            end
+            gcs:send_text(MAV_SEVERITY.WARNING,
+                string.format('LTE: QISEND stalled %d/%d', cs.consec_stall, math.max(1, math.floor(P.TX_DEAD:get()))))
         end
         return
     end
@@ -1100,6 +1122,7 @@ local function step_CIPOPEN()
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: connected')
             cs.cipopen_sent = false; cs.cipopen_retry = 0
             cs.hard_reset_strikes = 0 
+            cs.consec_stall = 0
             cs.cipopen_preclosed = false
             reset_buffers(); step = "CONNECTED"; return
         end
@@ -1252,7 +1275,8 @@ local function step_CONNECTED()
             cs.last_data_ms = now_ms
             cs.cipopen_sent = false
             cs.tx_state = "idle"; cs.tx_pending = ""
-            step = "CIPOPEN"; return
+            cs.consec_stall = 0
+            step = modem.socket_state and "SOCKET_STATE" or "CIPOPEN"; return
         else
             gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: data timeout')
             if not cs.disconnect_ms then cs.disconnect_ms = millis():tofloat() - (P.TIMEOUT:get() * 1000) end
