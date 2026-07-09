@@ -1667,8 +1667,10 @@ void SLT_Transition::update()
     }
 
     case TRANSITION_DONE:
+        if (quadplane.tiltrotor.type != Tiltrotor::TILT_TYPE_DUAL_AXIS) {
         quadplane.set_desired_spool_state(AP_Motors::DesiredSpoolState::SHUT_DOWN);
         motors->output();
+        }
         set_last_fw_pitch();
         in_forced_transition = false;
         return;
