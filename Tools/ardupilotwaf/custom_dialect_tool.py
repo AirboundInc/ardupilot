@@ -57,7 +57,7 @@ def configure(conf):
 
     if conf.options.enable_custom_storage:
         print('Custom Storage                                 : enabled')
-    else:   
+    else:
         print('Custom Storage                                 : disabled')
 
     if conf.env.ENABLE_AIRBOUND_FLIGHT_INFORMATION:
