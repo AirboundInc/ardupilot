@@ -1284,7 +1284,7 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @Increment: 0.1
     // @User: Standard
     AP_GROUPINFO("TOFF_DET_CRT", 37, ParametersG2, takeoff_detect_crt, 0.5),
-    #endif
+#endif
 
     AP_GROUPEND
 };
