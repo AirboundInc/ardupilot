@@ -135,7 +135,7 @@ void Tiltrotor::setup()
     // bicopter tiltrotors use throttle left and right as tilting motors, so they don't count in that case.
     _have_fw_motor = SRV_Channels::function_assigned(SRV_Channel::k_throttle) ||
                     ((SRV_Channels::function_assigned(SRV_Channel::k_throttleLeft) || SRV_Channels::function_assigned(SRV_Channel::k_throttleRight))
-                        && (type != TILT_TYPE_BICOPTER) && (type != TILT_TYPE_DUAL_AXIS));
+                        && (type != TILT_TYPE_BICOPTER));
 
 
     // check if there are any permanent VTOL motors
