@@ -863,21 +863,7 @@ void Tiltrotor::dual_axis_output(void)
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
 
 
-    // TODO: Fix this for auto mode throttle control
-    /*
-    const float throttle = plane.control_mode->does_auto_throttle()
-        ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
-        : plane.get_throttle_input(true);
-    */
-   
-
-    float throttle;
-    if (plane.control_mode->does_auto_throttle()) {
-        throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
-    } else {
-        throttle = constrain_float(plane.get_throttle_input(true), plane.aparm.throttle_min.get(), plane.aparm.throttle_max.get());
-    }
-
+    float throttle = constrain_float(plane.get_throttle_input(true), plane.aparm.throttle_min.get(), plane.aparm.throttle_max.get());
 
     const float rud_gain  = float(plane.g2.rudd_dt_gain) * 0.01f;
     const float rudder_dt = rud_gain * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
