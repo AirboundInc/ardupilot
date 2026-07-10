@@ -520,6 +520,7 @@ protected:
     virtual uint64_t takeoff_time_boot_us() const { return 0; }
     virtual uint64_t landing_time_boot_us() const { return 0; }
     virtual uint64_t disarm_time_boot_us() const { return 0; }
+    virtual uint32_t flight_time_ms() const { return 0; }
 #endif
 
     // return a MAVLink parameter type given a AP_Param type

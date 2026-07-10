@@ -1593,5 +1593,10 @@ uint64_t GCS_MAVLINK_Plane::disarm_time_boot_us() const
 {
     return plane.disarm_time_boot_us;
 }
+
+uint32_t GCS_MAVLINK_Plane::flight_time_ms() const
+{
+    return plane.flight_time_ms();
+}
 #endif
 

@@ -5833,7 +5833,8 @@ void GCS_MAVLINK::send_airbound_flight_information()
         rtc.boot_us_to_utc_us(arming_time_boot_us()),
         rtc.boot_us_to_utc_us(takeoff_time_boot_us()),
         rtc.boot_us_to_utc_us(landing_time_boot_us()),
-        rtc.boot_us_to_utc_us(disarm_time_boot_us()));
+        rtc.boot_us_to_utc_us(disarm_time_boot_us()),
+        flight_time_ms());
 }
 #endif  // AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
 
