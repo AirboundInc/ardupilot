@@ -819,6 +819,7 @@ private:
     void danger_zone_update();
     uint8_t danger_zone_last_level{0};
     Mode::Number danger_zone_resume_mode{Mode::Number::QLOITER};    // mode to restore when recovering out of autobailout
+    uint32_t danger_zone_vtol_entry_ms{0};                          // remember the danger zone vtol entry timestamp for backtransition delay
 #endif
 
 #if AP_TUNING_ENABLED

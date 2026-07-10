@@ -77,6 +77,13 @@ public:
 };
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+// Backtransition delay for autobailout
+static constexpr uint32_t DZ_BTRN_DLY = 2500;
+
+// ---------------------------------------------------------------------------
 // Zone table
 // ---------------------------------------------------------------------------
 static constexpr DZ_Zone dz_zones[] = {
@@ -171,10 +178,19 @@ void Plane::danger_zone_update()
         !arming.is_armed() || !quadplane.in_vtol_mode()) {
         danger_zone.reset();
         danger_zone_last_level = danger_zone.get_current_danger_zone();
+        danger_zone_vtol_entry_ms = 0;
         return;
     }
 
-    danger_zone.update(AP_HAL::millis());
+    const uint32_t now = AP_HAL::millis();
+
+    // Store the VTOL settle time after the backtransition delay
+    if (danger_zone_vtol_entry_ms == 0 || quadplane.tailsitter_in_vtol_transition()) {
+        danger_zone_vtol_entry_ms = now;
+    }
+    const bool backtransition_done = (now - danger_zone_vtol_entry_ms) >= DZ_BTRN_DLY;
+
+    danger_zone.update(now);
 
     const uint8_t level = danger_zone.get_current_danger_zone();
 
@@ -189,40 +205,40 @@ void Plane::danger_zone_update()
                                 danger_zone.get_self_entry_bits());
 #endif
 
-    // Zone actions
+    // Handle autobailout
+    if (danger_zone.actions_enabled() && level >= 4 && backtransition_done) {
+        const bool in_bailout = control_mode == &mode_qloiter &&
+                                control_mode_reason == ModeReason::DANGERZONE_BAILOUT;
+        const Mode::Number mode_num = control_mode->mode_number();
+        const bool bailout_excluded =
+            mode_num == Mode::Number::QSTABILIZE ||
+            mode_num == Mode::Number::QHOVER ||
+            mode_num == Mode::Number::QLOITER ||
+#if QAUTOTUNE_ENABLED
+            mode_num == Mode::Number::QAUTOTUNE ||
+#endif
+            mode_num == Mode::Number::QACRO;
+        if (!in_bailout && !bailout_excluded) {
+            // save the pre-bailout mode so it can be restored on recovery
+            danger_zone_resume_mode = mode_num;
+            set_mode_by_number(Mode::Number::QLOITER, ModeReason::DANGERZONE_BAILOUT);
+        }
+    }
+
+    // Zone transition
     if (level != danger_zone_last_level) {
         gcs().send_text(MAV_SEVERITY_WARNING, "DangerZone: %s (level %u)",
                         danger_zone.get_reason(), (unsigned)level);
 
         // Only run actions in Full mode
         if (danger_zone.actions_enabled()) {
-            // Zone 4: autobailout to QLOITER
-            if (level >= 4 && danger_zone_last_level < 4) {
-                // Restrict autobailout to specific modes
-                const Mode::Number mode_num = control_mode->mode_number();
-                const bool bailout_excluded =
-                    mode_num == Mode::Number::QSTABILIZE ||
-                    mode_num == Mode::Number::QHOVER ||
-                    mode_num == Mode::Number::QLOITER ||
-#if QAUTOTUNE_ENABLED
-                    mode_num == Mode::Number::QAUTOTUNE ||
-#endif
-                    mode_num == Mode::Number::QACRO;
-                if (!bailout_excluded) {
-                    // save the pre-bailout mode so it can be restored on recovery
-                    danger_zone_resume_mode = control_mode->mode_number();
-                    set_mode_by_number(Mode::Number::QLOITER, ModeReason::DANGERZONE_BAILOUT);
-                }
-            }
-
             // Mission resumption after exiting Zone 4
-            if (level < 4 && danger_zone_last_level >= 4) {
-                // Only resume if the current mode is QLoiter 
-                // and the mode reason is bailout from the Danger Zone module
-                if (control_mode == &mode_qloiter &&
-                    control_mode_reason == ModeReason::DANGERZONE_BAILOUT) {
-                    set_mode_by_number(danger_zone_resume_mode, ModeReason::DANGERZONE_RECOVERED);
-                }
+            // Only resume if the current mode is QLoiter 
+            // and the mode reason is bailout from the Danger Zone module
+            if (level < 4 && danger_zone_last_level >= 4 &&
+                control_mode == &mode_qloiter &&
+                control_mode_reason == ModeReason::DANGERZONE_BAILOUT) {
+                set_mode_by_number(danger_zone_resume_mode, ModeReason::DANGERZONE_RECOVERED);
             }
 
             // Zone 5: Disarm and deploy parachute
