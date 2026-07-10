@@ -379,6 +379,11 @@ void Plane::one_second_loop()
     rollController.set_notch_sample_rate(loop_rate);
     pitchController.set_notch_sample_rate(loop_rate);
     yawController.set_notch_sample_rate(loop_rate);
+
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+    // broadcast flight information at 1Hz
+    gcs().send_message(MSG_AIRBOUND_FLIGHT_INFORMATION);
+#endif
 }
 
 void Plane::three_hz_loop()
@@ -402,6 +407,29 @@ void Plane::three_hz_loop()
 #endif
 #endif
 }
+
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+// elapsed flight time since takeoff, in milliseconds. counts up while
+// airborne and freezes at landing (or at disarm if no landing was
+// detected). returns 0 before the first takeoff of the current arm.
+uint32_t Plane::flight_time_ms() const
+{
+    if (takeoff_time_boot_us == 0) {
+        return 0;
+    }
+    uint64_t end_us;
+    if (has_taken_off) {
+        end_us = AP_HAL::micros64();
+    } else if (landing_time_boot_us != 0) {
+        end_us = landing_time_boot_us;
+    } else if (disarm_time_boot_us != 0) {
+        end_us = disarm_time_boot_us;
+    } else {
+        end_us = AP_HAL::micros64();
+    }
+    return (end_us - takeoff_time_boot_us) / 1000;
+}
+#endif
 
 void Plane::compass_save()
 {

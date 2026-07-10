@@ -37,10 +37,11 @@
     <message id="15224" name="AIRBOUND_FLIGHT_INFORMATION">
       <description>Flight timing information with UTC timestamps for arming, takeoff, landing, and disarming events.</description>
       <field type="uint32_t" name="time_boot_ms" units="ms">Timestamp (time since system boot).</field>
-      <field type="uint64_t" name="arming_time_utc" units="us">UTC timestamp of last arming event, retained after landing and disarm (0 only before the first arm).</field>
-      <field type="uint64_t" name="takeoff_time_utc" units="us">UTC timestamp of last takeoff (0 if not taken off).</field>
-      <field type="uint64_t" name="landing_time_utc" units="us">UTC timestamp of last landing (0 if not landed). Only set by the landing detector during auto-mission VTOL landings.</field>
-      <field type="uint64_t" name="disarming_time_utc" units="us">UTC timestamp of last disarming event (0 if not disarmed).</field>
+      <field type="uint64_t" name="arming_time_utc" units="us">UTC timestamp of last arming event, retained after landing and disarm.</field>
+      <field type="uint64_t" name="takeoff_time_utc" units="us">UTC timestamp of last takeoff.</field>
+      <field type="uint64_t" name="landing_time_utc" units="us">UTC timestamp of last landing. Only set by the landing detector during auto-mission VTOL landings.</field>
+      <field type="uint64_t" name="disarming_time_utc" units="us">UTC timestamp of last disarming event.</field>
+      <field type="uint32_t" name="flight_time_ms" units="ms">Elapsed flight time since takeoff.</field>
     </message>
     <!-- custom messages END -->
   </messages>

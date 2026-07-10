@@ -627,6 +627,9 @@ private:
     uint64_t landing_time_boot_us;
     uint64_t disarm_time_boot_us;
     bool has_taken_off;
+
+    // elapsed flight time since last takeoff
+    uint32_t flight_time_ms() const;
 #endif
 
     // ground mode is true when disarmed and not flying
