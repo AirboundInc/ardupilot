@@ -71,4 +71,5 @@ enum class ModeReason : uint8_t {
   MODE_TAKEOFF_FAILSAFE = 51,
   DDS_COMMAND = 52,
   DANGERZONE_BAILOUT = 53,
+  DANGERZONE_RECOVERED = 54,
 };

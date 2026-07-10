@@ -121,7 +121,7 @@ static constexpr DZ_Zone dz_zones[] = {
     // entry: raw pitch < 40 deg for 200 ms
     //        OR both tilts maxed same direction (> 4499 or < -4499 cd, i.e. pinned
     //        to the +/-4500 rail; strict > can't match 4500 exactly) for 100 ms
-    // exit:  rolling-avg pitch error < 20 deg AND peak < 30 deg over 5 s
+    // exit:  rolling-avg pitch error < 20 deg AND peak |att pitch| < 30 deg over 5 s
     { .name = "zone4",
       .entry = dz::OR(
           DZ_Check::Duration(DZ_Metrics::raw_pitch_deg,
@@ -133,7 +133,7 @@ static constexpr DZ_Zone dz_zones[] = {
       .exit = dz::AND(
           DZ_Check::Window(DZ_Metrics::pitch_error_deg,
               { .stat = DZ_Stat::MEAN, .thresh = 20.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 }),
-          DZ_Check::Window(DZ_Metrics::pitch_error_deg,
+          DZ_Check::Window(DZ_Metrics::att_pitch_deg,
               { .stat = DZ_Stat::PEAK, .thresh = 30.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 })) },
 
     // Zone 5: deploy parachute + disarm
@@ -198,12 +198,32 @@ void Plane::danger_zone_update()
         if (danger_zone.actions_enabled()) {
             // Zone 4: autobailout to QLOITER
             if (level >= 4 && danger_zone_last_level < 4) {
-                set_mode_by_number(Mode::Number::QLOITER, ModeReason::DANGERZONE_BAILOUT);
+                // Restrict autobailout to specific modes
+                const Mode::Number mode_num = control_mode->mode_number();
+                const bool bailout_excluded =
+                    mode_num == Mode::Number::QSTABILIZE ||
+                    mode_num == Mode::Number::QHOVER ||
+                    mode_num == Mode::Number::QLOITER ||
+#if QAUTOTUNE_ENABLED
+                    mode_num == Mode::Number::QAUTOTUNE ||
+#endif
+                    mode_num == Mode::Number::QACRO;
+                if (!bailout_excluded) {
+                    // save the pre-bailout mode so it can be restored on recovery
+                    danger_zone_resume_mode = control_mode->mode_number();
+                    set_mode_by_number(Mode::Number::QLOITER, ModeReason::DANGERZONE_BAILOUT);
+                }
             }
 
-            // // Mission resumption after exiting Zone 4
-            // if (level < 4 && danger_zone_last_level >= 4) {
-            // }
+            // Mission resumption after exiting Zone 4
+            if (level < 4 && danger_zone_last_level >= 4) {
+                // Only resume if the current mode is QLoiter 
+                // and the mode reason is bailout from the Danger Zone module
+                if (control_mode == &mode_qloiter &&
+                    control_mode_reason == ModeReason::DANGERZONE_BAILOUT) {
+                    set_mode_by_number(danger_zone_resume_mode, ModeReason::DANGERZONE_RECOVERED);
+                }
+            }
 
             // Zone 5: Disarm and deploy parachute
             if (level >= 5 && danger_zone_last_level < 5) {
