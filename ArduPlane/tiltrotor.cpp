@@ -336,7 +336,9 @@ void Tiltrotor::continuous_update(void)
     } else if (!quadplane.assisted_flight &&
                (plane.control_mode == &plane.mode_qacro ||
                plane.control_mode == &plane.mode_qstabilize ||
-               plane.control_mode == &plane.mode_qhover))
+               plane.control_mode == &plane.mode_qhover ||
+               plane.control_mode == &plane.mode_qloiter
+            ))
     {
         //set tilt angle to 0
         slew(0);
