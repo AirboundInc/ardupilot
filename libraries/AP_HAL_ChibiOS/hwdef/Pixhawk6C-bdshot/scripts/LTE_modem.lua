@@ -51,8 +51,10 @@ local P = {
     BAND        = bind_add_param('BAND', 21, -1),
     GRACE       = bind_add_param('GRACE', 22, 3), 
     STUCK_T     = bind_add_param('STUCK_T', 23, 15),
-    TX_DEAD     = bind_add_param('TX_DEAD', 24, 5)   -- consecutive QISEND stalls before declaring socket dead (0=disable)
+    TX_DEAD     = bind_add_param('TX_DEAD', 24, 5),   -- consecutive QISEND stalls before declaring socket dead (0=disable)
+    SOCK_T      = bind_add_param('SOCK_T', 25, 4)     -- short timeout (s) for DP recovery steps before hard reset
 }
+
 
 local supports_routing = networking and networking.add_route -- luacheck: ignore 143
 local P_ROUTE = {}
@@ -709,8 +711,10 @@ function dp.process_tx(now_ms, budget)
                 end
                 cs.last_data_ms = now_ms
                 cs.cipopen_sent = false
-                step = modem.socket_state and "SOCKET_STATE" or "CIPOPEN"
+                buf.setup = ""
+                step = "CEREG_CHECK"
                 return
+
             end
             gcs:send_text(MAV_SEVERITY.WARNING,
                 string.format('LTE: QISEND stalled %d/%d', cs.consec_stall, math.max(1, math.floor(P.TX_DEAD:get()))))
@@ -941,6 +945,40 @@ local function step_CREG()
     -- Unconditionally poll the modem (the 200ms delay in run_step prevents spamming)
     AT_send(modem.fast_connect and 'AT+CEREG?\r\n' or 'AT+CREG?\r\n')
 end
+
+-- Recovery router. After the stall counter declares the socket dead we don't
+-- know whether the modem is still registered (socket wedged, radio fine) or
+-- genuinely fell off the network. The modem won't volunteer it, so ask once:
+--   registered (1/5)   -> only the socket died -> SOCKET_STATE (reopen ~1-2s)
+--   not reg (0/2/3/4)  -> radio dropped -> close socket, go re-register (CREG)
+--   no reply in SOCK_T -> AT channel wedged -> hard reset (run_step watchdog)
+-- Routes each failure to the right recovery immediately instead of always
+-- trying reopen first and finding out registration is gone the slow way (via
+-- the CIPOPEN retry ladder).
+local function step_CEREG_CHECK()
+    local s = uart_read()
+    if s and #s > 0 then buf.setup = buf.setup .. s end
+    if #buf.setup > 2048 then buf.setup = buf.setup:sub(-1024) end
+
+    local reg = buf.setup:match('+CEREG:%s*%d,(%d+)') or buf.setup:match('+CEREG:%s*(%d+)')
+    if reg then
+        buf.setup = ""
+        if reg == "1" or reg == "5" then
+            gcs:send_text(MAV_SEVERITY.INFO, 'LTE: registered - socket dead, reopening')
+            cs.cipopen_sent = false
+            step = modem.socket_state and "SOCKET_STATE" or "CIPOPEN"
+        else
+            gcs:send_text(MAV_SEVERITY.WARNING, string.format('LTE: not registered (CEREG=%s) - re-registering', reg))
+            if not cs.disconnect_ms then cs.disconnect_ms = millis():tofloat() end
+            if modem.cipclose then AT_send(modem.cipclose) end
+            cs.cipopen_sent = false; cs.hard_reset_strikes = 0
+            step = "CREG"
+        end
+        return
+    end
+    AT_send(modem.fast_connect and 'AT+CEREG?\r\n' or 'AT+CREG?\r\n')
+end
+
 
 local function step_SOCKET_STATE()
     local s = uart_read()
@@ -1276,7 +1314,8 @@ local function step_CONNECTED()
             cs.cipopen_sent = false
             cs.tx_state = "idle"; cs.tx_pending = ""
             cs.consec_stall = 0
-            step = modem.socket_state and "SOCKET_STATE" or "CIPOPEN"; return
+            buf.setup = ""
+            step = "CEREG_CHECK"; return
         else
             gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: data timeout')
             if not cs.disconnect_ms then cs.disconnect_ms = millis():tofloat() - (P.TIMEOUT:get() * 1000) end
@@ -1419,6 +1458,17 @@ local function run_step()
     if step == "CONNECTED" then step_CONNECTED(); return 5 end
 
     local time_in_step = (now_ms:tofloat() - cs.step_timer_ms) / 1000
+    -- DP fast-recovery steps talk to an already-up modem that answers in <1s.
+    -- If one goes silent past SOCK_T the AT channel is wedged; hard reset now
+    -- instead of waiting the full 15s STUCK_T (~11s saved per silent reboot).
+    if not step_changed and cs.direct_push
+       and (step == "CEREG_CHECK" or step == "SOCKET_STATE" or step == "CIPCLOSE") then
+        local sock_t = P.SOCK_T:get()
+        if sock_t > 0 and time_in_step > sock_t then
+            gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE: %s silent %ds - hard reset", step, math.floor(time_in_step)))
+            reset_to_ATI(); return 1000
+        end
+    end
     if not step_changed and step ~= "ATI" and step ~= "CMUX" and step ~= "CPIN" and step ~= "CREG" and step ~= "HALT" then
         if time_in_step > P.STUCK_T:get() then
             gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE: %s timeout after %ds", step, P.STUCK_T:get()))
@@ -1445,6 +1495,7 @@ local function run_step()
     if step == "BAUD" then step_BAUD(); return 50 end
     if step == "CREG" then step_CREG(); return 150 end 
     if step == "SIGNAL_GATE" then step_SIGNAL_GATE(); return 50 end
+    if step == "CEREG_CHECK" then step_CEREG_CHECK(); return 100 end
     if step == "SOCKET_STATE" then step_SOCKET_STATE(); return 50 end
     if step == "CGACT" then step_CGACT(); return 500 end
     if step == "CIPMODE" then step_CIPMODE(); return 200 end
