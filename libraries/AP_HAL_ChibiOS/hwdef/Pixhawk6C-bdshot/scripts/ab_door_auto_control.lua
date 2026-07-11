@@ -1,5 +1,6 @@
 --[[
   Auto door opening and closing Lua Script
+  This script works only with Airbound 4.5.7.5 - hf5 or above
 ]]
 
 -- ###############################################################################
@@ -11,6 +12,7 @@ local CONFIG_UPDATE_INTERVAL_MS = 5000
 local RC_SWITCH_THRESHOLD = 1500
 local PWM_SAFE_MIN = 800
 local PWM_SAFE_MAX = 2200
+local backtransition_complete_time_ms = nil
 
 -- Modes for landing
 local QMODES = {
@@ -108,6 +110,7 @@ local state = {
     last_config_update = 0,
     was_armed = false,
     landing_latch = false,
+    one_forward_transition_complete = false,
     -- State table for each servo's position
     servos = {}
 }
@@ -271,6 +274,18 @@ function get_tailsitter_flight_state()
     else return "TRANSITIONING" end
 end
 
+function in_vtol_flight()
+    local vtol_active = not quadplane:tailsitter_in_vtol_transition() and quadplane:in_vtol_mode()
+    if vtol_active then
+        if backtransition_complete_time_ms == nil then
+            backtransition_complete_time_ms = millis():tofloat()
+        end
+        return true
+    end
+    backtransition_complete_time_ms = nil
+    return false
+end
+
 function is_in_landing_phase(current_mode)
     local MODES = { auto = 10 } -- other valid modes which need additional checks
     if not current_mode then return false end
@@ -302,17 +317,18 @@ function run_auto_mode()
 
     local current_mode = vehicle:get_mode()
     if not current_mode then return end
+    local alt = get_current_altitude_agl()
     
     local flight_state = get_tailsitter_flight_state()
     if not flight_state then return end
 
     local is_currently_in_vtol = (flight_state == "VTOL")
     local is_currently_in_fw = (flight_state == "FIXED_WING")
+    local is_vtol_flight = in_vtol_flight()
 
     -- Phase 1 - Check for takeoff
     if not state.takeoff_climbout_complete then
         if is_currently_in_vtol then
-            local alt = get_current_altitude_agl()
             if alt and alt >= config.cache.alt_trig_m then
                 log_message(MAV_SEVERITY.INFO, "Takeoff alt " .. string.format("%.1f", alt) .. "m reached - closing doors")
                 if close_all_doors() then
@@ -326,27 +342,19 @@ function run_auto_mode()
         return
     end
 
-    -- Phase 2 - Checks during flight and landing
-    -- DETECT TRANSITION (FW -> VTOL) to set the Landing Latch
-    if state.was_in_fw_state and is_currently_in_vtol then
-         state.landing_latch = true
-         log_message(MAV_SEVERITY.INFO, "Transition to VTOL detected. Doors OPEN.")
-    end
-
-    -- SAFETY: We DO NOT clear latch on (VTOL -> FW) transition anymore,
-    -- because instability can look like a FW transition
-    -- APPLY STATE BASED ON MODES
-    if is_in_landing_phase(current_mode) then
-        if state.landing_latch then
-            -- We are latched OPEN.
-            -- Stays TRUE even if pitch goes to 0 (Fix for instability safety).
+    -- Change Door state based on Flight Phase:FW, VTOL
+    if is_vtol_flight then
+        -- Only open doors in VTOL after first fixed wing transition is complete. Indicates VTOL takeoff is complete 
+        if state.one_forward_transition_complete then
             open_all_doors()
-        end -- latch checking
+        end
     else
         -- Non-VTOL Modes (FW, FBWA, MANUAL, etc.)
         -- Auto mode with mission commands other than Loiter/nav_vtol_land or other landing command ids
-        -- Force Latch Reset here and close doors
-        state.landing_latch = false
+        -- VTOL Takoff complete is indicated by completion of first fixedwing transition
+        if not state.one_forward_transition_complete then
+            state.one_forward_transition_complete = true
+        end
         close_all_doors()
     end -- landing phase checking
 
@@ -420,6 +428,7 @@ function update()
         state.was_in_vtol_state = false
         state.was_in_fw_state = false
         state.landing_latch = false
+        state.one_forward_transition_complete = false
     elseif not is_armed_now and state.was_armed then
         log_message(MAV_SEVERITY.INFO, "Disarmed. Resetting state and opening doors.")
         open_all_doors()
@@ -428,6 +437,7 @@ function update()
         state.was_in_vtol_state = false
         state.was_in_fw_state = false
         state.landing_latch = false
+        state.one_forward_transition_complete = false
     end
     state.was_armed = is_armed_now
 
