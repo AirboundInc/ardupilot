@@ -2155,6 +2155,40 @@ function quadplane:abort_landing() end
 function quadplane:tailsitter_in_vtol_transition() end
 
 -- desc
+---@return number -- roll_cd
+---@return number -- pitch_cd
+---@return number -- yaw_cd
+function qp_att_desired() end
+
+-- desc
+---@return number -- roll_cd
+---@return number -- pitch_cd
+---@return number -- yaw_cd
+function qp_att_actual() end
+
+-- desc
+---@return number -- roll_dps
+---@return number -- pitch_dps
+---@return number -- yaw_dps
+function qp_angle_rate() end
+
+
+--desc
+---@param axis integer
+---| '0' # Roll axis
+---| '1' # Pitch axis
+---| '2' # Yaw axis
+---@return number -- P 
+---@return number -- I
+---@return number -- D
+---@return number -- FF
+---@return number -- target rad/s
+---@return number -- actual rad/s
+---@return number -- error rad/s
+function qp_rate_pid_info(axis) end
+
+-- desc
+---@class LED
 LED = {}
 
 -- desc
