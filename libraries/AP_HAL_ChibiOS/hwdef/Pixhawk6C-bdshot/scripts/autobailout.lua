@@ -5,7 +5,7 @@ local para_ahrs_pitch_threshold_min = -50
 
 -- 1. SETUP PARAMETER TABLE
 local KEY = 110
-assert(param:add_table(KEY, "AUTOB_", 15), "AUTOB table failed")
+assert(param:add_table(KEY, "AUTOB_", 16), "AUTOB table failed")
 
 -- 2. ADD PARAMETERS
 assert(param:add_param(KEY, 1, "PIT_LIM",  50),  'could not add AUTOB_PIT_LIM')   -- ATT pitch(VTOL frame) threshold to enter bailout (deg)
@@ -23,6 +23,7 @@ assert(param:add_param(KEY, 12,"PEAK_LIM", 30),'could not add AUTOB_PEAK_LIM')
 assert(param:add_param(KEY, 13, "DBG_EN", 1), 'could not add AUTOB_DBG_EN')  -- 1 = enable dataflash logging
 assert(param:add_param(KEY, 14, "PRED_INT", 1000), 'could not add AUTOB_PRED_INT')  -- Rate based VTOL pitch prediction interval
 assert(param:add_param(KEY, 15, "PRED_ANG", 105), 'could not add AUTOB_PRED_ANG') -- VTOL frame absolute rate based predicted angle threshold for autobailout
+assert(param:add_param(KEY, 16, "RES_CNT", 5), 'could not add AUTOB_RES_CNT') -- VTOL frame absolute rate based predicted angle threshold for autobailout
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
@@ -48,6 +49,7 @@ local p_win_n   = bind_param("AUTOB_WIN_SMP")
 local p_dbg_en = bind_param("AUTOB_DBG_EN")
 local p_prediction_interval = bind_param("AUTOB_PRED_INT")
 local p_pred_angle_threshold = bind_param("AUTOB_PRED_ANG")
+local p_autobailout_resume_count = bind_param("AUTOB_RES_CNT")
 
 -- Read Parachute trigger channel number from FCU parameter list 
 
@@ -67,6 +69,8 @@ local last_mode_idx = 0
 local pre_bailout_mode = nil
 local first_pitch_exceeded_t = nil
 local gcs_announce_autobailout = false
+local autobresume_count = 0
+local max_autobresume_count = p_autobailout_resume_count:get()
 
 local WINDOW_SIZE     = 50
 local pitch_error_buf = {}
@@ -229,7 +233,7 @@ function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode)
             local time_diff = current_time - first_pitch_exceeded_t
             if time_diff > pitch_timeout then
                 first_pitch_exceeded_t = nil  
-                gcs:send_text(2, "AUTOB: VTOL pitch exceeding threshold: " .. tostring(vtolpitch))
+                gcs:send_text(6, "AUTOB: VTOL pitch exceeding threshold: " .. tostring(vtolpitch))
                 return true     
             end
         end
@@ -269,11 +273,21 @@ function is_predicted_vtol_pitch_exceeding_threshold(current_vtol_pitch_deg, cur
     local predicted_next_instance_vtol_pitch = current_vtol_pitch_deg + current_vtol_pitch_rate * (pitch_prediction_interval/1000)
 
     if math.abs(predicted_next_instance_vtol_pitch) > predicted_angle_threshold then
-        gcs:send_text(2, "AUTOB: PredPitch exceeds thresh: " .. tostring(predicted_next_instance_vtol_pitch))
+        gcs:send_text(6, "AUTOB: PredPitch exceeds thresh: " .. tostring(predicted_next_instance_vtol_pitch))
         return true
     end
     return false
 end
+
+function update_autoresume_count()     
+    max_autobresume_count = p_autobailout_resume_count:get()
+    
+    -- Reset autobresume_count after disarming flight 
+    if not arming:is_armed() and autobresume_count > 0 then
+        autobresume_count = 0
+    end 
+end
+
 
 function update()
     local loop_ms = p_loop_ms:get() or 100
@@ -328,6 +342,8 @@ function update()
     end
     
     is_vtol_flight = in_vtol_flight()
+
+    update_autoresume_count()
     -- ==========================================================
     -- LOGIC: MONITORING (Checking Pitch)
     -- ==========================================================
@@ -342,7 +358,11 @@ function update()
     -- ==========================================================
     elseif autobailout_active then
         if not gcs_announce_autobailout then
-            gcs:send_text(2, "AUTOB: Autobailout Active")
+            gcs:send_text(4, "AUTOB: Autobailout Active")
+            if autobresume_count >= max_autobresume_count then
+                gcs:send_text(4,"AUTOB: Autoresume deactivated")
+                gcs:send_text(2,"AUTOB: Resume manually")
+            end
             gcs_announce_autobailout = true
         end
         if current_mode ~= MODE_QLOITER then
@@ -355,13 +375,14 @@ function update()
             post_bailout_sample_count = math.min(post_bailout_sample_count, WINDOW_SIZE)
             local avg_lim  = p_avg_lim:get()  or 20
             local peak_lim = p_peak_lim:get() or 30
-            if post_bailout_sample_count >= WINDOW_SIZE and avg_err < avg_lim and peak_ang < peak_lim then
+            if post_bailout_sample_count >= WINDOW_SIZE and avg_err < avg_lim and peak_ang < peak_lim and autobresume_count < max_autobresume_count then
                 if pre_bailout_mode and vehicle:set_mode(pre_bailout_mode) then
                     local recovered_mode = pre_bailout_mode
                     autobailout_active = false
                     pre_bailout_mode = nil
                     gcs_announce_autobailout = false
-                    gcs:send_text(2, "AUTOB: Recovering to mode " .. tostring(recovered_mode))
+                    autobresume_count = autobresume_count+1
+                    gcs:send_text(2, string.format("AUTOB: Recovering (%d) to mode %s",autobresume_count,tostring(recovered_mode)))
                 end
             end
         end
