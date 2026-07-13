@@ -513,7 +513,7 @@ void Tailsitter::output(void)
     tilt_left = 0.0f;
     tilt_right = 0.0f;
     float pitch_cd = 0.0f, weathervane_gain = 0.0f, gain_slope = 0.0f;
-
+    float extra_elevator = 0.0f;
     float pitch_rate_effort = 0.0f, control_effort_gain_slope = 0.0f;
 
     if (vectored_hover_gain > 0) {
@@ -529,7 +529,6 @@ void Tailsitter::output(void)
         int32_t pitch_error_cd = (des_pitch_cd - quadplane.ahrs_view->pitch_sensor) * 0.5;
         float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
         float extra_sign = extra_pitch > 0?1:-1;
-        float extra_elevator = 0;
         if (!is_zero(extra_pitch) && quadplane.in_vtol_mode()) {
             extra_elevator = extra_sign * powf(fabsf(extra_pitch), vectored_hover_power) * SERVO_MAX;
         }
@@ -578,13 +577,13 @@ void Tailsitter::output(void)
     quadplane.attitude_control->get_tilt_motor_angle((constrain_float(tilt_left, -4500.0f, 4500.0f) + constrain_float(tilt_right, -4500.0f, 4500.0f)) / 2.0f);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
-
+    float position_pitch_sp = quadplane.pos_control->get_pitch_cd();
     // Add logging for desired thrust vectoring angles
-    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,AhrsPitch,WVGain,WVGainS",
-            "sddd--", // seconds, degrees
-            "F00000", // micro (1e-6), no mult (1e0)
-            "Qfffff", // uint64_t, float
-            AP_HAL::micros64(), tilt_left/100, tilt_right/100,pitch_cd/100,weathervane_gain,gain_slope);
+    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,AhrsPit,WVGain,VHPwEe,PosPit",
+            "sddd--d", // seconds, degrees
+            "F000000", // micro (1e-6), no mult (1e0)
+            "Qffffff", // uint64_t, float
+            AP_HAL::micros64(),tilt_left/100,tilt_right/100,pitch_cd/100,weathervane_gain,extra_elevator/100,position_pitch_sp/100);
 
     // Check for saturated limits
     bool tilt_lim = _is_vectored && ((fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorLeft)) >= SERVO_MAX) || (fabsf(SRV_Channels::get_output_scaled(SRV_Channel::Aux_servo_function_t::k_tiltMotorRight)) >= SERVO_MAX));
