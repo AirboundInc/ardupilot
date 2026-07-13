@@ -50,8 +50,9 @@ void ModeQStabilize::run()
     float pilot_throttle_scaled = quadplane.get_pilot_throttle();
 
     if (quadplane.tiltrotor.in_vtol_transition(now)) {
-        // linearly blend from the last fixed wing throttle to the pilot's
-        // vertical throttle demand over the backtransition delay window
+        // hold the last fixed wing throttle steady, then linearly blend
+        // to the pilot's vertical throttle demand, over the backtransition
+        // hold/delay windows
         pilot_throttle_scaled = quadplane.tiltrotor.get_backtrans_throttle(now, pilot_throttle_scaled);
     }
 

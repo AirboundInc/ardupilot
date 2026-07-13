@@ -44,8 +44,9 @@ public:
     void dual_axis_output();
     bool in_vtol_transition(uint32_t now) const;
 
-    // linearly blend from the last fixed wing throttle to the pilot's
-    // vertical throttle demand over the Q_BTDLY_MS backtransition window
+    // hold the last fixed wing throttle steady for Q_TILT_FWHLD_MS, then
+    // linearly blend to the pilot's vertical throttle demand over the
+    // following Q_TILT_BTDLY_MS
     float get_backtrans_throttle(uint32_t now, float pilot_throttle);
 
     // most recent k_throttle value written by AP_MotorsTailsitter's mixer
@@ -98,8 +99,15 @@ public:
     AP_Float vectoring_gain_fw;
     AP_Float back_trans_angle;  // TODO: Implement this
 
-    // Time to run FW controller after backtransition into VTOL mode (dual axis tiltrotor)
+    // Time to blend from held FW throttle to pilot throttle after the
+    // fw_throttle_hold_ms hold period, following a backtransition into
+    // VTOL mode (dual axis tiltrotor)
     AP_Float back_trans_delay_ms;
+
+    // Time to hold the last FW throttle steady after backtransition into
+    // VTOL mode, before blending to pilot throttle over back_trans_delay_ms
+    // (dual axis tiltrotor)
+    AP_Float fw_throttle_hold_ms;
 
     float current_tilt;
     float current_throttle;
