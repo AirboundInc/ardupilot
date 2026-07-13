@@ -89,9 +89,11 @@ public:
     AP_Float cg_trim_limit_deg;
     AP_Float cg_trim_gain;
     AP_Int16 back_trans_delay_ms;
-
+    AP_Float back_trans_throttle;
 
     float current_tilt;
+    float back_trans_throttle_current;
+    bool back_trans_active;
     float current_throttle;
     bool _motors_active:1;
     float transition_yaw_cd;

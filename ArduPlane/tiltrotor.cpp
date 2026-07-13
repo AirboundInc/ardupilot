@@ -111,6 +111,13 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("CG_GAIN", 14, Tiltrotor, cg_trim_gain, 2.0),
 
+    // @Param: BT_THR
+    // @DisplayName: Tiltrotor back-transition throttle
+    // @Description: Target throttle during back-transition (Axis 1 retracting from forward flight toward hover). Throttle ramps smoothly from whatever the fixed-wing throttle was at the moment back-transition starts, up to this value. -1 uses the vehicle's hover throttle estimate instead of a fixed value.
+    // @Range: -1 1
+    // @User: Standard
+    AP_GROUPINFO("BT_THR", 15, Tiltrotor, back_trans_throttle, -1),
+
 
     AP_GROUPEND
 };
@@ -805,10 +812,74 @@ void Tiltrotor::dual_axis_output(void)
     if (quadplane.in_vtol_mode() || quadplane.assisted_flight) {
         const float throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
         if (quadplane.assisted_flight) {
+            back_trans_active = false;   // reset so the next back-transition starts fresh
             quadplane.hold_stabilize(throttle * 0.01f);
             quadplane.motors_output(true);
         } else {
-            quadplane.motors_output(false);
+            const float vtol_tilt_limit = cg_trim_limit_deg * (1.0f/90.0f);
+            const bool retracting = fabsf(current_tilt) > vtol_tilt_limit;
+
+            if (retracting) {
+                if (!back_trans_active) {
+                    // Back-transition just started: begin the ramp from
+                    // whatever throttle was actually in use a moment ago
+                    // (the fixed-wing/cruise throttle), not from zero.
+                    back_trans_throttle_current = motors->get_throttle();
+                    back_trans_active = true;
+                    // Prime the Z-controller once, at the moment we start
+                    // overriding — not every loop. relax_z_controller() is
+                    // meant as a one-shot re-initialisation; calling it
+                    // continuously pins its internal position/velocity
+                    // targets to "current" every loop, preventing it from
+                    // ever building a coherent trajectory during the
+                    // override, which produces its own discontinuity the
+                    // moment we stop calling it and hand control back.
+                    quadplane.pos_control->relax_z_controller(back_trans_throttle_current);
+                }
+
+                const float target_throttle = is_negative(back_trans_throttle) ?
+                    motors->get_throttle_hover() : back_trans_throttle;
+
+                const float ramp_rate = plane.G_Dt / 3.0f;   // ~3s ramp — tune this
+                back_trans_throttle_current = constrain_float(
+                    back_trans_throttle_current + constrain_float(target_throttle - back_trans_throttle_current, -ramp_rate, ramp_rate),
+                    0.0f, 1.0f);
+
+                #if HAL_LOGGING_ENABLED
+                AP::logger().WriteStreaming("DBTT", "TimeUS,Assist,Retr,Active,CTilt,BTCur,Targ",
+                        "s---d--", // seconds, no unit x3, degrees, no unit x2
+                        "F000000", // micro, no mult x6
+                        "QBBBfff",
+                        AP_HAL::micros64(),
+                        (uint8_t)quadplane.assisted_flight,
+                        (uint8_t)retracting,
+                        (uint8_t)back_trans_active,
+                        current_tilt*90.0f,
+                        back_trans_throttle_current,
+                        target_throttle);
+                #endif
+
+
+                quadplane.attitude_control->set_throttle_out(back_trans_throttle_current, true, 0);
+            } else {
+                // Axis 1 has retracted into the trim range — back-transition
+                // is done, hand full authority back to the closed-loop
+                // Z-controller.
+                back_trans_active = false;
+            }
+
+            quadplane.motors_output(true);
+
+            #if HAL_LOGGING_ENABLED
+                AP::logger().WriteStreaming("DPRP", "TimeUS,BTCur,TL,TR",
+                    "s---",
+                    "F000",
+                    "Qfff",
+                    AP_HAL::micros64(),
+                    back_trans_throttle_current,
+                    SRV_Channels::get_output_scaled(SRV_Channel::k_throttleLeft),
+                    SRV_Channels::get_output_scaled(SRV_Channel::k_throttleRight));
+            #endif
         }
 
         // in FW transition: also write stick throttle directly to ESCs
@@ -854,11 +925,9 @@ void Tiltrotor::dual_axis_output(void)
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
 
         return;
-        
-
     }
 
-
+    back_trans_active = false;
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
 
@@ -876,8 +945,6 @@ void Tiltrotor::dual_axis_output(void)
         SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle + 50.0f * rudder_dt, 0, 100));
         SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle - 50.0f * rudder_dt, 0, 100));
     }
-
-
 
     // forward flight: Axis 1 is at 90deg (motors fully forward)
     // use rudder for differential yaw vectoring via Axis 2
