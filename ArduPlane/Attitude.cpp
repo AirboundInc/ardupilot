@@ -492,15 +492,40 @@ int16_t Plane::calc_nav_yaw_coordinated()
             plane.guided_state.last_forced_rpy_ms.z > 0 &&
             millis() - plane.guided_state.last_forced_rpy_ms.z < 3000) {
         commanded_rudder = plane.guided_state.forced_rpy_cd.z;
-    } else if (autotuning && g.acro_yaw_rate > 0 && yawController.rate_control_enabled()) {
-        // user is doing an AUTOTUNE with yaw rate control
-        const float rudd_expo = rudder_in_expo(true);
-        const float yaw_rate = (rudd_expo/SERVO_MAX) * g.acro_yaw_rate;
-        // add in the coordinated turn yaw rate to make it easier to fly while tuning the yaw rate controller
-        const float coordination_yaw_rate = degrees(GRAVITY_MSS * tanf(radians(nav_roll_cd*0.01f))/MAX(aparm.airspeed_min,smoothed_airspeed));
-        commanded_rudder = yawController.get_rate_out(yaw_rate+coordination_yaw_rate,  speed_scaler, false);
-        using_rate_controller = true;
-    } else {
+    }
+    else if (g.acro_yaw_rate > 0 && yawController.rate_control_enabled()) {
+        // yaw rate controller enabled (YAW_RATE_ENABLE=1): route pilot rudder
+        // + turn-coordination feedforward through the filtered rate PID in
+        // all FW modes instead of the washout-based YAW2SRV_DAMP/INT damper
+         const float rudd_expo = rudder_in_expo(true);
+         const float yaw_rate = (rudd_expo/SERVO_MAX) * g.acro_yaw_rate;
+         // add in the coordinated turn yaw rate to make it easier to fly while tuning the yaw rate controller
+         const float coordination_yaw_rate = degrees(GRAVITY_MSS * tanf(radians(nav_roll_cd*0.01f))/MAX(aparm.airspeed_min,smoothed_airspeed));
+        
+        // Heading hold: no fin means no passive restoring moment when
+        // wings-level, so lock the nose to a heading once the pilot
+        // centers rudder and we're not turning, same pattern CRUISE
+        // already uses on roll via locked_heading.
+        float heading_hold_rate = 0;
+        if (is_positive(g2.yaw_heading_p) && rudder_in == 0 && abs(nav_roll_cd) < 4500) {
+            if (yaw_heading_lock_timer_ms == 0) {
+                yaw_heading_lock_timer_ms = millis();
+            } else if (!yaw_heading_locked && millis() - yaw_heading_lock_timer_ms > 500) {
+                yaw_heading_locked = true;
+                yaw_locked_heading_cd = ahrs.yaw_sensor;
+            }
+            if (yaw_heading_locked) {
+                const float heading_error_cd = wrap_180_cd(yaw_locked_heading_cd - ahrs.yaw_sensor);
+                heading_hold_rate = constrain_float(heading_error_cd * 0.01f * g2.yaw_heading_p, -g.acro_yaw_rate, g.acro_yaw_rate);
+            }
+        } else {
+            yaw_heading_locked = false;
+            yaw_heading_lock_timer_ms = 0;
+        }
+
+       commanded_rudder = yawController.get_rate_out(yaw_rate+coordination_yaw_rate+heading_hold_rate,  speed_scaler, false);
+         using_rate_controller = true;
+     } else {
         if (control_mode == &mode_stabilize && rudder_in != 0) {
             disable_integrator = true;
         }
