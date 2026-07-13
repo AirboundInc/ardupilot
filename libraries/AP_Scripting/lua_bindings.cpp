@@ -21,6 +21,7 @@
 
 #include "lua/src/lauxlib.h"
 
+
 extern const AP_HAL::HAL& hal;
 
 extern "C" {
@@ -952,6 +953,110 @@ int lua_range_finder_handle_script_msg(lua_State *L) {
     }
 
     lua_pushboolean(L, result);
+    return 1;
+}
+#endif
+
+#if APM_BUILD_TYPE(APM_BUILD_ArduPlane) && HAL_QUADPLANE_ENABLED
+#include "../ArduPlane/quadplane.h"
+#include <AC_PID/AP_PIDInfo.h>
+int lua_get_rate_pid_info(lua_State *L) {
+    binding_argcheck(L, 1);
+
+    const uint8_t axis = get_uint8_t(L, 1);  // 0=roll, 1=pitch, 2=yaw
+
+    auto *qp = QuadPlane::get_singleton();
+    if (qp == nullptr) {
+        return luaL_error(L, "QuadPlane not available");
+    }
+    auto *att = qp->get_attitude_control();
+    if (att == nullptr) {
+        return luaL_error(L, "attitude_control not available");
+    }
+
+    const AP_PIDInfo *info = nullptr;
+    switch (axis) {
+        case 0: info = &att->get_rate_roll_pid().get_pid_info();  break;
+        case 1: info = &att->get_rate_pitch_pid().get_pid_info(); break;
+        case 2: info = &att->get_rate_yaw_pid().get_pid_info();   break;
+        default: return luaL_error(L, "axis must be 0=roll 1=pitch 2=yaw");
+    }
+
+    lua_newtable(L);
+    lua_pushnumber(L, info->P);      lua_setfield(L, -2, "P");
+    lua_pushnumber(L, info->I);      lua_setfield(L, -2, "I");
+    lua_pushnumber(L, info->D);      lua_setfield(L, -2, "D");
+    lua_pushnumber(L, info->FF);     lua_setfield(L, -2, "FF");
+    lua_pushnumber(L, info->target); lua_setfield(L, -2, "target");
+    lua_pushnumber(L, info->actual); lua_setfield(L, -2, "actual");
+    lua_pushnumber(L, info->error);  lua_setfield(L, -2, "error");
+
+    return 1;
+}
+
+int lua_get_att_target_euler_cd(lua_State *L) {
+    binding_argcheck(L, 0);
+
+    auto *qp = QuadPlane::get_singleton();
+    if (qp == nullptr) {
+        return luaL_error(L, "QuadPlane not available");
+    }
+    auto *att = qp->get_attitude_control();
+    if (att == nullptr) {
+        return luaL_error(L, "attitude_control not available");
+    }
+
+    const Vector3f target = att->get_att_target_euler_cd();
+
+    lua_newtable(L);
+    lua_pushnumber(L, target.x); lua_setfield(L, -2, "roll_cd");
+    lua_pushnumber(L, target.y); lua_setfield(L, -2, "pitch_cd");
+    lua_pushnumber(L, target.z); lua_setfield(L, -2, "yaw_cd");
+
+    return 1;
+}
+
+int lua_get_rate_ef_targets(lua_State *L) {
+    binding_argcheck(L, 0);
+
+    auto *qp = QuadPlane::get_singleton();
+    if (qp == nullptr) {
+        return luaL_error(L, "QuadPlane not available");
+    }
+    auto *att = qp->get_attitude_control();
+    if (att == nullptr) {
+        return luaL_error(L, "attitude_control not available");
+    }
+
+    const Vector3f &rates = att->get_rate_ef_targets();
+
+    lua_newtable(L);
+    lua_pushnumber(L, degrees(rates.x)); lua_setfield(L, -2, "roll_dps");
+    lua_pushnumber(L, degrees(rates.y)); lua_setfield(L, -2, "pitch_dps");
+    lua_pushnumber(L, degrees(rates.z)); lua_setfield(L, -2, "yaw_dps");
+
+    return 1;
+}
+
+int lua_get_actual_euler_cd(lua_State *L) {
+    binding_argcheck(L, 0);
+    auto *qp = QuadPlane::get_singleton();
+    if (qp == nullptr) {
+        return luaL_error(L, "QuadPlane not available");
+    }
+    auto *view = qp->get_ahrs_view();
+    if (view == nullptr) {
+        return luaL_error(L, "ahrs_view not available");
+    }
+
+    float roll_cd  = (float)view->roll_sensor;
+    float pitch_cd = (float)view->pitch_sensor;
+    float yaw_cd   = (float)view->yaw_sensor;
+
+    lua_newtable(L);
+    lua_pushstring(L, "roll_cd");  lua_pushnumber(L, roll_cd);  lua_settable(L, -3);
+    lua_pushstring(L, "pitch_cd"); lua_pushnumber(L, pitch_cd); lua_settable(L, -3);
+    lua_pushstring(L, "yaw_cd");   lua_pushnumber(L, yaw_cd);   lua_settable(L, -3);
     return 1;
 }
 #endif
