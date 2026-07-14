@@ -817,7 +817,9 @@ void Tiltrotor::dual_axis_output(void)
             quadplane.motors_output(true);
         } else {
             const float vtol_tilt_limit = cg_trim_limit_deg * (1.0f/90.0f);
-            const bool retracting = fabsf(current_tilt) > vtol_tilt_limit;
+            const bool tilt_retracting = fabsf(current_tilt) > vtol_tilt_limit;
+            const bool still_fast = plane.ahrs.groundspeed() >= 5.0f;
+            const bool retracting = tilt_retracting || still_fast;
 
             if (retracting) {
                 if (!back_trans_active) {
@@ -827,9 +829,11 @@ void Tiltrotor::dual_axis_output(void)
                     back_trans_throttle_current = motors->get_throttle();
                     back_trans_active = true;
                 }
-
+                
+                
                 const float target_throttle = is_negative(back_trans_throttle) ?
                     motors->get_throttle_hover() : back_trans_throttle;
+                
 
                 const float ramp_rate = plane.G_Dt / 3.0f;   // ~3s ramp — tune this
                 back_trans_throttle_current = constrain_float(
