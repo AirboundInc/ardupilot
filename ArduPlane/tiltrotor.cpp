@@ -826,15 +826,6 @@ void Tiltrotor::dual_axis_output(void)
                     // (the fixed-wing/cruise throttle), not from zero.
                     back_trans_throttle_current = motors->get_throttle();
                     back_trans_active = true;
-                    // Prime the Z-controller once, at the moment we start
-                    // overriding — not every loop. relax_z_controller() is
-                    // meant as a one-shot re-initialisation; calling it
-                    // continuously pins its internal position/velocity
-                    // targets to "current" every loop, preventing it from
-                    // ever building a coherent trajectory during the
-                    // override, which produces its own discontinuity the
-                    // moment we stop calling it and hand control back.
-                    quadplane.pos_control->relax_z_controller(back_trans_throttle_current);
                 }
 
                 const float target_throttle = is_negative(back_trans_throttle) ?
@@ -844,6 +835,9 @@ void Tiltrotor::dual_axis_output(void)
                 back_trans_throttle_current = constrain_float(
                     back_trans_throttle_current + constrain_float(target_throttle - back_trans_throttle_current, -ramp_rate, ramp_rate),
                     0.0f, 1.0f);
+
+                quadplane.pos_control->relax_z_controller(back_trans_throttle_current);
+
 
                 #if HAL_LOGGING_ENABLED
                 AP::logger().WriteStreaming("DBTT", "TimeUS,Assist,Retr,Active,CTilt,BTCur,Targ",
@@ -871,15 +865,19 @@ void Tiltrotor::dual_axis_output(void)
             quadplane.motors_output(true);
 
             #if HAL_LOGGING_ENABLED
-                AP::logger().WriteStreaming("DPRP", "TimeUS,BTCur,TL,TR",
+            uint16_t tl_pwm = 0, tr_pwm = 0;
+            SRV_Channels::get_output_pwm(SRV_Channel::k_throttleLeft, tl_pwm);
+            SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, tr_pwm);
+            AP::logger().WriteStreaming("DPRP", "TimeUS,BTCur,TL,TR",
                     "s---",
                     "F000",
-                    "Qfff",
+                    "QfHH",
                     AP_HAL::micros64(),
                     back_trans_throttle_current,
-                    SRV_Channels::get_output_scaled(SRV_Channel::k_throttleLeft),
-                    SRV_Channels::get_output_scaled(SRV_Channel::k_throttleRight));
+                    tl_pwm,
+                    tr_pwm);
             #endif
+
         }
 
         // in FW transition: also write stick throttle directly to ESCs
