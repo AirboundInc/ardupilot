@@ -89,6 +89,41 @@ void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, cons
         }
         break;
 
+    case AIRBOUND_PARAMETER_PARAM_ID_SERIAL:
+        switch (packet.action) {
+        case AIRBOUND_PARAMETER_ACTION_GET: {
+            char serial[MAX_AB_PARAM_SIZE] = {0};
+            AIRBOUND_PARAMETER_RESULT result = AIRBOUND_PARAMETER_RESULT_FAILED;
+            if (g_custom_storage.get_serial(serial, sizeof(serial))) {
+                result = AIRBOUND_PARAMETER_RESULT_OK;
+                gcs().send_text(MAV_SEVERITY_INFO, "AB:SERIAL:%s", serial);
+            } else {
+                gcs().send_text(MAV_SEVERITY_WARNING, "AB:Failed to fetch serial ID");
+            }
+            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_SERIAL, (const char*)serial, result);
+            break;
+        }
+        case AIRBOUND_PARAMETER_ACTION_SET: {
+            char serial[MAX_AB_PARAM_SIZE] = {0};
+            AIRBOUND_PARAMETER_RESULT result = AIRBOUND_PARAMETER_RESULT_FAILED;
+            if (g_custom_storage.set_serial(packet.value)) {
+                gcs().send_text(MAV_SEVERITY_INFO, "AB:Serial ID updated");
+                result = AIRBOUND_PARAMETER_RESULT_OK;
+            } else {
+                gcs().send_text(MAV_SEVERITY_WARNING, "AB:Failed to update serial ID");
+            }
+            g_custom_storage.get_serial(serial, sizeof(serial));
+            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_SERIAL, (const char*)serial, result);
+            break;
+        }
+        default: {
+            char buf[MAX_AB_PARAM_SIZE] = {0};
+            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_SERIAL, (const char*)buf, AIRBOUND_PARAMETER_RESULT_UNSUPPORTED);
+            break;
+        }
+        }
+        break;
+
     default: {
         char buf[MAX_AB_PARAM_SIZE] = {0};
         mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_PASS, (const char*)buf, AIRBOUND_PARAMETER_RESULT_UNSUPPORTED);

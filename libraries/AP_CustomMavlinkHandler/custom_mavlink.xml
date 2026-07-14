@@ -10,6 +10,7 @@
     <enum name="AIRBOUND_PARAMETER_PARAM_ID">
       <entry value="1" name="AIRBOUND_PARAMETER_PARAM_ID_UUID"/>
       <entry value="2" name="AIRBOUND_PARAMETER_PARAM_ID_PASS"/>
+      <entry value="3" name="AIRBOUND_PARAMETER_PARAM_ID_SERIAL"/>
     </enum>
     <enum name="AIRBOUND_PARAMETER_RESULT">
       <entry value="0" name="AIRBOUND_PARAMETER_RESULT_OK"/>
