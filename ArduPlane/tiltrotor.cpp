@@ -820,7 +820,7 @@ void Tiltrotor::dual_axis_output(void)
             const bool tilt_retracting = fabsf(current_tilt) > vtol_tilt_limit;
             const bool still_fast = plane.ahrs.groundspeed() >= 5.0f;
             const bool retracting = tilt_retracting || still_fast;
-
+            
             if (retracting) {
                 if (!back_trans_active) {
                     // Back-transition just started: begin the ramp from
@@ -859,7 +859,11 @@ void Tiltrotor::dual_axis_output(void)
 
 
                 quadplane.attitude_control->set_throttle_out(back_trans_throttle_current, true, 0);
-            } else {
+            } 
+            
+
+            
+            else {
                 // Axis 1 has retracted into the trim range — back-transition
                 // is done, hand full authority back to the closed-loop
                 // Z-controller.
