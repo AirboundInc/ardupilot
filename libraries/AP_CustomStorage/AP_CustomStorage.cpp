@@ -101,6 +101,31 @@ bool AP_CustomStorage::get_password(char *buf, uint8_t len) const
     return true;
 }
 
+bool AP_CustomStorage::set_serial(const char *serial)
+{
+    if (!_initialized || serial == nullptr) {
+        return false;
+    }
+
+    if (strlen(serial) > _layout.serial_length) {
+        return false;
+    }
+
+    strncpy(&_data[_layout.serial_offset], serial, _layout.serial_length);
+    return save_to_flash();
+}
+
+bool AP_CustomStorage::get_serial(char *buf, uint8_t len) const
+{
+    if (!_initialized || buf == nullptr || len <= _layout.serial_length) {
+        return false;
+    }
+
+    strncpy(buf, &_data[_layout.serial_offset], _layout.serial_length);
+    buf[_layout.serial_length] = '\0';
+    return true;
+}
+
 //--------------------------------------------------
 // Flash Operations (atomic read/write)
 //--------------------------------------------------

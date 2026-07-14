@@ -9,6 +9,7 @@
 #define DATA_BUFFER_SIZE 127           ///< Size of data buffer (excluding null terminator)
 #define CUSTOM_PARAM_UUID_LEN 36       ///< Standard UUID string length (36 chars for "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
 #define CUSTOM_PARAM_PASS_LEN 32       ///< Maximum allowed password length
+#define CUSTOM_PARAM_SERIAL_LEN 32     ///< Maximum allowed serial ID length (e.g. "AA-TRT-101")
 #define CUSTOM_PARAM_DATA_SIZE 128     ///< Total allocated storage size in bytes
 
 /**
@@ -18,6 +19,7 @@
  * Provides persistent storage for custom parameters including:
  * - UUID (Universally Unique Identifier)
  * - Password/authentication tokens
+ * - Serial ID (e.g. "AA-TRT-101")
  *
  * Data is stored in flash memory with a header structure for validation.
  */
@@ -73,6 +75,21 @@ public:
      */
     bool get_password(char *buf, uint8_t len) const;
 
+    /**
+     * @brief Store a serial ID string
+     * @param serial Null-terminated serial string (must be 32 chars or less)
+     * @return true if successful, false on error
+     */
+    bool set_serial(const char *serial);
+
+    /**
+     * @brief Retrieve stored serial ID
+     * @param buf Buffer to receive serial string
+     * @param len Length of provided buffer (must be > CUSTOM_PARAM_SERIAL_LEN)
+     * @return true if successful, false on error
+     */
+    bool get_serial(char *buf, uint8_t len) const;
+
 private:
     static StorageAccess _storage;  ///< Storage manager interface
     char _data[DATA_BUFFER_SIZE + 1];  ///< Data buffer (+1 for null terminator)
@@ -104,6 +121,8 @@ private:
         const uint8_t uuid_length = CUSTOM_PARAM_UUID_LEN;  ///< Allocated UUID storage length
         const uint8_t pass_offset = CUSTOM_PARAM_UUID_LEN + HEADER_SIZE;  ///< Password storage offset
         const uint8_t pass_length = CUSTOM_PARAM_PASS_LEN;  ///< Allocated password storage length
+        const uint8_t serial_offset = CUSTOM_PARAM_UUID_LEN + CUSTOM_PARAM_PASS_LEN + HEADER_SIZE;  ///< Serial ID storage offset
+        const uint8_t serial_length = CUSTOM_PARAM_SERIAL_LEN;  ///< Allocated serial ID storage length
     } _layout;
 
     /**
