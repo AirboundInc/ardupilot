@@ -110,6 +110,13 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("FWHLD_MS", 14, Tiltrotor, fw_throttle_hold_ms, 500),
 
+    // @Param: FWHLD_EN
+    // @DisplayName: Fixed wing controller hold enable
+    // @Description: Enable/Disable for running fixed wing controller during Q_TILT_FWHLD_MS in backtransition
+    // @Values: 0:Disabled,1:Enabled
+    // @User: Standard
+    AP_GROUPINFO("FWHLD_EN", 15, Tiltrotor, fw_control_hold_en, 0),
+
     AP_GROUPEND
 };
 

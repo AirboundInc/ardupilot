@@ -85,6 +85,9 @@ public:
     // Write tiltrotor specific log
     void write_log();
 
+    // Fixed wing controller hold enabled for back transition
+    bool is_hold_fw_ctrl_enabled() const { return fw_control_hold_en > 0; }
+
     AP_Int8 enable;
     AP_Int16 tilt_mask;
     AP_Int16 max_rate_up_dps;
@@ -108,6 +111,9 @@ public:
     // VTOL mode, before blending to pilot throttle over back_trans_delay_ms
     // (dual axis tiltrotor)
     AP_Float fw_throttle_hold_ms;
+
+    // Enable/Disable to hold fixed wing controller during fw_throttle_hold_ms in back transition
+    AP_Int8 fw_control_hold_en;
 
     float current_tilt;
     float current_throttle;
