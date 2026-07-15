@@ -44,6 +44,10 @@ public:
     void dual_axis_output();
     bool in_vtol_transition(uint32_t now) const;
 
+    // true only during the Q_TILT_FWHLD_MS hold sub-window immediately
+    // after a backtransition (before the Q_TILT_BTDLY_MS blend starts)
+    bool in_fw_throttle_hold(uint32_t now) const;
+
     // hold the last fixed wing throttle steady for Q_TILT_FWHLD_MS, then
     // linearly blend to the pilot's vertical throttle demand over the
     // following Q_TILT_BTDLY_MS

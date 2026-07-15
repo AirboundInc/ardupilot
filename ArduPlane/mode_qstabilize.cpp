@@ -50,7 +50,7 @@ void ModeQStabilize::run()
     float pilot_throttle_scaled = quadplane.get_pilot_throttle();
 
     if (quadplane.tiltrotor.in_vtol_transition(now)) {
-        if (quadplane.tiltrotor.is_hold_fw_ctrl_enabled()) {
+        if (quadplane.tiltrotor.is_hold_fw_ctrl_enabled() && quadplane.tiltrotor.in_fw_throttle_hold(now)) {
             Mode::run();
             return;
         }

@@ -971,6 +971,16 @@ bool Tiltrotor::in_vtol_transition(uint32_t now) const
 }
 
 /*
+  true only during the Q_TILT_FWHLD_MS hold sub-window immediately after
+  a backtransition, before the Q_TILT_BTDLY_MS blend starts
+*/
+bool Tiltrotor::in_fw_throttle_hold(uint32_t now) const
+{
+    return transition->backtrans_start_ms != 0 &&
+           (now - transition->backtrans_start_ms) < (uint32_t)(fw_throttle_hold_ms);
+}
+
+/*
   after a backtransition: hold the last fixed wing throttle steady for
   Q_TILT_FWHLD_MS, then linearly blend from that throttle to the pilot's
   vertical throttle demand over the following Q_TILT_BTDLY_MS
