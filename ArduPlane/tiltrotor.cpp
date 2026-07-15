@@ -117,6 +117,14 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("FWHLD_EN", 15, Tiltrotor, fw_control_hold_en, 0),
 
+    // @Param: THR_BT
+    // @DisplayName: Backtransition hold throttle
+    // @Description: Fixed throttle percentage to hold during the Q_TILT_FWHLD_MS hold window after a backtransition into VTOL flight, instead of holding the last fixed wing throttle
+    // @Units: %
+    // @Range: 0 100
+    // @User: Standard
+    AP_GROUPINFO("THR_BT", 16, Tiltrotor, back_trans_hold_throttle, 30),
+
     AP_GROUPEND
 };
 
@@ -981,7 +989,7 @@ bool Tiltrotor::in_fw_throttle_hold(uint32_t now) const
 }
 
 /*
-  after a backtransition: hold the last fixed wing throttle steady for
+  after a backtransition: hold the Q_TILT_THR_BT throttle steady for
   Q_TILT_FWHLD_MS, then linearly blend from that throttle to the pilot's
   vertical throttle demand over the following Q_TILT_BTDLY_MS
 */
@@ -997,17 +1005,19 @@ float Tiltrotor::get_backtrans_throttle(uint32_t now, float pilot_throttle)
         return pilot_throttle;
     }
 
+    const float hold_throttle = back_trans_hold_throttle * 0.01f;
+
     backtrans_elapsed_ms = now - transition->backtrans_start_ms;
 
     if (backtrans_elapsed_ms < hold_ms) {
-        // still in the throttle hold period, keep it steady at the last FW throttle
-        backtrans_blend_throttle = last_fw_throttle;
+        // still in the throttle hold period, keep it steady at the configured hold throttle
+        backtrans_blend_throttle = hold_throttle;
         return backtrans_blend_throttle;
     }
 
     const uint32_t blend_elapsed_ms = backtrans_elapsed_ms - hold_ms;
     const float progress = (delay_ms == 0) ? 1.0f : constrain_float(blend_elapsed_ms / (float)delay_ms, 0.0f, 1.0f);
-    backtrans_blend_throttle = last_fw_throttle + (pilot_throttle - last_fw_throttle) * progress;
+    backtrans_blend_throttle = hold_throttle + (pilot_throttle - hold_throttle) * progress;
     return backtrans_blend_throttle;
 }
 

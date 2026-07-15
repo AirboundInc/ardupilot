@@ -48,7 +48,7 @@ public:
     // after a backtransition (before the Q_TILT_BTDLY_MS blend starts)
     bool in_fw_throttle_hold(uint32_t now) const;
 
-    // hold the last fixed wing throttle steady for Q_TILT_FWHLD_MS, then
+    // hold the Q_TILT_THR_BT throttle steady for Q_TILT_FWHLD_MS, then
     // linearly blend to the pilot's vertical throttle demand over the
     // following Q_TILT_BTDLY_MS
     float get_backtrans_throttle(uint32_t now, float pilot_throttle);
@@ -118,6 +118,10 @@ public:
 
     // Enable/Disable to hold fixed wing controller during fw_throttle_hold_ms in back transition
     AP_Int8 fw_control_hold_en;
+
+    // Fixed throttle (percent) to hold during fw_throttle_hold_ms after a
+    // backtransition, instead of the last fixed wing throttle
+    AP_Float back_trans_hold_throttle;
 
     float current_tilt;
     float current_throttle;
