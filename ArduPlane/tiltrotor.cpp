@@ -125,6 +125,14 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("THR_BT", 16, Tiltrotor, back_trans_hold_throttle, 30),
 
+    // @Param: BT_ANGLE
+    // @DisplayName: Back transition elbow / axis1 tilt angle
+    // @Description: Angle at which back transition tilt is activated
+    // @Units: deg
+    // @Range: 0 30
+    // @User: Standard
+    AP_GROUPINFO(" BT_ANGLE", 17, Tiltrotor, tilt_bt_angle, 10),
+
     AP_GROUPEND
 };
 
@@ -797,10 +805,68 @@ void Tiltrotor::dual_axis_output(void)
 
         const float throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
         if (quadplane.assisted_flight) {
+            back_trans_active = false;   // reset so the next back-transition starts fresh
             quadplane.hold_stabilize(throttle * 0.01f);
             quadplane.motors_output(true);
         } else {
-            quadplane.motors_output(false);
+            const float vtol_tilt_limit = tilt_bt_angle * (1.0f/90.0f);
+            const bool tilt_retracting = fabsf(current_tilt) > vtol_tilt_limit;
+            const bool still_fast = plane.ahrs.groundspeed() >= 5.0f;
+            const bool retracting = tilt_retracting || still_fast;
+            if (retracting) {
+                if (!back_trans_active) {
+                    // Back-transition just started: begin the ramp from
+                    // whatever throttle was actually in use a moment ago
+                    // (the fixed-wing/cruise throttle), not from zero.
+                    back_trans_throttle_current = motors->get_throttle();
+                    back_trans_active = true;
+                }
+
+                const float target_throttle = is_negative(back_trans_hold_throttle) ?
+                    motors->get_throttle_hover() : back_trans_hold_throttle * 0.01;
+
+                const float ramp_rate = plane.G_Dt / 3.0f;   // ~3s ramp — tune this
+                back_trans_throttle_current = constrain_float(
+                    back_trans_throttle_current + constrain_float(target_throttle - back_trans_throttle_current, -ramp_rate, ramp_rate),
+                    0.0f, 1.0f);
+
+                quadplane.pos_control->relax_z_controller(back_trans_throttle_current);
+
+                #if HAL_LOGGING_ENABLED
+                AP::logger().WriteStreaming("DBTT", "TimeUS,Assist,Retr,Active,CTilt,BTCur,Targ",
+                        "s---d--", // seconds, no unit x3, degrees, no unit x2
+                        "F000000", // micro, no mult x6
+                        "QBBBfff",
+                        AP_HAL::micros64(),
+                        (uint8_t)quadplane.assisted_flight,
+                        (uint8_t)retracting,
+                        (uint8_t)back_trans_active,
+                        current_tilt*90.0f,
+                        back_trans_throttle_current,
+                        target_throttle);
+                #endif
+
+
+                quadplane.attitude_control->set_throttle_out(back_trans_throttle_current, true, 0);
+            } else {
+                // Axis 1 has retracted into the trim range — back-transition
+                // is done, hand full authority back to the closed-loop
+                // Z-controller.
+                back_trans_active = false;
+            }
+
+            quadplane.motors_output(true);
+
+            #if HAL_LOGGING_ENABLED
+                uint16_t tl_pwm = 0, tr_pwm = 0;
+                SRV_Channels::get_output_pwm(SRV_Channel::k_throttleLeft, tl_pwm);
+                SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, tr_pwm);
+                AP::logger().WriteStreaming("DPRP", "TimeUS,BTCur,TL,TR",       
+                    "s---",
+                    "F000",
+                    "QfHH",
+                    AP_HAL::micros64(), back_trans_throttle_current, tl_pwm, tr_pwm);
+            #endif
         }
 
         // AP_MotorsTailsitter::output_to_motors() reuses k_throttle as its
@@ -829,7 +895,7 @@ void Tiltrotor::dual_axis_output(void)
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
                                         constrain_float(tilt_right, -SERVO_MAX, SERVO_MAX));
         
-        
+        back_trans_active = false;
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
 

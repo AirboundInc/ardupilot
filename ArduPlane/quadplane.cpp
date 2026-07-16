@@ -1777,8 +1777,15 @@ void QuadPlane::update(void)
 
         assisted_flight = in_vtol_airbrake();
 
-        // output to motors
-        motors_output();
+        // output to motors — DUAL_AXIS tiltrotors call motors_output()
+        // themselves from within Tiltrotor::dual_axis_output() (called
+        // below via tiltrotor.update()), after applying their own
+        // throttle compensation. Calling it again here first, with an
+        // uncompensated throttle, fights that call within the same loop
+        // iteration — both hit the same rate-limited actuator slew.
+        if (tiltrotor.type != Tiltrotor::TILT_TYPE_DUAL_AXIS) {
+            motors_output();
+        }
 
         transition->VTOL_update();
 

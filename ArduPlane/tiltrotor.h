@@ -123,8 +123,17 @@ public:
     // backtransition, instead of the last fixed wing throttle
     AP_Float back_trans_hold_throttle;
 
+    // when axis 1 reaches less than the below angle TVs get full authority during back transition
+    AP_Float tilt_bt_angle;
+
     float current_tilt;
     float current_throttle;
+
+    // track the current back transition throttle
+    float back_trans_throttle_current;
+    // track if back transition is active
+    bool back_trans_active;
+
     bool _motors_active:1;
     float transition_yaw_cd;
     uint32_t transition_yaw_set_ms;
