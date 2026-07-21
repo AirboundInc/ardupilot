@@ -105,7 +105,27 @@ local stats = { bytes_in = 0, bytes_out = 0 }
 
 uart:begin(P.IBAUD:get())
 
-local log_file = io.open('LTE_modem.log', 'w')
+local function next_log_filename()
+    local idx = 0
+    local f = io.open('LTE_log_idx.txt', 'r')
+    if f then
+        local line = f:read('*l')
+        f:close()
+        idx = tonumber(line) or 0
+    end
+    idx = idx + 1
+
+    local fw = io.open('LTE_log_idx.txt', 'w')
+    if fw then
+        fw:write(tostring(idx))
+        fw:close()
+    end
+
+    return string.format('LTE_modem_%04d.log', idx)
+end
+
+local log_file = io.open(next_log_filename(), 'w')
+
 local function log_data(s, marker)
     if s and #s > 0 and log_file then
         log_file:write(marker .. '[' .. s .. ']\n')
