@@ -408,6 +408,9 @@ private:
     // Time to wait at pos2 before starting final descent to allow for weathervaning
     AP_Float q_land_freeze_time;
 
+    // threshold on the change in RATE.ROut between consecutive samples used to flag roll rate output oscillation
+    AP_Float q_rate_osc_thr_roll;
+
     // which fwd throttle handling method is active
     enum class ActiveFwdThr : uint8_t {
         NONE = 0,
@@ -570,6 +573,21 @@ private:
 
     // time of last QTUN log message
     uint32_t last_qtun_log_ms;
+
+    // axis identifier passed to check_rate_out_oscillation(), also used to index its per-axis state arrays
+    enum class RateOscAxis : uint8_t {
+        ROLL = 0,
+        PITCH = 1,
+        YAW = 2,
+    };
+
+    // detect a jump of more than threshold in a rate controller output between two consecutive calls
+    // and, if so, send a rate-limited GCS warning naming the axis, previous/new value, delta and threshold
+    void check_rate_out_oscillation(RateOscAxis axis, float out_value, float threshold);
+
+    float rate_osc_last_out[3];
+    bool rate_osc_have_last[3] {};
+    uint32_t rate_osc_last_warn_ms[3] {};
 
     // Tiltrotor control
     Tiltrotor tiltrotor{*this, motors};

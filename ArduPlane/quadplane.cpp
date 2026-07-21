@@ -564,6 +564,14 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("LND_FRZ_TIM", 40, QuadPlane, q_land_freeze_time, 7.0f),
 
+    // @Param: RATE_OSC_R
+    // @DisplayName: Roll rate output oscillation warning threshold
+    // @Description: Threshold on the change in RATE.ROut between consecutive log samples (logged at main loop rate). If exceeded a rate-limited GCS warning is sent, for diagnosing roll rate controller output oscillation
+    // @Range: 0.0 1.0
+    // @Increment: 0.0001
+    // @User: Advanced
+    AP_GROUPINFO("RATE_OSC_R", 41, QuadPlane, q_rate_osc_thr_roll, 0.001f),
+
     AP_GROUPEND
 };
 
@@ -1715,6 +1723,36 @@ void SLT_Transition::VTOL_update()
 }
 
 /*
+  check for a jump of more than threshold in a rate controller output between
+  two consecutive calls for the given axis, and if so send a GCS warning
+  naming the axis, previous/new value, delta and threshold. Rate-limited to
+  once per second per axis to avoid flooding the GCS link during a sustained
+  oscillation.
+ */
+void QuadPlane::check_rate_out_oscillation(RateOscAxis axis, float out_value, float threshold)
+{
+    const uint8_t i = uint8_t(axis);
+    if (rate_osc_have_last[i]) {
+        const float delta = fabsf(out_value - rate_osc_last_out[i]);
+        const uint32_t now = AP_HAL::millis();
+        if (delta > threshold && (now - rate_osc_last_warn_ms[i] > 1000)) {
+            const char *axis_name = "Roll";
+            if (axis == RateOscAxis::PITCH) {
+                axis_name = "Pitch";
+            } else if (axis == RateOscAxis::YAW) {
+                axis_name = "Yaw";
+            }
+            gcs().send_text(MAV_SEVERITY_WARNING, "RATE %s out osc: %.4f->%.4f d=%.4f (thr=%.4f)",
+                             axis_name, (double)rate_osc_last_out[i], (double)out_value, (double)delta, (double)threshold);
+            rate_osc_last_warn_ms[i] = now;
+        }
+    } else {
+        rate_osc_have_last[i] = true;
+    }
+    rate_osc_last_out[i] = out_value;
+}
+
+/*
   update motor output for quadplane
  */
 void QuadPlane::update(void)
@@ -1830,6 +1868,10 @@ void QuadPlane::update(void)
                 }
                 // log RATE at main loop rate
                 attitude_control->Write_Rate(*pos_control);
+
+                check_rate_out_oscillation(RateOscAxis::ROLL,
+                                            motors->get_roll() + motors->get_roll_ff(),
+                                            q_rate_osc_thr_roll);
             }
 
             // log CTRL and MOTB at 10 Hz
