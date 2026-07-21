@@ -411,7 +411,11 @@ local function reset_state()
 end
 
 local function reset_to_ATI()
+    local timed_out_step = step
+    local elapsed_ms = math.floor(millis():tofloat() - cs.step_timer_ms)
     send_data_reset(); uart_write_pending(); reset_state()
+    table.insert(cs.step_times, {name = timed_out_step, ms = elapsed_ms})
+    cs.reset_recorded = true   -- tells the next step_changed check not to re-log this same transition
 end
 
 -- Extract firmware revision from ATI response and check against broken list.
@@ -1443,9 +1447,12 @@ local function run_step()
     local now_ms = millis()
 
     if step_changed then
-        gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE_modem: step %s', step))
-        if cs.last_step and cs.last_step ~= "ATI" then table.insert(cs.step_times, {name=cs.last_step, ms=math.floor(now_ms:tofloat()-cs.step_timer_ms)}) end
-        cs.step_timer_ms = now_ms:tofloat()
+    gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE_modem: step %s', step))
+    if cs.last_step and cs.last_step ~= "ATI" and not cs.reset_recorded then
+        table.insert(cs.step_times, {name=cs.last_step, ms=math.floor(now_ms:tofloat()-cs.step_timer_ms)})
+    end
+    cs.reset_recorded = false
+    cs.step_timer_ms = now_ms:tofloat()
         
         -- Diagnostic Timing Dump
         if step == "CONNECTED" and #cs.step_times > 0 then
