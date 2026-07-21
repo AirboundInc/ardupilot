@@ -826,9 +826,9 @@ void Tiltrotor::dual_axis_output(void)
 #if HAL_LOGGING_ENABLED
         // Add logging for desired thrust vectoring angles
         AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,Elbow",
-                "sdd", // seconds, degrees
-                "F00", // micro (1e-6), no mult (1e0)
-                "Qff", // uint64_t, float
+                "sddd", // seconds, degrees
+                "F000", // micro (1e-6), no mult (1e0)
+                "Qfff", // uint64_t, float
                 AP_HAL::micros64(), tilt_left/100, tilt_right/100, axis1_pos);
 #endif
 

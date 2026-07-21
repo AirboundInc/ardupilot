@@ -1381,9 +1381,9 @@ float QuadPlane::get_desired_yaw_rate_cds(bool should_weathervane)
 #if HAL_LOGGING_ENABLED
     // Add logging for wvane yaw rate
     AP::logger().WriteStreaming("YAWD", "TimeUS,PilYawR,WvYawR,DesYawR",
-            "s--", // seconds, degrees
-            "F00", // micro (1e-6), no mult (1e0)
-            "Qff", // uint64_t, float
+            "s---", // seconds, degrees
+            "F000", // micro (1e-6), no mult (1e0)
+            "Qfff", // uint64_t, float
             AP_HAL::micros64(), pilot_yaw_cds, wvane_yaw_cds, yaw_cds);
 #endif
 
