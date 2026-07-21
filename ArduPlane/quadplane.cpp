@@ -1362,20 +1362,31 @@ float QuadPlane::get_pilot_input_yaw_rate_cds(void) const
  */
 float QuadPlane::get_desired_yaw_rate_cds(bool should_weathervane)
 {
-    float yaw_cds = 0;
+    float yaw_cds = 0, pilot_yaw_cds = 0, wvane_yaw_cds = 0;
     if (assisted_flight) {
         // use bank angle to get desired yaw rate
         yaw_cds += desired_auto_yaw_rate_cds();
     }
 
     // add in pilot input
-    yaw_cds += get_pilot_input_yaw_rate_cds();
+    pilot_yaw_cds = get_pilot_input_yaw_rate_cds();
+    yaw_cds += pilot_yaw_cds;
 
     if (should_weathervane) {
         // add in weathervaning
-        yaw_cds += get_weathervane_yaw_rate_cds();
+        wvane_yaw_cds = get_weathervane_yaw_rate_cds();
+        yaw_cds += wvane_yaw_cds;
     }
-    
+
+#if HAL_LOGGING_ENABLED
+    // Add logging for wvane yaw rate
+    AP::logger().WriteStreaming("YAWD", "TimeUS,PilYawR,WvYawR,DesYawR",
+            "s--", // seconds, degrees
+            "F00", // micro (1e-6), no mult (1e0)
+            "Qff", // uint64_t, float
+            AP_HAL::micros64(), pilot_yaw_cds, wvane_yaw_cds, yaw_cds);
+#endif
+
     return yaw_cds;
 }
 

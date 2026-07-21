@@ -823,6 +823,15 @@ void Tiltrotor::dual_axis_output(void)
         tilt_left  *= vectoring_gain_hvr;
         tilt_right *= vectoring_gain_hvr;
 
+#if HAL_LOGGING_ENABLED
+        // Add logging for desired thrust vectoring angles
+        AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,Elbow",
+                "sdd", // seconds, degrees
+                "F00", // micro (1e-6), no mult (1e0)
+                "Qff", // uint64_t, float
+                AP_HAL::micros64(), tilt_left/100, tilt_right/100, axis1_pos);
+#endif
+
         
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
                                         constrain_float(tilt_left,  -SERVO_MAX, SERVO_MAX));
@@ -876,8 +885,6 @@ void Tiltrotor::dual_axis_output(void)
     const float elevator = SRV_Channels::get_output_scaled(SRV_Channel::k_elevator) * (1.0f / 4500.0f);
     const float aileron  = SRV_Channels::get_output_scaled(SRV_Channel::k_aileron)  * (1.0f / 4500.0f);
 
-    // TODO: Figure out how to use rudder for differential thrust in fixed wing
-    // const float rudder = SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / 4500.0f);
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
                                 constrain_float((elevator + aileron) * gain, -1.0f, 1.0f) * SERVO_MAX);
