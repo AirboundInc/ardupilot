@@ -101,28 +101,53 @@ bool AP_CustomStorage::get_password(char *buf, uint8_t len) const
     return true;
 }
 
-bool AP_CustomStorage::set_serial(const char *serial)
+bool AP_CustomStorage::set_craft_id(const char *craft_id)
 {
-    if (!_initialized || serial == nullptr) {
+    if (!_initialized || craft_id == nullptr) {
         return false;
     }
 
-    if (strlen(serial) > _layout.serial_length) {
+    if (strlen(craft_id) > _layout.craft_id_length) {
         return false;
     }
 
-    strncpy(&_data[_layout.serial_offset], serial, _layout.serial_length);
+    strncpy(&_data[_layout.craft_id_offset], craft_id, _layout.craft_id_length);
     return save_to_flash();
 }
 
-bool AP_CustomStorage::get_serial(char *buf, uint8_t len) const
+bool AP_CustomStorage::get_craft_id(char *buf, uint8_t len) const
 {
-    if (!_initialized || buf == nullptr || len <= _layout.serial_length) {
+    if (!_initialized || buf == nullptr || len <= _layout.craft_id_length) {
         return false;
     }
 
-    strncpy(buf, &_data[_layout.serial_offset], _layout.serial_length);
-    buf[_layout.serial_length] = '\0';
+    strncpy(buf, &_data[_layout.craft_id_offset], _layout.craft_id_length);
+    buf[_layout.craft_id_length] = '\0';
+    return true;
+}
+
+bool AP_CustomStorage::set_uin(const char *uin)
+{
+    if (!_initialized || uin == nullptr) {
+        return false;
+    }
+
+    if (strlen(uin) > _layout.uin_length) {
+        return false;
+    }
+
+    strncpy(&_data[_layout.uin_offset], uin, _layout.uin_length);
+    return save_to_flash();
+}
+
+bool AP_CustomStorage::get_uin(char *buf, uint8_t len) const
+{
+    if (!_initialized || buf == nullptr || len <= _layout.uin_length) {
+        return false;
+    }
+
+    strncpy(buf, &_data[_layout.uin_offset], _layout.uin_length);
+    buf[_layout.uin_length] = '\0';
     return true;
 }
 

@@ -89,36 +89,71 @@ void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, cons
         }
         break;
 
-    case AIRBOUND_PARAMETER_PARAM_ID_SERIAL:
+    case AIRBOUND_PARAMETER_PARAM_ID_CRAFT_ID:
         switch (packet.action) {
         case AIRBOUND_PARAMETER_ACTION_GET: {
-            char serial[MAX_AB_PARAM_SIZE] = {0};
+            char craft_id[MAX_AB_PARAM_SIZE] = {0};
             AIRBOUND_PARAMETER_RESULT result = AIRBOUND_PARAMETER_RESULT_FAILED;
-            if (g_custom_storage.get_serial(serial, sizeof(serial))) {
+            if (g_custom_storage.get_craft_id(craft_id, sizeof(craft_id))) {
                 result = AIRBOUND_PARAMETER_RESULT_OK;
-                gcs().send_text(MAV_SEVERITY_INFO, "AB:SERIAL:%s", serial);
+                gcs().send_text(MAV_SEVERITY_INFO, "AB:CRAFT_ID:%s", craft_id);
             } else {
-                gcs().send_text(MAV_SEVERITY_WARNING, "AB:Failed to fetch serial ID");
+                gcs().send_text(MAV_SEVERITY_WARNING, "AB:Failed to fetch craft ID");
             }
-            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_SERIAL, (const char*)serial, result);
+            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_CRAFT_ID, (const char*)craft_id, result);
             break;
         }
         case AIRBOUND_PARAMETER_ACTION_SET: {
-            char serial[MAX_AB_PARAM_SIZE] = {0};
+            char craft_id[MAX_AB_PARAM_SIZE] = {0};
             AIRBOUND_PARAMETER_RESULT result = AIRBOUND_PARAMETER_RESULT_FAILED;
-            if (g_custom_storage.set_serial(packet.value)) {
-                gcs().send_text(MAV_SEVERITY_INFO, "AB:Serial ID updated");
+            if (g_custom_storage.set_craft_id(packet.value)) {
+                gcs().send_text(MAV_SEVERITY_INFO, "AB:Craft ID updated");
                 result = AIRBOUND_PARAMETER_RESULT_OK;
             } else {
-                gcs().send_text(MAV_SEVERITY_WARNING, "AB:Failed to update serial ID");
+                gcs().send_text(MAV_SEVERITY_WARNING, "AB:Failed to update craft ID");
             }
-            g_custom_storage.get_serial(serial, sizeof(serial));
-            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_SERIAL, (const char*)serial, result);
+            g_custom_storage.get_craft_id(craft_id, sizeof(craft_id));
+            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_CRAFT_ID, (const char*)craft_id, result);
             break;
         }
         default: {
             char buf[MAX_AB_PARAM_SIZE] = {0};
-            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_SERIAL, (const char*)buf, AIRBOUND_PARAMETER_RESULT_UNSUPPORTED);
+            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_CRAFT_ID, (const char*)buf, AIRBOUND_PARAMETER_RESULT_UNSUPPORTED);
+            break;
+        }
+        }
+        break;
+
+    case AIRBOUND_PARAMETER_PARAM_ID_UIN:
+        switch (packet.action) {
+        case AIRBOUND_PARAMETER_ACTION_GET: {
+            char uin[MAX_AB_PARAM_SIZE] = {0};
+            AIRBOUND_PARAMETER_RESULT result = AIRBOUND_PARAMETER_RESULT_FAILED;
+            if (g_custom_storage.get_uin(uin, sizeof(uin))) {
+                result = AIRBOUND_PARAMETER_RESULT_OK;
+                gcs().send_text(MAV_SEVERITY_INFO, "AB:UIN:%s", uin);
+            } else {
+                gcs().send_text(MAV_SEVERITY_WARNING, "AB:Failed to fetch UIN");
+            }
+            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_UIN, (const char*)uin, result);
+            break;
+        }
+        case AIRBOUND_PARAMETER_ACTION_SET: {
+            char uin[MAX_AB_PARAM_SIZE] = {0};
+            AIRBOUND_PARAMETER_RESULT result = AIRBOUND_PARAMETER_RESULT_FAILED;
+            if (g_custom_storage.set_uin(packet.value)) {
+                gcs().send_text(MAV_SEVERITY_INFO, "AB:UIN updated");
+                result = AIRBOUND_PARAMETER_RESULT_OK;
+            } else {
+                gcs().send_text(MAV_SEVERITY_WARNING, "AB:Failed to update UIN");
+            }
+            g_custom_storage.get_uin(uin, sizeof(uin));
+            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_UIN, (const char*)uin, result);
+            break;
+        }
+        default: {
+            char buf[MAX_AB_PARAM_SIZE] = {0};
+            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_UIN, (const char*)buf, AIRBOUND_PARAMETER_RESULT_UNSUPPORTED);
             break;
         }
         }
