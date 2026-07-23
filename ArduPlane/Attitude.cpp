@@ -502,26 +502,8 @@ int16_t Plane::calc_nav_yaw_coordinated()
          // add in the coordinated turn yaw rate to make it easier to fly while tuning the yaw rate controller
          const float coordination_yaw_rate = degrees(GRAVITY_MSS * tanf(radians(nav_roll_cd*0.01f))/MAX(aparm.airspeed_min,smoothed_airspeed));
         
-        // Heading hold: no fin means no passive restoring moment when
-        // wings-level, so lock the nose to a heading once the pilot
-        // centers rudder and we're not turning, same pattern CRUISE
-        // already uses on roll via locked_heading.
-        float heading_hold_rate = 0;
-        if (is_positive(g2.yaw_heading_p) && rudder_in == 0 && abs(nav_roll_cd) < 4500) {
-            if (yaw_heading_lock_timer_ms == 0) {
-                yaw_heading_lock_timer_ms = millis();
-            } else if (!yaw_heading_locked && millis() - yaw_heading_lock_timer_ms > 500) {
-                yaw_heading_locked = true;
-                yaw_locked_heading_cd = ahrs.yaw_sensor;
-            }
-            if (yaw_heading_locked) {
-                const float heading_error_cd = wrap_180_cd(yaw_locked_heading_cd - ahrs.yaw_sensor);
-                heading_hold_rate = constrain_float(heading_error_cd * 0.01f * g2.yaw_heading_p, -g.acro_yaw_rate, g.acro_yaw_rate);
-            }
-        } else {
-            yaw_heading_locked = false;
-            yaw_heading_lock_timer_ms = 0;
-        }
+         const bool allow_heading_lock = (rudder_in == 0 && abs(nav_roll_cd) < 500);
+         const float heading_hold_rate = yawController.get_heading_hold_rate(allow_heading_lock, g.acro_yaw_rate);
 
        commanded_rudder = yawController.get_rate_out(yaw_rate+coordination_yaw_rate+heading_hold_rate,  speed_scaler, false);
          using_rate_controller = true;

@@ -668,12 +668,6 @@ private:
     // The instantaneous desired pitch angle.  Hundredths of a degree
     int32_t nav_pitch_cd;
 
-    // yaw axis heading-hold state (for airframes with no fin, holding wings-level
-    // heading via differential thrust instead of relying on passive Cn_beta)
-    bool yaw_heading_locked;
-    uint32_t yaw_heading_lock_timer_ms;
-    int32_t yaw_locked_heading_cd;
-
 
     // the aerodynamic load factor. This is calculated from the demanded
     // roll before the roll is clipped, using 1/sqrt(cos(nav_roll))

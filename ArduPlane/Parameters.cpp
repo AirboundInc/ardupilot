@@ -1303,14 +1303,6 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     AP_SUBGROUPINFO(systemid, "SID", 38, ParametersG2, AP_SystemID),
 #endif
 
-// @Param: YAW_HDG_P
-// @DisplayName: Yaw heading hold P gain
-// @Description: Gain from heading error (deg) to demanded yaw rate (deg/s), used to hold heading via differential thrust when wings-level with no rudder input. 0 disables heading hold.
-// @Range: 0 3
-// @Increment: 0.1
-// @User: Advanced
-AP_GROUPINFO("YAW_HDG_P", 39, ParametersG2, yaw_heading_p, 0),
-
     
     AP_GROUPEND
 };
