@@ -114,6 +114,19 @@ function in_vtol_flight()
     return false
 end
 
+function is_auto_takeoff_active()
+    local MODE_AUTO = 10
+    local NAV_VTOL_TAKEOFF = 84
+    local NAV_TAKEOFF = 22
+    local current_mode = vehicle:get_mode()
+    local current_nav_cmd_id = mission:get_current_nav_id()
+
+    if current_mode == MODE_AUTO and (current_nav_cmd_id == NAV_VTOL_TAKEOFF or current_nav_cmd_id == NAV_TAKEOFF)  then
+        return true
+    end
+    return false
+end
+
 function is_parachute_angle_threshold_valid(threshold_angle)
 -- check if the threshold angle set by user is valid
     if threshold_angle < para_ahrs_pitch_threshold_max and threshold_angle > para_ahrs_pitch_threshold_min then
@@ -207,6 +220,10 @@ function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode)
     if AUTOBAILOUT_EXCLUDE_MODES[flightmode] then
         return false
     end
+
+    if is_auto_takeoff_active() then
+        return false
+    end
     
     --dont check if not armed or not in vtol phase
     if not is_vtol_flight or not arming:is_armed() then
@@ -248,6 +265,10 @@ function is_predicted_vtol_pitch_exceeding_threshold(current_vtol_pitch_deg, cur
 
     --Disable prediction based check
     if pitch_prediction_interval < 0 then
+        return false
+    end
+
+    if is_auto_takeoff_active() then
         return false
     end
 
