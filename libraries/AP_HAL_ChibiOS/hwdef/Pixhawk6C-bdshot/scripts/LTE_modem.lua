@@ -561,16 +561,6 @@ local function check_QENG(s)
         local sinr = tonumber(t[tac_idx+4]) or 0
 
         logger:write("LTES", 'MCC,MNC,TAC,CID,PID,EF,RSRP,RSRQ,RSSI,SINR', 'iiiiiiiiii', mcc, mnc, tac, cid, tonumber(t[7]) or 0, earfcn, rsrp, rsrq, rssi, sinr)
-
-        -- DEBUG: always send named floats (regardless of OPT.SIGNALS) for testing.
-        -- Revert this gating once you've confirmed values are reaching MP.
-        gcs:send_named_float('LTE_RSRP', rsrp)
-        gcs:send_named_float('LTE_RSRQ', rsrq)
-        gcs:send_named_float('LTE_SINR', sinr)
-        gcs:send_named_float('LTE_BAND', band)
-        gcs:send_named_float('LTE_CID', cid>>8)
-        gcs:send_named_float('LTE_MCCMNC', mcc*100+mnc)
-
         local tower_id = cid >> 8
         if lte_track.band == nil then
             gcs:send_text(MAV_SEVERITY.INFO, string.format("LTE: connected on Band %d (EARFCN %d)", band, earfcn))
