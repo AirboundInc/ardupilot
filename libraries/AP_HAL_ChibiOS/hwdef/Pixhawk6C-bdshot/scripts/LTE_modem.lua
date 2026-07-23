@@ -284,7 +284,7 @@ end
 -- Anything that is EC25 but neither known-good nor known-broken is treated as
 -- CMUX-capable but flagged with a one-time warning so an unverified revision
 -- that turns out to hang is diagnosable instead of silently wrong.
-local KNOWN_GOOD_EC25_PREFIX = "EC25EFAR06"
+local KNOWN_GOOD_EC25_PREFIX = { "EC25EFAR06", "EC25EFAR08A06" }
 
 local function cmux_enabled()
     if cmux_force_disabled then return false end
