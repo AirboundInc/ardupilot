@@ -597,8 +597,6 @@ public:
     AP_SystemID systemid;
 #endif
 
-// yaw heading-hold P gain (deg error -> deg/s demanded yaw rate), see YAW_HDG_P
-AP_Float yaw_heading_p;
 };
 
 extern const AP_Param::Info var_info[];
