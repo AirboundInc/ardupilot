@@ -192,7 +192,7 @@ public:
     // Get pilot throttle input with deadzone, this will return 50% throttle in failsafe!
     float get_throttle_input() const;
 
-    void Log_Write_AttRate();
+    bool tailsitter_in_vtol_transition();
 
 private:
     AP_AHRS &ahrs;
@@ -275,7 +275,7 @@ private:
     void relax_attitude_control();
 
     bool check_land_complete(void);
-    bool land_detector(uint32_t timeout_ms);
+    bool land_detector(void);
     bool check_land_final(void);
 
     float assist_climb_rate_cms(void) const;
@@ -286,6 +286,7 @@ private:
     bool should_relax(void);
     void motors_output(bool run_rate_controller = true);
     void Log_Write_QControl_Tuning();
+    void Log_Write_AttRate();
     void log_QPOS(void);
     float landing_descent_rate_cms(float height_above_ground);
     
@@ -492,6 +493,10 @@ private:
 
         // landing detection threshold in meters
         AP_Float detect_alt_change;
+        AP_Float timeout_ms;
+
+        AP_Float wdg_timeout_s;
+        uint32_t wdg_start_ms;
     } landing_detect;
 
     // throttle mix acceleration filter
@@ -742,6 +747,8 @@ private:
 
 public:
     void motor_test_output();
+    AC_AttitudeControl_Multi *get_attitude_control() { return attitude_control; }
+    AP_AHRS_View *get_ahrs_view() { return ahrs_view; }
     MAV_RESULT mavlink_motor_test_start(mavlink_channel_t chan, uint8_t motor_seq, uint8_t throttle_type,
                                         uint16_t throttle_value, float timeout_sec,
                                         uint8_t motor_count);
