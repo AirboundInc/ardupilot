@@ -284,7 +284,14 @@ end
 -- Anything that is EC25 but neither known-good nor known-broken is treated as
 -- CMUX-capable but flagged with a one-time warning so an unverified revision
 -- that turns out to hang is diagnosable instead of silently wrong.
-local KNOWN_GOOD_EC25_PREFIX = { "EC25EFAR06", "EC25EFAR08A06" }
+local KNOWN_GOOD_EC25_PREFIXES = { "EC25EFAR06", "EC25EFAR08A06" }
+local function is_known_good_ec25(rev)
+    if not rev then return false end
+    for _, p in ipairs(KNOWN_GOOD_EC25_PREFIXES) do
+        if rev:find(p, 1, true) == 1 then return true end
+    end
+    return false
+end
 
 local function cmux_enabled()
     if cmux_force_disabled then return false end
@@ -440,7 +447,7 @@ local function check_modem_revision(s)
                 cmux_force_disabled = true
                 gcs:send_text(MAV_SEVERITY.WARNING,
                     "LTE_modem: known-broken CMUX firmware, using direct push")
-            elseif rev:find(KNOWN_GOOD_EC25_PREFIX, 1, true) == 1 then
+            elseif is_known_good_ec25(rev) then
                 -- known-good CMUX firmware: normal path, no message needed
             else
                 gcs:send_text(MAV_SEVERITY.WARNING,
@@ -471,12 +478,6 @@ local function check_CSQ(s)
     if rssi_raw then
         gcs:send_named_float('LTE_RSSI', rssi_raw)
         logger:write("LTE",'RSSI,BER,Bin,Bout','iiII', rssi_raw, ber_raw, stats.bytes_in, stats.bytes_out)
-        -- DEBUG: print CSQ values to GCS text (throttled to once per 5s)
-        if not cs.last_csq_print_ms or (millis() - cs.last_csq_print_ms) > 5000 then
-            cs.last_csq_print_ms = millis()
-            gcs:send_text(MAV_SEVERITY.INFO,
-                string.format("LTE CSQ: RSSI=%s BER=%s", rssi_raw, ber_raw))
-        end
         return true
     end
     return false
@@ -865,7 +866,7 @@ local function step_CPIN()
             -- probes, the firmware is broken even though revision auto-detect
             -- didn't catch it. Add this revision to BROKEN_CMUX_REVISIONS so
             -- future boots will catch it via auto-detect.
-            local is_known_good_fw = modem_revision:find(KNOWN_GOOD_EC25_PREFIX, 1, true) == 1
+            local is_known_good_fw = is_known_good_ec25(modem_revision)
             if cmux_was_set and not cmux_force_disabled and not is_known_good_fw then
                 gcs:send_text(MAV_SEVERITY.WARNING,
                     "LTE: CPIN failed after CMUX setup — disabling CMUX (firmware bug)")
