@@ -335,6 +335,16 @@ private:
         bool warned;
     } transition_failure;
 
+    // method used to decide when a forward transition to fixed wing flight is complete
+    enum class FwdTransCompletion : uint8_t {
+        AIRSPEED   = 0,
+        TIME       = 1,
+        TILT_ANGLE = 2,
+    };
+    AP_Enum<FwdTransCompletion> fwd_trans_method;
+    AP_Float fwd_trans_time;      // seconds, used when fwd_trans_method == TIME
+    AP_Float fwd_trans_angle_deg; // degrees, used when fwd_trans_method == TILT_ANGLE
+
 
     // Quadplane trim, degrees
     AP_Float ahrs_trim_pitch;

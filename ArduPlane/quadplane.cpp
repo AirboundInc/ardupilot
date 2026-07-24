@@ -564,6 +564,31 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("LND_FRZ_TIM", 40, QuadPlane, q_land_freeze_time, 7.0f),
 
+    // @Param: FTRANS_MODE
+    // @DisplayName: Forward transition completion method
+    // @Description: Selects the condition used to decide when the forward transition from VTOL to fixed wing flight is complete and control is handed to the fixed wing controllers. Airspeed waits for airspeed to exceed AIRSPEED_MIN. Time hands off after Q_FTRANS_TIME seconds regardless of airspeed. Tilt Angle (tiltrotors only) hands off once the tilt servos reach Q_FTRANS_ANG degrees regardless of airspeed.
+    // @Values: 0:Airspeed,1:Time,2:Tilt Angle
+    // @User: Advanced
+    AP_GROUPINFO("FTRANS_MODE", 41, QuadPlane, fwd_trans_method, uint8_t(FwdTransCompletion::AIRSPEED)),
+
+    // @Param: FTRANS_TIME
+    // @DisplayName: Forward transition time based completion
+    // @Description: Time after entering forward transition after which the transition is considered complete, used when Q_FTRANS_MODE is set to Time.
+    // @Units: s
+    // @Range: 0.5 30
+    // @Increment: 0.5
+    // @User: Advanced
+    AP_GROUPINFO("FTRANS_TIME", 42, QuadPlane, fwd_trans_time, 5.0),
+
+    // @Param: FTRANS_ANG
+    // @DisplayName: Forward transition tilt angle based completion
+    // @Description: Tilt servo angle at which forward transition is considered complete, used when Q_FTRANS_MODE is set to Tilt Angle. Only applies to tiltrotors.
+    // @Units: deg
+    // @Range: 0 90
+    // @Increment: 1
+    // @User: Advanced
+    AP_GROUPINFO("FTRANS_ANG", 43, QuadPlane, fwd_trans_angle_deg, 45.0),
+
     AP_GROUPEND
 };
 
@@ -1579,10 +1604,34 @@ void SLT_Transition::update()
         }
 
         transition_low_airspeed_ms = now;
-        if (have_airspeed && aspeed > plane.aparm.airspeed_min && !quadplane.assisted_flight) {
+
+        bool transition_condition_met = false;
+        switch (QuadPlane::FwdTransCompletion(quadplane.fwd_trans_method)) {
+        case QuadPlane::FwdTransCompletion::TIME:
+            if ((now - transition_start_ms) >= uint32_t(quadplane.fwd_trans_time * 1000)) {
+                transition_condition_met = true;
+                gcs().send_text(MAV_SEVERITY_INFO, "Transition time reached %.1fs", (double)((now - transition_start_ms) * 0.001));
+            }
+            break;
+        case QuadPlane::FwdTransCompletion::TILT_ANGLE:
+            if (quadplane.tiltrotor.enabled() &&
+                quadplane.tiltrotor.current_tilt >= constrain_float(quadplane.fwd_trans_angle_deg / 90.0f, 0.0f, 1.0f)) {
+                transition_condition_met = true;
+                gcs().send_text(MAV_SEVERITY_INFO, "Transition tilt angle reached %.0fdeg", (double)(quadplane.tiltrotor.current_tilt * 90.0f));
+            }
+            break;
+        case QuadPlane::FwdTransCompletion::AIRSPEED:
+        default:
+            if (have_airspeed && aspeed > plane.aparm.airspeed_min) {
+                transition_condition_met = true;
+                gcs().send_text(MAV_SEVERITY_INFO, "Transition airspeed reached %.1f", (double)aspeed);
+            }
+            break;
+        }
+
+        if (transition_condition_met && !quadplane.assisted_flight) {
             transition_state = TRANSITION_TIMER;
             airspeed_reached_tilt = quadplane.tiltrotor.current_tilt;
-            gcs().send_text(MAV_SEVERITY_INFO, "Transition airspeed reached %.1f", (double)aspeed);
         }
         quadplane.assisted_flight = true;
 
