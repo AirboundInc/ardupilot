@@ -52,8 +52,15 @@ local P = {
     GRACE       = bind_add_param('GRACE', 22, 3), 
     STUCK_T     = bind_add_param('STUCK_T', 23, 15),
     TX_DEAD     = bind_add_param('TX_DEAD', 24, 5),   -- consecutive QISEND stalls before declaring socket dead (0=disable)
-    SOCK_T      = bind_add_param('SOCK_T', 25, 4)     -- short timeout (s) for DP recovery steps before hard reset
+    SOCK_T      = bind_add_param('SOCK_T', 25, 4),     -- short timeout (s) for DP recovery steps before hard reset
+    HTTPAUTH    = bind_add_param('HTTPAUTH', 26, 0)   -- 1 = fetch server IP/port via HTTPS first
 }
+
+-- ---- HTTPS auth endpoint (returns the data-server IP/port) ---------------
+-- NOTE: these sit in cleartext on the SD card. Anyone with the card reads them.
+local AUTH_URL             = "https://testgcs.airbound.com/api/v1/auth/login"
+local AUTH_BODY            = "username=nh@airbound.com&password=1234"
+local AUTH_EVERY_RECONNECT = false   -- false = fetch once/session, cache until hard reset
 
 
 local supports_routing = networking and networking.add_route -- luacheck: ignore 143
@@ -78,6 +85,24 @@ local modem_list = {
     ["EC20"] = { banner = 'EC20C', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,%x,0\r\n', setband_all  = 'AT+QCFG="band",0,7FFFFFFFFFFFFFFF,0\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' },
     ["EC25"] = { banner = 'EC25', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', preflight = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,%x,0\r\n', setband_all = 'AT+QCFG="band",bff,00b0e18df,0\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' , cipopen_udp_dp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,1\r\n',cipopen_tcp_dp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,1\r\n',qisend = 'AT+QISEND=0,%d\r\n', qcsq_enable = 'AT+QCSQ=1\r\n', }
 }
+
+local quectel_http = {
+    cfg = {
+        'AT+QHTTPCFG="contextid",1\r\n',
+        'AT+QHTTPCFG="responseheader",0\r\n',
+        'AT+QHTTPCFG="sslctxid",1\r\n',            -- HTTPS: bind SSL context 1
+        'AT+QSSLCFG="sslversion",1,4\r\n',         -- 4 = all TLS versions
+        'AT+QSSLCFG="ciphersuite",1,0XFFFF\r\n',   -- allow all suites
+        'AT+QSSLCFG="seclevel",1,0\r\n',           -- 0 = DO NOT verify server cert (see caveats)
+    },
+    act  = 'AT+QIACT=1\r\n',            -- activate PDP context (ERROR usually = already active = OK)
+    url  = 'AT+QHTTPURL=%d,30\r\n',     -- <url_len>,<timeout_s>
+    post = 'AT+QHTTPPOST=%d,80,80\r\n', -- <body_len>,<input_time>,<rsp_time>
+    read = 'AT+QHTTPREAD=80\r\n',
+}
+for _, m in ipairs({"EC25","EC20","EC200","BG95","EG800Q"}) do
+    if modem_list[m] then modem_list[m].http = quectel_http end
+end
 
 local default_modem = { reset = 'AT+CFUN=1,1\r\r' }
 local modem = default_modem
@@ -173,7 +198,10 @@ local cs = {
     dbg_sendok = 0, 
     dbg_stall = 0,
     dbg_recv = 0,
-    last_tx_dbg_ms = nil
+    last_tx_dbg_ms = nil,
+    auth_ip = nil, auth_port = nil,
+    http_sub = nil, http_cfg_i = 0, http_buf = "", http_deadline = 0,
+    auth_done = false,
 }
 
 local function uart_read()
@@ -415,6 +443,7 @@ local function reset_state()
     cmux_was_set = false  -- per-attempt marker; cmux_force_disabled stays sticky
     cs.ati_dbg_ms = nil
     cs.consec_stall = 0
+    cs.auth_done = false; cs.auth_ip = nil; cs.auth_port = nil; cs.http_sub = nil
 end
 
 local function reset_to_ATI()
@@ -600,6 +629,41 @@ local function check_QCSQ(s)
     return true
 end
 
+local function ip_to_octets(ipstr)
+    local a,b,c,d = ipstr:match("(%d+)%.(%d+)%.(%d+)%.(%d+)")
+    if not a then return nil end
+    a,b,c,d = tonumber(a),tonumber(b),tonumber(c),tonumber(d)
+    if a>255 or b>255 or c>255 or d>255 then return nil end
+    return {a,b,c,d}
+end
+
+-- Handles all three formats from the spec: JSON, ip:port, ip\nport
+local function parse_auth_response(s)
+    local jip  = s:match('"ip"%s*:%s*"([%d%.]+)"')
+    local jpt  = s:match('"port"%s*:%s*(%d+)')
+    if jip and jpt then return ip_to_octets(jip), tonumber(jpt) end
+
+    local cip, cpt = s:match('(%d+%.%d+%.%d+%.%d+)%s*:%s*(%d+)')
+    if cip and cpt then return ip_to_octets(cip), tonumber(cpt) end
+
+    local nip = s:match('(%d+%.%d+%.%d+%.%d+)')
+    if nip then
+        local after = s:sub((s:find(nip, 1, true) or 0) + #nip)
+        local npt = after:match('(%d+)')
+        if npt then return ip_to_octets(nip), tonumber(npt) end
+    end
+    return nil, nil
+end
+
+-- CIPOPEN uses dynamic values if auth succeeded, else the static params.
+local function effective_server()
+    if cs.auth_ip and cs.auth_port then
+        return cs.auth_ip[1], cs.auth_ip[2], cs.auth_ip[3], cs.auth_ip[4], cs.auth_port
+    end
+    return P.SERVER_IP0:get(), P.SERVER_IP1:get(), P.SERVER_IP2:get(),
+           P.SERVER_IP3:get(), P.SERVER_PORT:get()
+end
+
 
 local function handle_AT_reply(s)
     check_CSQ(s)
@@ -749,6 +813,94 @@ function dp.process_tx(now_ms, budget)
     cs.tx_state = "prompt"; cs.tx_ms = now_ms:tofloat()
 end
 
+local HTTP_TOTAL_TIMEOUT = 12000  -- ms cap on the whole auth attempt
+local next_after_registration
+
+local function http_fail(reason)
+    gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: ' .. reason .. ' — using static IP/port')
+    cs.auth_ip = nil; cs.auth_port = nil
+    cs.auth_done = true          -- don't loop this session; fall back
+    cs.http_sub = nil
+    step = next_after_registration()
+end
+
+local function step_HTTPAUTH()
+    if cs.http_sub == nil then
+        cs.http_sub = "CFG"; cs.http_cfg_i = 0; cs.http_buf = ""
+        cs.http_deadline = millis():tofloat() + HTTP_TOTAL_TIMEOUT
+        gcs:send_text(MAV_SEVERITY.INFO, 'LTE HTTPAUTH: fetching server addr')
+    end
+    if millis():tofloat() > cs.http_deadline then http_fail('timeout'); return end
+
+    local s = uart_read()
+    if s and #s > 0 then cs.http_buf = cs.http_buf .. s end
+    if #cs.http_buf > 4096 then cs.http_buf = cs.http_buf:sub(-2048) end
+    local b = cs.http_buf
+
+    if cs.http_sub == "CFG" then
+        -- one config command per OK/ERROR, then move to context activation
+        if cs.http_cfg_i == 0 or b:find('OK\r\n') or b:find('ERROR') then
+            cs.http_cfg_i = cs.http_cfg_i + 1
+            cs.http_buf = ""
+            local cmd = modem.http.cfg[cs.http_cfg_i]
+            if cmd then
+                AT_send(cmd)
+            else
+                cs.http_sub = "ACT"; AT_send(modem.http.act)
+            end
+        end
+
+    elseif cs.http_sub == "ACT" then
+        if b:find('OK\r\n') or b:find('ERROR') then    -- ERROR = already active, fine
+            cs.http_buf = ""; cs.http_sub = "URL_CMD"
+            AT_send(string.format(modem.http.url, #AUTH_URL))
+        end
+
+    elseif cs.http_sub == "URL_CMD" then
+        if b:find('CONNECT') then
+            cs.http_buf = ""; AT_send(AUTH_URL); cs.http_sub = "URL_DATA"  -- exactly #AUTH_URL bytes, no CRLF
+        elseif b:find('ERROR') then http_fail('QHTTPURL error') end
+
+    elseif cs.http_sub == "URL_DATA" then
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "POST_CMD"
+            AT_send(string.format(modem.http.post, #AUTH_BODY))
+        elseif b:find('ERROR') then http_fail('URL data error') end
+
+    elseif cs.http_sub == "POST_CMD" then
+        if b:find('CONNECT') then
+            cs.http_buf = ""; AT_send(AUTH_BODY); cs.http_sub = "POST_DATA"
+        elseif b:find('ERROR') then http_fail('QHTTPPOST error') end
+
+    elseif cs.http_sub == "POST_DATA" then
+        if b:find('+QHTTPPOST:') then
+            local err, code = b:match('+QHTTPPOST:%s*(%d+),(%d+)')
+            if err == "0" and code == "200" then
+                cs.http_buf = ""; cs.http_sub = "READ"; AT_send(modem.http.read)
+            else
+                http_fail('POST err='..tostring(err)..' http='..tostring(code))
+            end
+        elseif b:find('ERROR') then http_fail('POST data error') end
+
+    elseif cs.http_sub == "READ" then
+        if b:find('+QHTTPREAD:') or (b:find('CONNECT') and b:find('OK\r\n')) then
+            local body = b
+            local c1 = b:find('CONNECT')
+            if c1 then body = b:sub(c1 + 7) end   -- payload sits between CONNECT and trailing OK
+            local ip, port = parse_auth_response(body)
+            if ip and port then
+                cs.auth_ip = ip; cs.auth_port = port; cs.auth_done = true
+                gcs:send_text(MAV_SEVERITY.INFO, string.format(
+                    'LTE HTTPAUTH: server %d.%d.%d.%d:%d', ip[1],ip[2],ip[3],ip[4], port))
+                cs.http_sub = nil
+                step = next_after_registration()
+            else
+                http_fail('parse failed')
+            end
+        elseif b:find('ERROR') then http_fail('QHTTPREAD error') end
+    end
+end
+
 
 -- =========================================================================
 -- MAIN STATE MACHINE STEPS
@@ -878,6 +1030,17 @@ local function step_CPIN()
     end
 end
 
+function next_after_registration()
+    if P.PROTOCOL:get() == PPP then
+        return modem.cgact and "CGACT" or "PPPOPEN"
+    end
+    if modem.fast_connect then return "SIGNAL_GATE" end
+    if modem.preflight then return "QENG" end
+    if modem.cipmode then return "CIPMODE" end
+    if modem.cipclose then return "CIPCLOSE" end
+    return "CIPOPEN"
+end
+
 local function step_QENG()
     local s = uart_read()
     if s and s:find("+QENG") then
@@ -912,17 +1075,13 @@ local function step_CREG()
         local reg = s:match('+CEREG: %d,(%d+)') or s:match('+CREG: %d,(%d+)\r\n')
         
         if reg == "1" or reg == "5" then
-            buf.setup = "" -- Clear after success
+            buf.setup = ""
             cs.cops_zero_sent = false
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG OK')
-            if P.PROTOCOL:get() == PPP then
-                step = modem.cgact and "CGACT" or "PPPOPEN"
+            if P.HTTPAUTH:get() == 1 and modem.http and (AUTH_EVERY_RECONNECT or not cs.auth_done) then
+                step = "HTTPAUTH"
             else
-                if modem.fast_connect then step = "SIGNAL_GATE"
-                elseif modem.preflight then step = "QENG"
-                elseif modem.cipmode then step = "CIPMODE"
-                elseif modem.cipclose then step = "CIPCLOSE"
-                else step = "CIPOPEN" end
+                step = next_after_registration()
             end
             return
             
@@ -1231,7 +1390,7 @@ local function step_CIPOPEN()
         step = "HALT"
         return
     end
-    data_send(string.format(cipopen, P.SERVER_IP0:get(), P.SERVER_IP1:get(), P.SERVER_IP2:get(), P.SERVER_IP3:get(), P.SERVER_PORT:get()))
+    data_send(string.format(cipopen, effective_server()))
     cs.cipopen_sent = true; cs.cipopen_sent_ms = millis():tofloat()
 end
 
@@ -1487,7 +1646,7 @@ local function run_step()
             reset_to_ATI(); return 1000
         end
     end
-    if not step_changed and step ~= "ATI" and step ~= "CMUX" and step ~= "CPIN" and step ~= "CREG" and step ~= "HALT" then
+    if not step_changed and step ~= "ATI" and step ~= "CMUX" and step ~= "CPIN" and step ~= "CREG" and step ~= "HALT" and step ~= "HTTPAUTH" then
         if time_in_step > P.STUCK_T:get() then
             gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE: %s timeout after %ds", step, P.STUCK_T:get()))
             reset_to_ATI(); return 1000
@@ -1512,6 +1671,7 @@ local function run_step()
     if step == "ATI" then step_ATI(); return 1100 end
     if step == "BAUD" then step_BAUD(); return 50 end
     if step == "CREG" then step_CREG(); return 150 end 
+    if step == "HTTPAUTH" then step_HTTPAUTH(); return 100 end
     if step == "SIGNAL_GATE" then step_SIGNAL_GATE(); return 50 end
     if step == "CEREG_CHECK" then step_CEREG_CHECK(); return 100 end
     if step == "SOCKET_STATE" then step_SOCKET_STATE(); return 50 end
