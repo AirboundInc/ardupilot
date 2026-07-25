@@ -358,6 +358,7 @@ public:
         k_param_takeoff_throttle_max_t,
         k_param_autotune_options,
         k_param_danger_zone,
+        k_param_autobailout,
     };
 
     AP_Int16 format_version;

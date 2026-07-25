@@ -169,17 +169,18 @@ bool DZ_Check::raw_satisfied(DZ_CheckState& st, float value, uint32_t now_ms) co
     switch (type) {
     case DZ_CheckType::THRESHOLD:
     case DZ_CheckType::DURATION:
-        return cmp_pass(value, thresh, cmp);
+        return cmp_pass(value, eff_thresh(), cmp);
 
     case DZ_CheckType::WINDOW: {
         if (st.buf == nullptr) {
             return false;   // no buffer
         }
+        const uint32_t win = eff_window_ms();
         st.buf->push(value, now_ms);
-        st.buf->prune(now_ms, window_ms);
+        st.buf->prune(now_ms, win);
         // Require a complete window before the statistic is meaningful, so a
         // partially-filled buffer cannot satisfy the check prematurely.
-        if (!st.buf->full(now_ms, window_ms)) {
+        if (!st.buf->full(now_ms, win)) {
             return false;
         }
         float s = 0.0f;
@@ -188,16 +189,17 @@ bool DZ_Check::raw_satisfied(DZ_CheckState& st, float value, uint32_t now_ms) co
         case DZ_Stat::PEAK:  s = st.buf->peak();  break;
         case DZ_Stat::RANGE: s = st.buf->range(); break;
         }
-        return cmp_pass(s, thresh, cmp);
+        return cmp_pass(s, eff_thresh(), cmp);
     }
 
     case DZ_CheckType::OSCILLATION: {
         if (st.buf == nullptr) {
             return false;   // no buffer
         }
+        const uint32_t win = eff_window_ms();
         st.buf->push(value, now_ms);
-        st.buf->prune(now_ms, window_ms);
-        if (!st.buf->full(now_ms, window_ms)) {
+        st.buf->prune(now_ms, win);
+        if (!st.buf->full(now_ms, win)) {
             return false;
         }
         return st.buf->mean_crossings() >= min_crossings;
@@ -216,14 +218,15 @@ bool DZ_Check::update(DZ_CheckState& st, float value, uint32_t now_ms) const
         st.raw_active = false;
         return false;
     }
-    if (duration_ms == 0) {
+    const uint32_t dur = eff_duration_ms();
+    if (dur == 0) {
         return true;
     }
     if (!st.raw_active) {
         st.raw_active = true;
         st.raw_since_ms = now_ms;
     }
-    return (now_ms - st.raw_since_ms) >= duration_ms;
+    return (now_ms - st.raw_since_ms) >= dur;
 }
 
 // ---------------------------------------------------------------------------

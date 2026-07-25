@@ -74,14 +74,95 @@ public:
         }
         return (fabsf(l) < fabsf(r)) ? l : r;
     }
+
+    // ---- Getters for parameter values ----
+    static float ab_pit_lim()   { return plane.autobailout.pit_lim; }
+    static float ab_pit_tout()  { return plane.autobailout.pit_tout; }
+    static float ab_para_ang()  { return plane.autobailout.para_ang; }
+    static float ab_para_tout() { return plane.autobailout.para_tout; }
+    static float ab_avg_lim()   { return plane.autobailout.avg_lim; }
+    static float ab_peak_lim()  { return plane.autobailout.peak_lim; }
+    // recovery window (s -> ms), clamped to the buffer's max retained window
+    static float ab_win_ms()
+    {
+        const float s = constrain_float(plane.autobailout.win_tim, 0.1f, DZ_BUFFER_MAX_WINDOW_MS * 0.001f);
+        return s * 1000.0f;
+    }
 };
 
 // ---------------------------------------------------------------------------
-// Constants
+// Autobailout parameters
 // ---------------------------------------------------------------------------
+const AP_Param::GroupInfo Autobailout::var_info[] = {
+    // @Param: PIT_LIM
+    // @DisplayName: Autobailout pitch limit
+    // @Description: AHRS pitch angle below which autobailout (switch to QLOITER) is triggered.
+    // @Units: deg
+    // @User: Advanced
+    AP_GROUPINFO("PIT_LIM", 1, Autobailout, pit_lim, 40),
 
-// Backtransition delay for autobailout
-static constexpr uint32_t DZ_BTRN_DLY = 2500;
+    // @Param: PIT_TOUT
+    // @DisplayName: Autobailout pitch timeout
+    // @Description: Time the pitch must remain below AB_PIT_LIM before autobailout triggers.
+    // @Units: ms
+    // @Range: 0 5000
+    // @User: Advanced
+    AP_GROUPINFO("PIT_TOUT", 2, Autobailout, pit_tout, 200),
+
+    // @Param: BTRN_DLY
+    // @DisplayName: Autobailout back-transition delay
+    // @Description: Delay after the back-transition to hover completes before autobailout may arm, letting attitude settle.
+    // @Units: ms
+    // @Range: 0 10000
+    // @User: Advanced
+    AP_GROUPINFO("BTRN_DLY", 3, Autobailout, btrn_dly, 2500),
+
+    // @Param: PARA_ANG
+    // @DisplayName: Autobailout parachute pitch angle
+    // @Description: AHRS pitch angle below which the parachute deploy action is triggered.
+    // @Units: deg
+    // @User: Advanced
+    AP_GROUPINFO("PARA_ANG", 4, Autobailout, para_ang, -15),
+
+    // @Param: PARA_TOUT
+    // @DisplayName: Autobailout parachute timeout
+    // @Description: Time the pitch must remain below AB_PARA_ANG before the parachute action triggers.
+    // @Units: ms
+    // @Range: 0 5000
+    // @User: Advanced
+    AP_GROUPINFO("PARA_TOUT", 5, Autobailout, para_tout, 100),
+
+    // @Param: PARA_EN
+    // @DisplayName: Autobailout parachute enable
+    // @Description: Enable the Zone 5 parachute deploy + disarm action.
+    // @Values: 0:Disabled,1:Enabled
+    // @User: Advanced
+    AP_GROUPINFO("PARA_EN", 6, Autobailout, para_en, 1),
+
+    // @Param: WIN_TIM
+    // @DisplayName: Autobailout recovery window
+    // @Description: Rolling window over which the recovery statistics are evaluated to leave the autobailout zone.
+    // @Units: s
+    // @Range: 1 10
+    // @User: Advanced
+    AP_GROUPINFO("WIN_TIM", 7, Autobailout, win_tim, 5),
+
+    // @Param: AVG_LIM
+    // @DisplayName: Autobailout recovery mean pitch-error limit
+    // @Description: Mean pitch error over the recovery window must fall below this to leave the autobailout zone.
+    // @Units: deg
+    // @User: Advanced
+    AP_GROUPINFO("AVG_LIM", 8, Autobailout, avg_lim, 20),
+
+    // @Param: PEAK_LIM
+    // @DisplayName: Autobailout recovery peak pitch limit
+    // @Description: Peak pitch over the recovery window must fall below this to leave the autobailout zone.
+    // @Units: deg
+    // @User: Advanced
+    AP_GROUPINFO("PEAK_LIM", 9, Autobailout, peak_lim, 30),
+
+    AP_GROUPEND
+};
 
 // ---------------------------------------------------------------------------
 // Zone table
@@ -132,16 +213,19 @@ static constexpr DZ_Zone dz_zones[] = {
     { .name = "zone4",
       .entry = dz::OR(
           DZ_Check::Duration(DZ_Metrics::raw_pitch_deg,
-              { .thresh = 40.0f, .cmp = DZ_Cmp::BELOW, .duration_ms = 200 }),
+              { .thresh = 40.0f, .cmp = DZ_Cmp::BELOW, .duration_ms = 200,
+                .thresh_fn = DZ_Metrics::ab_pit_lim, .dur_fn = DZ_Metrics::ab_pit_tout }),
           DZ_Check::Duration(DZ_Metrics::tilt_same_dir,
               { .thresh = 4499.0f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 100 }),
           DZ_Check::Duration(DZ_Metrics::tilt_same_dir,
               { .thresh = -4499.0f, .cmp = DZ_Cmp::BELOW, .duration_ms = 100 })),
       .exit = dz::AND(
           DZ_Check::Window(DZ_Metrics::pitch_error_deg,
-              { .stat = DZ_Stat::MEAN, .thresh = 20.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 }),
+              { .stat = DZ_Stat::MEAN, .thresh = 20.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0,
+                .thresh_fn = DZ_Metrics::ab_avg_lim, .win_fn = DZ_Metrics::ab_win_ms }),
           DZ_Check::Window(DZ_Metrics::att_pitch_deg,
-              { .stat = DZ_Stat::PEAK, .thresh = 30.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 })) },
+              { .stat = DZ_Stat::PEAK, .thresh = 30.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0,
+                .thresh_fn = DZ_Metrics::ab_peak_lim, .win_fn = DZ_Metrics::ab_win_ms })) },
 
     // Zone 5: deploy parachute + disarm
     // entry: raw pitch < -15 deg for 100 ms
@@ -151,7 +235,8 @@ static constexpr DZ_Zone dz_zones[] = {
     { .name = "zone5",
       .entry = dz::OR(
           DZ_Check::Duration(DZ_Metrics::raw_pitch_deg,
-              { .thresh = -15.0f, .cmp = DZ_Cmp::BELOW, .duration_ms = 100 }),
+              { .thresh = -15.0f, .cmp = DZ_Cmp::BELOW, .duration_ms = 100,
+                .thresh_fn = DZ_Metrics::ab_para_ang, .dur_fn = DZ_Metrics::ab_para_tout }),
           DZ_Check::Duration(DZ_Metrics::tilt_same_dir,
               { .thresh = 4499.0f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 500 }),
           DZ_Check::Duration(DZ_Metrics::tilt_same_dir,
@@ -188,7 +273,7 @@ void Plane::danger_zone_update()
     if (danger_zone_vtol_entry_ms == 0 || quadplane.tailsitter_in_vtol_transition()) {
         danger_zone_vtol_entry_ms = now;
     }
-    const bool backtransition_done = (now - danger_zone_vtol_entry_ms) >= DZ_BTRN_DLY;
+    const bool backtransition_done = (now - danger_zone_vtol_entry_ms) >= (uint32_t)autobailout.btrn_dly;
 
     danger_zone.update(now);
 
@@ -241,8 +326,8 @@ void Plane::danger_zone_update()
                 set_mode_by_number(danger_zone_resume_mode, ModeReason::DANGERZONE_RECOVERED);
             }
 
-            // Zone 5: Disarm and deploy parachute
-            if (level >= 5 && danger_zone_last_level < 5) {
+            // Zone 5: Disarm and deploy parachute (if enabled)
+            if (level >= 5 && danger_zone_last_level < 5 && autobailout.para_en) {
 #if PARACHUTE == ENABLED
                 parachute_release_with_disarm();
 #endif

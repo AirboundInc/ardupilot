@@ -804,6 +804,10 @@ const AP_Param::Info Plane::var_info[] = {
     // @Group: DZ_
     // @Path: ../libraries/AP_DangerZone/AP_DangerZone.cpp
     GOBJECT(danger_zone,         "DZ_", AP_DangerZone),
+
+    // @Group: AB_
+    // @Path: danger_zone_config.cpp
+    GOBJECT(autobailout,         "AB_", Autobailout),
 #endif
 
 #if AP_TUNING_ENABLED

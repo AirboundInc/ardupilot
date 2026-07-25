@@ -97,6 +97,7 @@
 #include "GCS_Plane.h"
 #include "quadplane.h"
 #include <AP_DangerZone/AP_DangerZone.h>
+#include "autobailout.h"
 #include <AP_Tuning/AP_Tuning_config.h>
 #if AP_TUNING_ENABLED
 #include "tuning.h"
@@ -815,6 +816,7 @@ private:
 #if HAL_QUADPLANE_ENABLED && AP_DANGERZONE_ENABLED
     // Danger Zone failsafe framework.
     AP_DangerZone danger_zone;
+    Autobailout autobailout;
     void danger_zone_init();
     void danger_zone_update();
     uint8_t danger_zone_last_level{0};
