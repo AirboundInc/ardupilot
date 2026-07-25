@@ -125,6 +125,30 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("THR_BT", 16, Tiltrotor, back_trans_hold_throttle, 30),
 
+    // @Param: THR_FT
+    // @DisplayName: Forward transition hold throttle
+    // @Description: Fixed throttle percentage to hold during the Q_TILT_FTHLD_MS hold window at the start of a forward transition (dual axis tiltrotor), before blending to the FBWA/commanded throttle over Q_TILT_FTBLD_MS. Applies regardless of the Q_FTRANS_MODE used to complete the transition.
+    // @Units: %
+    // @Range: 0 100
+    // @User: Standard
+    AP_GROUPINFO("THR_FT", 17, Tiltrotor, fwd_trans_hold_throttle, 30),
+
+    // @Param: FTHLD_MS
+    // @DisplayName: Forward transition throttle hold time
+    // @Description: How long to hold the Q_TILT_THR_FT throttle steady at the start of a forward transition (dual axis tiltrotor), before blending to the FBWA/commanded throttle over Q_TILT_FTBLD_MS
+    // @Units: ms
+    // @Range: 0 10000
+    // @User: Standard
+    AP_GROUPINFO("FTHLD_MS", 18, Tiltrotor, fwd_trans_hold_ms, 500),
+
+    // @Param: FTBLD_MS
+    // @DisplayName: Forward transition throttle blend time
+    // @Description: How long, after the Q_TILT_FTHLD_MS throttle hold period ends, to blend from the held Q_TILT_THR_FT throttle to the FBWA/commanded throttle during a forward transition (dual axis tiltrotor)
+    // @Units: ms
+    // @Range: 0 10000
+    // @User: Standard
+    AP_GROUPINFO("FTBLD_MS", 19, Tiltrotor, fwd_trans_blend_ms, 1000),
+
     AP_GROUPEND
 };
 
@@ -464,6 +488,9 @@ void Tiltrotor::write_log()
         fw_throttle  : last_fw_throttle,
         pilot_throttle : backtrans_pilot_throttle,
         blend_throttle : backtrans_blend_throttle,
+        fwdtrans_elapsed_ms : fwdtrans_elapsed_ms,
+        fwdtrans_commanded_throttle : fwdtrans_commanded_throttle,
+        fwdtrans_blend_throttle : fwdtrans_blend_throttle,
     };
 
     if (type != TILT_TYPE_VECTORED_YAW) {
@@ -810,10 +837,19 @@ void Tiltrotor::dual_axis_output(void)
         dual_axis_mixout_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
         SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, throttle);
 
-        // in FW transition: also write stick throttle directly to ESCs
+        // in FW transition: also write stick throttle directly to ESCs,
+        // limited by Q_TILT_THR_FT and blended smoothly to the
+        // FBWA/commanded throttle over Q_TILT_FTHLD_MS + Q_TILT_FTBLD_MS
         if (!quadplane.in_vtol_mode()) {
-            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle, 0, 100));
-            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle, 0, 100));
+            if (fwd_trans_start_ms == 0) {
+                fwd_trans_start_ms = now;
+            }
+            const float esc_throttle = get_fwd_trans_throttle(now, throttle);
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(esc_throttle, 0, 100));
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(esc_throttle, 0, 100));
+        } else {
+            // still hovering, not yet in a forward transition
+            fwd_trans_start_ms = 0;
         }
 
         
@@ -846,9 +882,11 @@ void Tiltrotor::dual_axis_output(void)
     }
 
 
-    // track FW mode time and clear backtrans timer so next VTOL entry re-arms it
+    // track FW mode time and clear backtrans/fwdtrans timers so the next
+    // transition re-arms them
     last_fw_mode_ms = now;
     transition->backtrans_start_ms = 0;
+    fwd_trans_start_ms = 0;
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
@@ -1026,6 +1064,42 @@ float Tiltrotor::get_backtrans_throttle(uint32_t now, float pilot_throttle)
     const float progress = (delay_ms == 0) ? 1.0f : constrain_float(blend_elapsed_ms / (float)delay_ms, 0.0f, 1.0f);
     backtrans_blend_throttle = hold_throttle + (pilot_throttle - hold_throttle) * progress;
     return backtrans_blend_throttle;
+}
+
+/*
+  at the start of a forward transition (dual axis tiltrotor): hold the
+  Q_TILT_THR_FT throttle steady for Q_TILT_FTHLD_MS, then linearly blend
+  to the FBWA/commanded throttle over the following Q_TILT_FTBLD_MS.
+  This is independent of Q_FTRANS_MODE, since it only depends on being
+  in an assisted forward transition, not on how that transition's
+  completion condition is judged.
+*/
+float Tiltrotor::get_fwd_trans_throttle(uint32_t now, float commanded_throttle)
+{
+    fwdtrans_commanded_throttle = commanded_throttle;
+
+    const uint32_t hold_ms = (uint32_t)(fwd_trans_hold_ms);
+    const uint32_t blend_ms = (uint32_t)(fwd_trans_blend_ms);
+    if (fwd_trans_start_ms == 0 || (hold_ms == 0 && blend_ms == 0)) {
+        fwdtrans_elapsed_ms = 0;
+        fwdtrans_blend_throttle = commanded_throttle;
+        return commanded_throttle;
+    }
+
+    const float hold_throttle = fwd_trans_hold_throttle * 0.01f;
+
+    fwdtrans_elapsed_ms = now - fwd_trans_start_ms;
+
+    if (fwdtrans_elapsed_ms < hold_ms) {
+        // still in the throttle hold period, keep it steady at the configured hold throttle
+        fwdtrans_blend_throttle = hold_throttle;
+        return fwdtrans_blend_throttle;
+    }
+
+    const uint32_t blend_elapsed_ms = fwdtrans_elapsed_ms - hold_ms;
+    const float progress = (blend_ms == 0) ? 1.0f : constrain_float(blend_elapsed_ms / (float)blend_ms, 0.0f, 1.0f);
+    fwdtrans_blend_throttle = hold_throttle + (commanded_throttle - hold_throttle) * progress;
+    return fwdtrans_blend_throttle;
 }
 
 #endif  // HAL_QUADPLANE_ENABLED

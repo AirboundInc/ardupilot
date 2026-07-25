@@ -53,6 +53,11 @@ public:
     // following Q_TILT_BTDLY_MS
     float get_backtrans_throttle(uint32_t now, float pilot_throttle);
 
+    // hold the Q_TILT_THR_FT throttle steady for Q_TILT_FTHLD_MS, then
+    // linearly blend to the FBWA/commanded throttle over the following
+    // Q_TILT_FTBLD_MS, during a forward transition (dual axis tiltrotor)
+    float get_fwd_trans_throttle(uint32_t now, float commanded_throttle);
+
     // most recent k_throttle value written by AP_MotorsTailsitter's mixer
     // inside dual_axis_output(), before it gets restored, for debug logging
     float get_last_dual_axis_mixout_throttle() const { return dual_axis_mixout_throttle; }
@@ -123,6 +128,21 @@ public:
     // backtransition, instead of the last fixed wing throttle
     AP_Float back_trans_hold_throttle;
 
+    // Fixed throttle (percent) to hold during fwd_trans_hold_ms at the start
+    // of a forward transition (dual axis tiltrotor), before blending to the
+    // FBWA/commanded throttle over fwd_trans_blend_ms
+    AP_Float fwd_trans_hold_throttle;
+
+    // Time to hold fwd_trans_hold_throttle steady at the start of a forward
+    // transition into fixed wing flight, before blending to the
+    // FBWA/commanded throttle (dual axis tiltrotor)
+    AP_Float fwd_trans_hold_ms;
+
+    // Time to blend from the held fwd_trans_hold_throttle to the
+    // FBWA/commanded throttle after the fwd_trans_hold_ms hold period,
+    // during a forward transition (dual axis tiltrotor)
+    AP_Float fwd_trans_blend_ms;
+
     float current_tilt;
     float current_throttle;
     bool _motors_active:1;
@@ -153,6 +173,9 @@ private:
         float fw_throttle;
         float pilot_throttle;
         float blend_throttle;
+        uint32_t fwdtrans_elapsed_ms;
+        float fwdtrans_commanded_throttle;
+        float fwdtrans_blend_throttle;
     };
 
     bool setup_complete;
@@ -181,6 +204,15 @@ private:
     uint32_t backtrans_elapsed_ms = 0;
     float backtrans_pilot_throttle = 0;
     float backtrans_blend_throttle = 0;
+
+    // time when the current forward transition began (dual axis tiltrotor),
+    // for Q_TILT_FTHLD_MS / Q_TILT_FTBLD_MS
+    uint32_t fwd_trans_start_ms = 0;
+
+    // debug state from the last get_fwd_trans_throttle() call, for TILT log
+    uint32_t fwdtrans_elapsed_ms = 0;
+    float fwdtrans_commanded_throttle = 0;
+    float fwdtrans_blend_throttle = 0;
 
     // k_throttle value written by AP_MotorsTailsitter's collective-thrust
     // actuator output inside dual_axis_output(), before it gets restored
