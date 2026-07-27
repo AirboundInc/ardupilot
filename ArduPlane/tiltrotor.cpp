@@ -859,7 +859,10 @@ void Tiltrotor::dual_axis_output(void)
             const float commanded_throttle_pct = plane.control_mode->does_auto_throttle()
                 ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
                 : plane.get_throttle_input(true);
-            const float esc_throttle = get_fwd_trans_throttle(now, commanded_throttle_pct);
+            // never command motor throttle while disarmed, regardless of
+            // what the pilot/FBWA throttle or the blend would otherwise be
+            const float esc_throttle = plane.arming.is_armed_and_safety_off()
+                ? get_fwd_trans_throttle(now, commanded_throttle_pct) : 0.0f;
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttle,      esc_throttle);
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(esc_throttle, 0, 100));
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(esc_throttle, 0, 100));
@@ -911,7 +914,13 @@ void Tiltrotor::dual_axis_output(void)
 
     // TODO: Fix this for auto mode throttle control
 
-    const float throttle = plane.control_mode->does_auto_throttle()
+    // never command motor throttle while disarmed: this branch runs
+    // unconditionally in FW modes (even disarmed on the ground, since
+    // assisted_flight is false here), and would otherwise write raw
+    // stick/k_throttle straight to the ESCs, undoing the disarm safety-zero
+    // Plane::set_servos() already applies earlier in the same tick
+    const float throttle = !plane.arming.is_armed_and_safety_off() ? 0.0f
+        : plane.control_mode->does_auto_throttle()
         ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
         : plane.get_throttle_input(true);
 
