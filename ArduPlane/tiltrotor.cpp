@@ -831,24 +831,34 @@ void Tiltrotor::dual_axis_output(void)
         }
 
         // AP_MotorsTailsitter::output_to_motors() reuses k_throttle as its
-        // own collective-thrust actuator output (see AP_MotorsTailsitter.cpp),
-        // overwriting the fixed-wing forward-throttle value Plane::set_throttle()
-        // computed. Restore it so k_throttle/AETR logs keep their normal meaning.
+        // own collective-thrust actuator output (see AP_MotorsTailsitter.cpp).
+        // Capture it for QTHR debug logging, then restore k_throttle to the
+        // true commanded value *before* anything below reads k_throttle again
+        // (e.g. via throttle_percentage()) - otherwise it would see the
+        // mixer's leftover value instead of the FBWA/commanded throttle.
         dual_axis_mixout_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
         SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, throttle);
 
-        // in FW transition: also write stick throttle directly to ESCs,
-        // limited by Q_TILT_THR_FT and blended smoothly to the
-        // FBWA/commanded throttle over Q_TILT_FTHLD_MS + Q_TILT_FTBLD_MS
         if (!quadplane.in_vtol_mode()) {
+            // in FW transition: limit/blend the commanded throttle over
+            // Q_TILT_FTHLD_MS + Q_TILT_FTBLD_MS, then write the *same*
+            // blended value to the ESCs and back to k_throttle, so
+            // k_throttle/AETR logs reflect what's actually being sent to
+            // the motors rather than the raw commanded value
             if (fwd_trans_start_ms == 0) {
                 fwd_trans_start_ms = now;
             }
-            const float esc_throttle = get_fwd_trans_throttle(now, throttle);
+            // fetch the FBWA/commanded throttle percentage the same way the
+            // mode_fbwa call stack does (Plane::adjust_nav_pitch_throttle()),
+            // rather than re-deriving it from the k_throttle scaled output
+            const int8_t commanded_throttle_pct = plane.throttle_percentage();
+            const float esc_throttle = get_fwd_trans_throttle(now, commanded_throttle_pct);
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttle,      esc_throttle);
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(esc_throttle, 0, 100));
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(esc_throttle, 0, 100));
         } else {
             // still hovering, not yet in a forward transition
+            // (k_throttle was already restored to the raw commanded value above)
             fwd_trans_start_ms = 0;
         }
 
@@ -1086,7 +1096,9 @@ float Tiltrotor::get_fwd_trans_throttle(uint32_t now, float commanded_throttle)
         return commanded_throttle;
     }
 
-    const float hold_throttle = fwd_trans_hold_throttle * 0.01f;
+    // fwd_trans_hold_throttle and commanded_throttle are both 0-100 percent
+    // (unlike back_trans_hold_throttle/pilot_throttle, which are 0-1 fractions), no scaling needed
+    const float hold_throttle = fwd_trans_hold_throttle;
 
     fwdtrans_elapsed_ms = now - fwd_trans_start_ms;
 
