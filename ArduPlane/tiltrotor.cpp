@@ -832,10 +832,9 @@ void Tiltrotor::dual_axis_output(void)
 
         // AP_MotorsTailsitter::output_to_motors() reuses k_throttle as its
         // own collective-thrust actuator output (see AP_MotorsTailsitter.cpp).
-        // Capture it for QTHR debug logging, then restore k_throttle to the
-        // true commanded value *before* anything below reads k_throttle again
-        // (e.g. via throttle_percentage()) - otherwise it would see the
-        // mixer's leftover value instead of the FBWA/commanded throttle.
+        // Capture it for QTHR debug logging, then restore k_throttle so it
+        // keeps its normal fixed-wing-forward-throttle meaning for anything
+        // else that reads it this tick (e.g. AETR logging while hovering).
         dual_axis_mixout_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
         SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, throttle);
 
@@ -848,10 +847,18 @@ void Tiltrotor::dual_axis_output(void)
             if (fwd_trans_start_ms == 0) {
                 fwd_trans_start_ms = now;
             }
-            // fetch the FBWA/commanded throttle percentage the same way the
-            // mode_fbwa call stack does (Plane::adjust_nav_pitch_throttle()),
-            // rather than re-deriving it from the k_throttle scaled output
-            const int8_t commanded_throttle_pct = plane.throttle_percentage();
+            // fetch the true pilot/FBWA-commanded throttle straight from its
+            // source, bypassing k_throttle entirely: by this point in
+            // set_servos() (called after quadplane.update()/transition->update()),
+            // k_throttle has already been overwritten by SLT_Transition's own
+            // tilt-ratio throttle blend (see quadplane.cpp TRANSITION_TIMER),
+            // so reading it back here would blend toward an already-blended,
+            // tilt-angle-dependent value instead of the pilot's actual input.
+            // Same source Tiltrotor::dual_axis_output() already uses once the
+            // transition is fully done, further down in this function.
+            const float commanded_throttle_pct = plane.control_mode->does_auto_throttle()
+                ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
+                : plane.get_throttle_input(true);
             const float esc_throttle = get_fwd_trans_throttle(now, commanded_throttle_pct);
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttle,      esc_throttle);
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(esc_throttle, 0, 100));
