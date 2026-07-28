@@ -876,8 +876,18 @@ void Tiltrotor::dual_axis_output(void)
         float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
         float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
 
-        tilt_left  *= vectoring_gain_hvr;
-        tilt_right *= vectoring_gain_hvr;
+        // drive TVs based on pitch error as well
+        float des_pitch_cd = quadplane.attitude_control->get_att_target_euler_cd().y;
+        int32_t pitch_error_cd = (des_pitch_cd - quadplane.ahrs_view->pitch_sensor) * 0.5;
+        float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
+        float extra_sign = extra_pitch > 0?1:-1;
+        float extra_elevator = 0;
+        if (!is_zero(extra_pitch) && quadplane.in_vtol_mode()) {
+            extra_elevator = extra_sign * fabsf(extra_pitch) * SERVO_MAX;
+        }
+
+        tilt_left  += extra_elevator * vectoring_gain_hvr;
+        tilt_right += extra_elevator * vectoring_gain_hvr;
 
 #if HAL_LOGGING_ENABLED
         // Add logging for desired thrust vectoring angles
@@ -887,7 +897,6 @@ void Tiltrotor::dual_axis_output(void)
                 "Qff", // uint64_t, float
                 AP_HAL::micros64(), tilt_left/100, tilt_right/100);
 #endif
-
         
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
                                         constrain_float(tilt_left,  -SERVO_MAX, SERVO_MAX));
