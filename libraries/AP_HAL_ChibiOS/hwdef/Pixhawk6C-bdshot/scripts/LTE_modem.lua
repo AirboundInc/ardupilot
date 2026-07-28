@@ -225,6 +225,7 @@ local cs = {
     auth_ip = nil, auth_port = nil,
     http_sub = nil, http_cfg_i = 0, http_buf = "", http_deadline = 0,
     auth_done = false,
+    creg_search_ms = nil
 }
 
 local function uart_read()
@@ -320,6 +321,7 @@ local modem_revision = ""
 -- Add more patterns here as Quectel ships new broken revisions.
 local BROKEN_CMUX_REVISIONS = {
     "EC25EFAR08A07M4G",   -- confirmed broken; SABM frames silently ignored
+    "EC25EFAR02A08M4G",  -- confirmed broken; SABM frames silently ignored
     -- "EC25EFAR08A08M4G", -- add future broken revisions here
 }
 
@@ -459,7 +461,8 @@ local function reset_state()
     cs.cipopen_retry = 0; cs.cipopen_sent = false; cs.cipopen_sent_ms = 0
     cs.hard_reset_strikes = 0 
     cs.sim_probe_count = 0; cs.cpin_probe_n = 0
-    cs.cereg_drop_ms = nil      
+    cs.cereg_drop_ms = nil   
+    cs.creg_search_ms = nil 
     cs.step_times = {}; cs.step_timer_ms = millis():tofloat()
     cs.post_reset = true
     cs.cipopen_preclosed = false
@@ -1120,7 +1123,7 @@ local function step_CPIN()
             -- didn't catch it. Add this revision to BROKEN_CMUX_REVISIONS so
             -- future boots will catch it via auto-detect.
             local is_known_good_fw = is_known_good_ec25(modem_revision)
-            if cmux_was_set and not cmux_force_disabled and not is_known_good_fw then
+            if cmux_was_set and not cmux_force_disabled and not is_known_good_fw and modem.cipopen_udp_dp ~= nil then
                 gcs:send_text(MAV_SEVERITY.WARNING,
                     "LTE: CPIN failed after CMUX setup — disabling CMUX (firmware bug)")
                 if #modem_revision > 0 then
@@ -1191,6 +1194,16 @@ local function step_CREG()
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG OK')
             if P.HTTPAUTH:get() == 1 and modem.http and (AUTH_EVERY_RECONNECT or not cs.auth_done) then
                 step = "HTTPAUTH"
+            if cs.creg_search_ms then
+                gcs:send_text(MAV_SEVERITY.INFO, string.format(
+                    'LTE_modem: CREG OK (search %.1fs)',
+                    (millis() - cs.creg_search_ms):tofloat() / 1000))
+                cs.creg_search_ms = nil
+            else
+                gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG OK')
+            end
+            if P.PROTOCOL:get() == PPP then
+                step = modem.cgact and "CGACT" or "PPPOPEN"
             else
                 step = next_after_registration()
             end
@@ -1218,7 +1231,12 @@ local function step_CREG()
             
         elseif reg == "2" then
             -- Do not clear the buffer here! Let it print, and let the OK catch it below.
-            gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG searching...')
+            -- Print once per search, not once per 150ms poll (Cat 1 scan can take
+            -- 10s+, which was ~65 identical GCS lines per boot).
+            if not cs.creg_search_ms then
+                cs.creg_search_ms = millis()
+                gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG searching...')
+            end
         end
 
         -- Self-cleaning mechanism: wipe the slate clean when the modem finishes a sentence
