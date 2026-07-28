@@ -897,7 +897,7 @@ void Tiltrotor::dual_axis_output(void)
                 "sddddd", // seconds, degrees
                 "F00000", // micro (1e-6), no mult (1e0)
                 "Qfffff", // uint64_t, float
-                AP_HAL::micros64(), tilt_left/100, tilt_right/100, extra_elevator,
+                AP_HAL::micros64(), tilt_left/100, tilt_right/100, extra_elevator/100,
                 tilt_left_adjusted/100, 
                 tilt_right_adjusted/100);
 #endif
