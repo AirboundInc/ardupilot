@@ -24,7 +24,7 @@ assert(param:add_param(KEY, 13, "DBG_EN", 1), 'could not add AUTOB_DBG_EN')  -- 
 assert(param:add_param(KEY, 14, "PRED_INT", 1000), 'could not add AUTOB_PRED_INT')  -- Rate based VTOL pitch prediction interval
 assert(param:add_param(KEY, 15, "PRED_ANG", 105), 'could not add AUTOB_PRED_ANG') -- VTOL frame absolute rate based predicted angle threshold for autobailout
 assert(param:add_param(KEY, 16, "RES_CNT", 5), 'could not add AUTOB_RES_CNT') -- VTOL frame absolute rate based predicted angle threshold for autobailout
-assert(param:add_param(KEY, 17, "DRFT_LIM", 0), 'could not add AUTOB_DRFT_LIM') -- Horizontal drift from the bailout entry point to trigger parachute (m)
+assert(param:add_param(KEY, 17, "DRFT_LIM", 15), 'could not add AUTOB_DRFT_LIM') -- Horizontal drift from the bailout entry point to trigger parachute (m)
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
