@@ -875,6 +875,8 @@ void Tiltrotor::dual_axis_output(void)
         
         float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
         float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
+        float tilt_left_adjusted = tilt_left;
+        float tilt_right_adjusted = tilt_right;
 
         // drive TVs based on pitch error as well
         float des_pitch_cd = quadplane.attitude_control->get_att_target_euler_cd().y;
@@ -886,16 +888,18 @@ void Tiltrotor::dual_axis_output(void)
             extra_elevator = extra_sign * fabsf(extra_pitch) * SERVO_MAX;
         }
 
-        tilt_left  += extra_elevator * vectoring_gain_hvr;
-        tilt_right += extra_elevator * vectoring_gain_hvr;
+        tilt_left_adjusted  += extra_elevator * vectoring_gain_hvr;
+        tilt_right_adjusted += extra_elevator * vectoring_gain_hvr;
 
 #if HAL_LOGGING_ENABLED
         // Add logging for desired thrust vectoring angles
-        AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR",
-                "sdd", // seconds, degrees
-                "F00", // micro (1e-6), no mult (1e0)
-                "Qff", // uint64_t, float
-                AP_HAL::micros64(), tilt_left/100, tilt_right/100);
+        AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,ExtraEl,AdjL,AdjR",
+                "sddddd", // seconds, degrees
+                "F00000", // micro (1e-6), no mult (1e0)
+                "Qfffff", // uint64_t, float
+                AP_HAL::micros64(), tilt_left/100, tilt_right/100, extra_elevator,
+                tilt_left_adjusted/100, 
+                tilt_right_adjusted/100);
 #endif
         
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
