@@ -911,9 +911,6 @@ void Tiltrotor::dual_axis_output(void)
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
 
-
-    // TODO: Fix this for auto mode throttle control
-
     // never command motor throttle while disarmed: this branch runs
     // unconditionally in FW modes (even disarmed on the ground, since
     // assisted_flight is false here), and would otherwise write raw
@@ -949,11 +946,20 @@ void Tiltrotor::dual_axis_output(void)
     const float elevator = SRV_Channels::get_output_scaled(SRV_Channel::k_elevator) * (1.0f / 4500.0f);
     const float aileron  = SRV_Channels::get_output_scaled(SRV_Channel::k_aileron)  * (1.0f / 4500.0f);
 
+    float tilt_left = constrain_float((elevator + aileron) * gain, -1.0f, 1.0f) * SERVO_MAX;
+    float tilt_right = constrain_float((elevator - aileron) * gain, -1.0f, 1.0f) * SERVO_MAX;
 
-    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
-                                constrain_float((elevator + aileron) * gain, -1.0f, 1.0f) * SERVO_MAX);
-    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
-                                constrain_float((elevator - aileron) * gain, -1.0f, 1.0f) * SERVO_MAX);
+#if HAL_LOGGING_ENABLED
+        // Add logging for desired thrust vectoring angles
+        AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR",
+                "sdd", // seconds, degrees
+                "F00", // micro (1e-6), no mult (1e0)
+                "Qff", // uint64_t, float
+                AP_HAL::micros64(), tilt_left/100, tilt_right/100);
+#endif
+
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec, tilt_left);
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec, tilt_right);
 }
 
 /*
