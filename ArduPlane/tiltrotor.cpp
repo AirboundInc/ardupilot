@@ -884,7 +884,9 @@ void Tiltrotor::dual_axis_output(void)
         float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
         float extra_sign = extra_pitch > 0?1:-1;
         float extra_elevator = 0;
-        if (!is_zero(extra_pitch) && quadplane.in_vtol_mode()) {
+        bool is_vtol = quadplane.in_vtol_mode();
+
+        if (!is_zero(extra_pitch) && is_vtol) {
             extra_elevator = extra_sign * fabsf(extra_pitch) * SERVO_MAX;
         }
 
@@ -893,13 +895,16 @@ void Tiltrotor::dual_axis_output(void)
 
 #if HAL_LOGGING_ENABLED
         // Add logging for desired thrust vectoring angles
-        AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,ExtraEl,AdjL,AdjR",
-                "sddddd", // seconds, degrees
-                "F00000", // micro (1e-6), no mult (1e0)
-                "Qfffff", // uint64_t, float
+        AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,ExtraEl,AdjL,AdjR,PitchErr,ExtraPit",
+                "sddddddd", // seconds, degrees
+                "F0000000", // micro (1e-6), no mult (1e0)
+                "Qfffffff", // uint64_t, float
                 AP_HAL::micros64(), tilt_left/100, tilt_right/100, extra_elevator/100,
                 tilt_left_adjusted/100, 
-                tilt_right_adjusted/100);
+                tilt_right_adjusted/100,
+                pitch_error_cd/100,
+                (float)is_vtol,
+                extra_pitch/100);
 #endif
         
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
