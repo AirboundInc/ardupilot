@@ -880,7 +880,8 @@ void Tiltrotor::dual_axis_output(void)
 
         // drive TVs based on pitch error as well
         float des_pitch_cd = quadplane.attitude_control->get_att_target_euler_cd().y;
-        int32_t pitch_error_cd = (des_pitch_cd - quadplane.ahrs_view->pitch_sensor) * 0.5;
+        float pitch_error_cd = (des_pitch_cd - quadplane.ahrs_view->pitch_sensor) * 0.5;
+
         float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
         float extra_sign = extra_pitch > 0?1:-1;
         float extra_elevator = 0;
@@ -895,10 +896,10 @@ void Tiltrotor::dual_axis_output(void)
 
 #if HAL_LOGGING_ENABLED
         // Add logging for desired thrust vectoring angles
-        AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,ExtraEl,AdjL,AdjR,PitchErr,ExtraPit",
-                "sddddddd", // seconds, degrees
-                "F0000000", // micro (1e-6), no mult (1e0)
-                "Qfffffff", // uint64_t, float
+        AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,ExtraEl,AdjL,AdjR,PitchErr,isVTOL,ExtraPit",
+                "sdddddddd", // seconds, degrees
+                "F00000000", // micro (1e-6), no mult (1e0)
+                "Qffffffff", // uint64_t, float
                 AP_HAL::micros64(), tilt_left/100, tilt_right/100, extra_elevator/100,
                 tilt_left_adjusted/100, 
                 tilt_right_adjusted/100,
