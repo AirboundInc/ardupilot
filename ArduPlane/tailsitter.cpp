@@ -526,18 +526,15 @@ void Tailsitter::output(void)
           takeoff without integrator windup
          */
         float des_pitch_cd = quadplane.attitude_control->get_att_target_euler_cd().y;
-        int32_t pitch_error_cd = (des_pitch_cd - quadplane.ahrs_view->pitch_sensor) * 0.5;
+        int32_t pitch_error_cd = (des_pitch_cd - quadplane.ahrs_view->pitch_sensor) * vectored_hover_gain;
         float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
         float extra_sign = extra_pitch > 0?1:-1;
         if (!is_zero(extra_pitch) && quadplane.in_vtol_mode()) {
             extra_elevator = extra_sign * powf(fabsf(extra_pitch), vectored_hover_power) * SERVO_MAX;
         }
         if (!is_negative(vectored_hover_power)) {
-            tilt_left  = extra_elevator + tilt_left * vectored_hover_gain;
-            tilt_right = extra_elevator + tilt_right * vectored_hover_gain;
-        } else {
-            tilt_left  = tilt_left * vectored_hover_gain;
-            tilt_right = tilt_right * vectored_hover_gain;
+            tilt_left  = extra_elevator + tilt_left;
+            tilt_right = extra_elevator + tilt_right;
         }
 
         // Put limits on weathervaning basis pitch_cd,
