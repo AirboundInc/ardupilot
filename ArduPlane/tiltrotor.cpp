@@ -883,10 +883,11 @@ void Tiltrotor::dual_axis_output(void)
 
         float des_pitch_cd = quadplane.attitude_control->get_att_target_euler_cd().y;
         float pitch_cd = quadplane.ahrs_view->pitch_sensor;
-        float pitch_error_cd = (des_pitch_cd - pitch_cd) * 0.5;
 
         float des_pitch_cd2 = plane.nav_pitch_cd;
         float pitch_cd2 = plane.ahrs.pitch_sensor;
+
+        float pitch_error_cd = (des_pitch_cd - pitch_cd2) * 0.5;
 
         float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
         float extra_sign = extra_pitch > 0?1:-1;
