@@ -879,8 +879,14 @@ void Tiltrotor::dual_axis_output(void)
         float tilt_right_adjusted = tilt_right;
 
         // drive TVs based on pitch error as well
+
+
         float des_pitch_cd = quadplane.attitude_control->get_att_target_euler_cd().y;
-        float pitch_error_cd = (des_pitch_cd - quadplane.ahrs_view->pitch_sensor) * 0.5;
+        float pitch_cd = quadplane.ahrs_view->pitch_sensor;
+        float pitch_error_cd = (des_pitch_cd - pitch_cd) * 0.5;
+
+        float des_pitch_cd2 = plane.nav_pitch_cd;
+        float pitch_cd2 = plane.ahrs.pitch_sensor;
 
         float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
         float extra_sign = extra_pitch > 0?1:-1;
@@ -906,6 +912,12 @@ void Tiltrotor::dual_axis_output(void)
                 pitch_error_cd/100,
                 (float)is_vtol,
                 extra_pitch/100);
+
+        AP::logger().WriteStreaming("PITE", "TimeUS,DesPit1,DesPit2,Pit1,Pit2",
+                "sdddd", // seconds, degrees
+                "F0000", // micro (1e-6), no mult (1e0)
+                "Qffff", // uint64_t, float
+                AP_HAL::micros64(), des_pitch_cd/100, des_pitch_cd2/100,pitch_cd/100,pitch_cd2/100);
 #endif
         
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
