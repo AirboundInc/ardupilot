@@ -887,7 +887,7 @@ void Tiltrotor::dual_axis_output(void)
         float des_pitch_cd2 = plane.nav_pitch_cd;
         float pitch_cd2 = plane.ahrs.pitch_sensor;
 
-        float pitch_error_cd = (des_pitch_cd - pitch_cd2) * 0.5;
+        float pitch_error_cd = (des_pitch_cd - pitch_cd2) * vectoring_gain_hvr;
 
         float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
         float extra_sign = extra_pitch > 0?1:-1;
@@ -898,8 +898,8 @@ void Tiltrotor::dual_axis_output(void)
             extra_elevator = extra_sign * fabsf(extra_pitch) * SERVO_MAX;
         }
 
-        tilt_left_adjusted  += extra_elevator * vectoring_gain_hvr;
-        tilt_right_adjusted += extra_elevator * vectoring_gain_hvr;
+        tilt_left_adjusted  += extra_elevator;
+        tilt_right_adjusted += extra_elevator;
 
 #if HAL_LOGGING_ENABLED
         // Add logging for desired thrust vectoring angles
