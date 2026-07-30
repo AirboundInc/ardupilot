@@ -887,7 +887,7 @@ void Tiltrotor::dual_axis_output(void)
         float des_pitch_cd2 = plane.nav_pitch_cd;
         float pitch_cd2 = plane.ahrs.pitch_sensor;
 
-        float pitch_error_cd = (des_pitch_cd - pitch_cd2) * vectoring_gain_hvr;
+        float pitch_error_cd = (des_pitch_cd2 - pitch_cd2) * vectoring_gain_hvr;
 
         float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
         float extra_sign = extra_pitch > 0?1:-1;
