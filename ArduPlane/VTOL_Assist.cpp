@@ -155,13 +155,14 @@ bool VTOL_Assist::check_VTOL_recovery(void)
         return false;
     }
 
-    // see if the attitude is outside twice the Q_ANGLE_MAX
+    // see if the attitude is outside the forced recovery angle limit
     const auto &ahrs = plane.ahrs;
     const int16_t angle_max_cd = quadplane.aparm.angle_max;
+    const int16_t recovery_angle_max_cd = fw_recovery_angle_max;
     const float abs_angle_cd = fabsf(Vector2f{float(ahrs.roll_sensor), float(ahrs.pitch_sensor)}.length());
 
-    if (abs_angle_cd > 2*angle_max_cd) {
-        // we are 2x the angle limits, trigger fw recovery
+    if (abs_angle_cd > recovery_angle_max_cd) {
+        // we are outside the forced recovery angle limit, trigger fw recovery
         quadplane.force_fw_control_recovery = true;
     }
 

@@ -589,6 +589,15 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("FTRANS_ANG", 43, QuadPlane, fwd_trans_angle_deg, 45.0),
 
+    // @Param: FWREC_ANG_MAX
+    // @DisplayName: VTOL assist forced recovery angle
+    // @Description: This is the lean angle (combined roll and pitch) beyond which the quadplane will force fixed wing control surfaces to attempt attitude recovery, overriding VTOL attitude control. This is independent of Q_ANGLE_MAX, allowing the forced recovery trigger to be tuned separately from the normal VTOL lean angle limit. Recovery continues until the aircraft is back inside Q_ANGLE_MAX. This should normally be set higher than Q_ANGLE_MAX.
+    // @Units: cdeg
+    // @Range: 1000 18000
+    // @Increment: 10
+    // @User: Advanced
+    AP_GROUPINFO("FWREC_ANG_MAX", 44, QuadPlane, assist.fw_recovery_angle_max, 7000),
+
     AP_GROUPEND
 };
 

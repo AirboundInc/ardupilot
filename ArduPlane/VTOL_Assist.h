@@ -22,6 +22,9 @@ public:
     // altitude to trigger assistance
     AP_Int16 alt;
 
+    // lean angle beyond which forced fixed wing control recovery is triggered
+    AP_Int16 fw_recovery_angle_max;
+
     // Time hysteresis for triggering of assistance
     AP_Float delay;
 
