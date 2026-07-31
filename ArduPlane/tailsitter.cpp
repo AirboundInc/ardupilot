@@ -577,6 +577,11 @@ void Tailsitter::output(void)
             weathervane_gain = (weathervane_gain) * control_effort_gain_slope;
         }
         quadplane.weathervane->set_gain(weathervane_gain);
+         AP::logger().WriteStreaming("PITE", "TimeUS,DesPit1,DesPit2,Pit1,Pit2",
+                "sdddd", // seconds, degrees
+                "F0000", // micro (1e-6), no mult (1e0)
+                "Qffff", // uint64_t, float
+                AP_HAL::micros64(), des_pitch_cd/100, des_pitch_cd2/100,pitch_cd/100,pitch_cd2/100);
     }
     quadplane.attitude_control->get_tilt_motor_angle((constrain_float(tilt_left, -4500.0f, 4500.0f) + constrain_float(tilt_right, -4500.0f, 4500.0f)) / 2.0f);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
