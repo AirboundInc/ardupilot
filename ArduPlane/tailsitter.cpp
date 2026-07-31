@@ -526,7 +526,11 @@ void Tailsitter::output(void)
           takeoff without integrator windup
          */
         float des_pitch_cd = quadplane.attitude_control->get_att_target_euler_cd().y;
+        float pitch_cd = quadplane.ahrs_view->pitch_sensor;
         int32_t pitch_error_cd = (des_pitch_cd - quadplane.ahrs_view->pitch_sensor) * 0.5;
+
+        float des_pitch_cd2 = plane.nav_pitch_cd;
+        float pitch_cd2 = plane.ahrs.pitch_sensor;
         float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
         float extra_sign = extra_pitch > 0?1:-1;
         if (!is_zero(extra_pitch) && quadplane.in_vtol_mode()) {
