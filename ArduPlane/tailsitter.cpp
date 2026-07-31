@@ -526,7 +526,7 @@ void Tailsitter::output(void)
           takeoff without integrator windup
          */
         float des_pitch_cd = quadplane.attitude_control->get_att_target_euler_cd().y;
-        float pitch_cd = quadplane.ahrs_view->pitch_sensor;
+        float pitch_cd1 = quadplane.ahrs_view->pitch_sensor;
         int32_t pitch_error_cd = (des_pitch_cd - quadplane.ahrs_view->pitch_sensor) * 0.5;
 
         float des_pitch_cd2 = plane.nav_pitch_cd;
@@ -581,7 +581,7 @@ void Tailsitter::output(void)
                 "sdddd", // seconds, degrees
                 "F0000", // micro (1e-6), no mult (1e0)
                 "Qffff", // uint64_t, float
-                AP_HAL::micros64(), des_pitch_cd/100, des_pitch_cd2/100,pitch_cd/100,pitch_cd2/100);
+                AP_HAL::micros64(), des_pitch_cd/100, des_pitch_cd2/100,pitch_cd1/100,pitch_cd2/100);
     }
     quadplane.attitude_control->get_tilt_motor_angle((constrain_float(tilt_left, -4500.0f, 4500.0f) + constrain_float(tilt_right, -4500.0f, 4500.0f)) / 2.0f);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
