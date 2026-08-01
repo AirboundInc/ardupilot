@@ -198,6 +198,7 @@ local cs = {
     last_route_ms = uint32_t(0),
     last_send_data_ms = uint32_t(0),
     sim_probe_count = 0,
+    sim_missing_count = 0,
     cpin_probe_n = 0,
     csq_toggle = false,
     post_reset = true,
@@ -460,7 +461,7 @@ local function reset_state()
     cs.cops_zero_sent = false; cs.qcsq_tries = 0
     cs.cipopen_retry = 0; cs.cipopen_sent = false; cs.cipopen_sent_ms = 0
     cs.hard_reset_strikes = 0 
-    cs.sim_probe_count = 0; cs.cpin_probe_n = 0
+    cs.sim_probe_count = 0; cs.sim_missing_count = 0; cs.cpin_probe_n = 0
     cs.cereg_drop_ms = nil   
     cs.creg_search_ms = nil 
     cs.step_times = {}; cs.step_timer_ms = millis():tofloat()
@@ -1030,15 +1031,27 @@ local function step_ATI()
         cs.ati_dbg_ms = millis()
         gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE: waiting for modem (ATI, %ds)', math.floor(ati_s)))
     end
+    -- A reset (AT+CFUN=1,1) does not always drop the modem's CMUX session -
+    -- some firmware (seen on EC200) keeps replying in CMUX framing straight
+    -- through the reset. Detect that by looking for the frame FLAG byte
+    -- anywhere in this read, not just at the exact start/end of the chunk -
+    -- UART reads are chunked arbitrarily and rarely align on frame edges.
+    -- This must run before the modem~=default_modem branch below: once the
+    -- banner has matched even once, that branch always returns first, so a
+    -- mux session revealed in the same read as the banner would otherwise
+    -- never be detected.
+    if not found_cmux and not option_enabled(OPT.NOMUX) and not cmux_force_disabled
+       and s and #s >= 4 and s:find(string.char(cmux.FLAG), 1, true) then
+        found_cmux = true; gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: in CMUX mode"); log_data("{INCMUX}", '***')
+    end
+
     if s and modem == default_modem then check_modem_banner(s) end
     if modem ~= default_modem then
         if not cmux_enabled() then step = "BAUD" else step = "CMUX" end
         return
     end
-    if not option_enabled(OPT.NOMUX) and not cmux_force_disabled and s and #s >= 4 and s:byte(1) == cmux.FLAG and s:byte(-1) == cmux.FLAG then
-        found_cmux = true; gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: in CMUX mode"); log_data("{INCMUX}", '***')
-        AT_send('ATI\r'); return
-    end
+    if found_cmux then AT_send('ATI\r'); return end
+
     if cs.ati_sequence % 3 == 2 then uart_write('+++')
     elseif cs.ati_sequence % 3 == 1 and not option_enabled(OPT.NOMUX) then uart_write(cmux.encode_cmux_frame(cmux.DLC_AT, cmux.UIH, "ATI\r"))
     else uart_write('\rATI\r') end
@@ -1094,8 +1107,17 @@ local function step_CPIN()
             step = "HALT"; return
         end
     elseif s and (s:find("ERROR: 10") or s:find("NOT INSERTED") or s:find("SIM not inserted")) then
-        gcs:send_text(MAV_SEVERITY.CRITICAL, "LTE FATAL: SIM CARD MISSING! Halting sequence.")
-        step = "HALT"; return
+        -- Debounced like the QCCID path above: a UART bounce (cable pulled and
+        -- reseated mid-session) can make a modem report the SIM as missing for
+        -- one reply before its SIM interface settles, even with a card seated.
+        -- Require 3 consecutive sightings before treating it as a real pull.
+        cs.sim_missing_count = (cs.sim_missing_count or 0) + 1
+        gcs:send_text(MAV_SEVERITY.WARNING, string.format(
+            "LTE: SIM reported missing, probe %d/3", cs.sim_missing_count))
+        if cs.sim_missing_count >= 3 then
+            gcs:send_text(MAV_SEVERITY.CRITICAL, "LTE FATAL: SIM CARD MISSING! Halting sequence.")
+            step = "HALT"; return
+        end
     end
 
     local now_ms = millis():tofloat()
@@ -1178,11 +1200,18 @@ local function step_CREG()
     end
 
     if s and #s > 0 then
-        -- Use #raw to ensure we only evaluate CMUX if new data just arrived
-        if cmux_enabled() and #raw > 0 and #s > 4 and not cmux.parse_cmux_frame(s) then 
+        -- Use #raw to ensure we only evaluate CMUX if new data just arrived.
+        -- parse_cmux_frame's 4th return is "short" when the buffer just hasn't
+        -- finished arriving yet (normal mid-frame) - that must NOT be treated
+        -- as corruption, or a real frame gets discarded and CMUX renegotiated
+        -- for no reason on every tick that happens to catch it mid-arrival.
+        -- Genuine corruption returns no dlc and no "short" marker, so gate on
+        -- "parse failed AND it wasn't merely incomplete", not on cerr alone.
+        local dlc, _, _, cerr = cmux.parse_cmux_frame(s)
+        if cmux_enabled() and #raw > 0 and #s > 4 and not dlc and cerr ~= "short" then
             -- Check if it's just a standard AT text response before panicking
             if not (s:find('+CEREG:') or s:find('+CREG:') or s:find('OK\r\n')) then
-                step = "CMUX"; buf.setup = ""; return 
+                step = "CMUX"; buf.setup = ""; return
             end
         end
         
@@ -1770,7 +1799,10 @@ local function run_step()
     end
     cs.last_step = step
 
-    if step == "CONNECTED" then step_CONNECTED(); return 5 end
+    -- 20ms (not 5ms): matches the HAL UART buffer sizing assumption of a
+    -- ~40Hz reader (AP_HAL_ChibiOS/UARTDriver.cpp), and stops this script
+    -- from monopolizing the shared scripting VM at other scripts' expense.
+    if step == "CONNECTED" then step_CONNECTED(); return 20 end
 
     local time_in_step = (now_ms:tofloat() - cs.step_timer_ms) / 1000
     -- DP fast-recovery steps talk to an already-up modem that answers in <1s.
@@ -1791,7 +1823,7 @@ local function run_step()
         end
     end
 
-    if not step_changed and (step == "CPIN" or step == "CREG") then
+    if not step_changed and (step == "CPIN" or step == "CREG" or step == "CMUX") then
         local creg_patience = math.max(30, P.STUCK_T:get() * 3)
         if time_in_step > creg_patience then
             gcs:send_text(MAV_SEVERITY.CRITICAL, "LTE: " .. step .. " search failed, hard reset")
