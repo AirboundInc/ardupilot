@@ -221,6 +221,7 @@ bool Plane::gcs_mode_enabled(const Mode::Number mode_num) const
         (uint8_t)Mode::Number::QSTABILIZE,
         (uint8_t)Mode::Number::QHOVER,
         (uint8_t)Mode::Number::QLOITER,
+        (uint8_t)Mode::Number::QPOSHOLD,
         (uint8_t)Mode::Number::QACRO,
 #if QAUTOTUNE_ENABLED
         (uint8_t)Mode::Number::QAUTOTUNE

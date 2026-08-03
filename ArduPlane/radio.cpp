@@ -264,6 +264,7 @@ void Plane::control_failsafe()
             case Mode::Number::QSTABILIZE:
             case Mode::Number::QHOVER:
             case Mode::Number::QLOITER:
+            case Mode::Number::QPOSHOLD:
             case Mode::Number::QLAND: // throttle is ignored, but reset anyways
             case Mode::Number::QRTL:  // throttle is ignored, but reset anyways
             case Mode::Number::QACRO:

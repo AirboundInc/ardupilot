@@ -65,6 +65,12 @@ Mode *Plane::mode_from_mode_num(const enum Mode::Number num)
     case Mode::Number::QLOITER:
         ret = &mode_qloiter;
         break;
+        
+    /*Qstab+Qloiter mode below*/
+    case Mode::Number::QPOSHOLD:
+        ret = &mode_qposhold;
+        break;
+
     case Mode::Number::QLAND:
         ret = &mode_qland;
         break;

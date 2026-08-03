@@ -169,6 +169,7 @@ public:
     friend class ModeQLand;
     friend class ModeQRTL;
     friend class ModeQAcro;
+    friend class ModeQPosHold;
     friend class ModeQAutotune;
     friend class ModeTakeoff;
     friend class ModeThermal;
@@ -322,6 +323,10 @@ private:
     ModeQStabilize mode_qstabilize;
     ModeQHover mode_qhover;
     ModeQLoiter mode_qloiter;
+
+    /*Qstab+Qloiter mode below*/
+    ModeQPosHold mode_qposhold;
+
     ModeQLand mode_qland;
     ModeQRTL mode_qrtl;
     ModeQAcro mode_qacro;

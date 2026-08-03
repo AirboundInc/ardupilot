@@ -61,6 +61,7 @@ public:
         THERMAL       = 24,
 #if HAL_QUADPLANE_ENABLED
         LOITER_ALT_QLAND = 25,
+        QPOSHOLD = 26,
 #endif
     };
 
@@ -728,6 +729,38 @@ protected:
     bool supports_quicktune() const override { return true; }
 #endif
 };
+
+class ModeQPosHold : public Mode
+{
+friend class QuadPlane;
+
+public:
+
+    Number mode_number() const override { return Number::QPOSHOLD; }
+    const char *name() const override { return "QPOSHOLD"; }
+    const char *name4() const override { return "QPOS"; }
+
+    bool is_vtol_mode() const override { return true; }
+    bool is_vtol_man_throttle() const override { return true; }
+    virtual bool is_vtol_man_mode() const override { return true; }
+
+    void update() override;
+    void run() override;
+
+#if AP_PLANE_SYSTEMID_ENABLED
+    bool supports_systemid() const override { return true; }
+#endif
+
+protected:
+
+    bool _enter() override;
+    uint32_t last_target_loc_set_ms;
+
+#if AP_QUICKTUNE_ENABLED
+    bool supports_quicktune() const override { return true; }
+#endif
+};
+
 
 class ModeQLand : public Mode
 {
