@@ -223,7 +223,7 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
         }
         impulse_pitch = Disturbance((AP_HAL::millis()) - _impulse_start_time);
         if(_impulse_yaw_en){
-            _tilt_left += impulse_pitch*0.5f;
+            _tilt_left += impulse_pitch*-0.3f;
             _tilt_right += impulse_pitch;
         }
         else{
