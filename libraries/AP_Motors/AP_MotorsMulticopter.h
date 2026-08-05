@@ -181,6 +181,7 @@ protected:
     AP_Float            _impulse_magnitude;
     AP_Float            _impulse_duration;
     AP_Float            _impulse_delay;
+    AP_Int8             _impulse_yaw_en;
 
     // motor output variables
     bool                motor_enabled[AP_MOTORS_MAX_NUM_MOTORS];    // true if motor is enabled

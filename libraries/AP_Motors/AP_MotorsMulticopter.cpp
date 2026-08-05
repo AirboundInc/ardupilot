@@ -263,6 +263,13 @@ const AP_Param::GroupInfo AP_MotorsMulticopter::var_info[] = {
     // @Values: 0:Disabled, 1:Enabled
     // @User: Advanced
     AP_GROUPINFO("DIST_EN", 48, AP_MotorsMulticopter, _impulse_en, 0),
+
+    // @Param: DIST_Y_EN
+    // @DisplayName: Disturbance enable
+    // @Description: Enable disturbance impulses for testing the response of the vehicle in both yaw and pitch
+    // @Values: 0:Disabled, 1:Enabled
+    // @User: Advanced
+    AP_GROUPINFO("DIST_Y_EN", 49, AP_MotorsMulticopter, _impulse_yaw_en, 0),
     
     AP_GROUPEND
 };
