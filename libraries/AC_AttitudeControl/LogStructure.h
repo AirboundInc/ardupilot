@@ -10,7 +10,8 @@
     LOG_PSOE_MSG, \
     LOG_PSOD_MSG, \
     LOG_PSOT_MSG, \
-    LOG_ANG_MSG
+    LOG_ANG_MSG, \
+    LOG_PIAB_MSG
 
 // @LoggerMessage: PSCN
 // @Description: Position Control North
@@ -175,6 +176,20 @@ struct PACKED log_ANG {
     float sensor_dt;
 };
 
+// @LoggerMessage: PIAB
+// @Description: Pitch rate controller angular-acceleration braking term
+// @Field: TimeUS: Time since system startup
+// @Field: Acc: raw pitch angular acceleration (derivative of measured pitch rate)
+// @Field: AccF: low-pass filtered pitch angular acceleration
+// @Field: accel_braking: acceleration-braking contribution to the pitch rate controller output (negative of the KAB term)
+struct PACKED log_PIAB {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    float accel;
+    float accel_filt;
+    float accel_braking;
+};
+
 #define PSCx_FMT "Qfffffffff"
 #define PSCx_UNITS "smmmnnnooo"
 #define PSCx_MULTS "F000000000"
@@ -201,4 +216,6 @@ struct PACKED log_ANG {
     { LOG_RATE_MSG, sizeof(log_Rate), \
         "RATE", "Qfffffffffffff",  "TimeUS,RDes,R,ROut,PDes,P,POut,YDes,Y,YOut,ADes,A,AOut,AOutSlew", "skk-kk-kk-oo--", "F?????????BB--" , true }, \
     { LOG_ANG_MSG, sizeof(log_ANG),\
-        "ANG", "Qfffffff", "TimeUS,DesRoll,Roll,DesPitch,Pitch,DesYaw,Yaw,Dt", "sddddhhs", "F0000000" , true }
+        "ANG", "Qfffffff", "TimeUS,DesRoll,Roll,DesPitch,Pitch,DesYaw,Yaw,Dt", "sddddhhs", "F0000000" , true }, \
+    { LOG_PIAB_MSG, sizeof(log_PIAB), \
+        "PIAB", "Qfff", "TimeUS,Acc,AccF,accel_braking", "seee", "F000" , true }

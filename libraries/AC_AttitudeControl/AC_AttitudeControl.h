@@ -463,7 +463,7 @@ public:
     void set_PD_scale_mult(const Vector3f &pd_scale) { _pd_scale *= pd_scale; }
 
     // write RATE message
-    void Write_Rate(const AC_PosControl &pos_control) const;
+    virtual void Write_Rate(const AC_PosControl &pos_control) const;
 
     // write ANG message
     void Write_ANG() const;

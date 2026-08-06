@@ -83,6 +83,9 @@ public:
     void rate_controller_target_reset() override;
     void rate_controller_run() override;
 
+    // write RATE message, plus the pitch acceleration-braking (PIAB) message
+    void Write_Rate(const AC_PosControl &pos_control) const override;
+
     // sanity check parameters.  should be called once before take-off
     void parameter_sanity_check() override;
 
@@ -158,4 +161,13 @@ protected:
     AP_Float              _throttle_gain_boost;
 
     float               _ts_tilt_angle = 0.0f; // tailsitter tilt motor angle
+
+    // pitch rate acceleration-braking term: gain (KAB) and filter frequency (FLTA)
+    AP_Float              _rat_pit_kab;
+    AP_Float              _rat_pit_ab_filt_hz;
+
+    float                 _pitch_gyro_last = 0.0f;    // previous pitch gyro sample, for computing _pitch_accel
+    float                 _pitch_accel = 0.0f;        // raw pitch angular acceleration (rad/s/s), derivative of measured pitch rate
+    float                 _pitch_accel_filt = 0.0f;   // low-pass filtered _pitch_accel
+    float                 _pitch_accel_brake = 0.0f;  // _rat_pit_kab * _pitch_accel_filt, subtracted from the pitch rate controller output
 };

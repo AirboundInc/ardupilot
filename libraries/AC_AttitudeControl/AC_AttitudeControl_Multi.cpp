@@ -4,6 +4,7 @@
 #include <AC_PID/AC_PID.h>
 #include <AP_Scheduler/AP_Scheduler.h>
 #include <AP_Logger/AP_Logger.h>
+#include "LogStructure.h"
 
 // table of user settable parameters
 const AP_Param::GroupInfo AC_AttitudeControl_Multi::var_info[] = {
@@ -318,6 +319,23 @@ const AP_Param::GroupInfo AC_AttitudeControl_Multi::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("THR_G_BOOST", 7, AC_AttitudeControl_Multi, _throttle_gain_boost, 0.0f),
 
+    // @Param: RAT_PIT_KAB
+    // @DisplayName: Pitch axis rate controller acceleration braking gain
+    // @Description: Gain applied to the filtered pitch angular acceleration (derivative of the measured pitch rate) and subtracted from the pitch rate controller output. Provides damping proportional to actual pitch rotational acceleration, regardless of the commanded target. Zero disables this term.
+    // @Range: 0 0.01
+    // @Increment: 0.0001
+    // @User: Advanced
+    AP_GROUPINFO("RAT_PIT_KAB", 8, AC_AttitudeControl_Multi, _rat_pit_kab, 0),
+
+    // @Param: RAT_PIT_FLTA
+    // @DisplayName: Pitch axis rate controller acceleration braking filter frequency in Hz
+    // @Description: Low pass filter frequency in Hz applied to the pitch angular acceleration used by the RAT_PIT_KAB acceleration braking term
+    // @Range: 0 100
+    // @Increment: 1
+    // @Units: Hz
+    // @User: Advanced
+    AP_GROUPINFO("RAT_PIT_FLTA", 9, AC_AttitudeControl_Multi, _rat_pit_ab_filt_hz, 0),
+
     AP_GROUPEND
 };
 
@@ -486,7 +504,16 @@ void AC_AttitudeControl_Multi::rate_controller_run_dt(const Vector3f& gyro, floa
     _motors.set_roll(get_rate_roll_pid().update_all(ang_vel_body.x, gyro.x,  dt, _motors.limit.roll, _pd_scale.x) + _actuator_sysid.x);
     _motors.set_roll_ff(get_rate_roll_pid().get_ff());
 
-    _motors.set_pitch(get_rate_pitch_pid().update_all(ang_vel_body.y, gyro.y,  dt, _motors.limit.pitch, _pd_scale.y) + _actuator_sysid.y);
+    // pitch acceleration-braking term: derivative of the measured pitch rate (not the PID error),
+    // low-pass filtered, and subtracted from the pitch output to damp actual rotational acceleration
+    // regardless of the commanded target
+    _pitch_accel = is_positive(dt) ? (gyro.y - _pitch_gyro_last) / dt : 0.0f;
+    _pitch_gyro_last = gyro.y;
+    const float pitch_accel_alpha = calc_lowpass_alpha_dt(dt, _rat_pit_ab_filt_hz);
+    _pitch_accel_filt += pitch_accel_alpha * (_pitch_accel - _pitch_accel_filt);
+    _pitch_accel_brake = _pitch_accel_filt * _rat_pit_kab;
+
+    _motors.set_pitch(get_rate_pitch_pid().update_all(ang_vel_body.y, gyro.y,  dt, _motors.limit.pitch, _pd_scale.y) + _actuator_sysid.y - _pitch_accel_brake);
     _motors.set_pitch_ff(get_rate_pitch_pid().get_ff());
 
     _motors.set_yaw(get_rate_yaw_pid().update_all(ang_vel_body.z, gyro.z,  dt, _motors.limit.yaw, _pd_scale.z) + _actuator_sysid.z);
@@ -511,6 +538,23 @@ void AC_AttitudeControl_Multi::rate_controller_run()
     Vector3f gyro_latest = _ahrs.get_gyro_latest();
     rate_controller_run_dt(gyro_latest, _dt);
 }
+
+#if HAL_LOGGING_ENABLED
+// write RATE message, plus the pitch acceleration-braking (PIAB) message
+void AC_AttitudeControl_Multi::Write_Rate(const AC_PosControl &pos_control) const
+{
+    AC_AttitudeControl::Write_Rate(pos_control);
+
+    const struct log_PIAB pkt_PIAB{
+        LOG_PACKET_HEADER_INIT(LOG_PIAB_MSG),
+        time_us        : AP_HAL::micros64(),
+        accel          : degrees(_pitch_accel),
+        accel_filt     : degrees(_pitch_accel_filt),
+        accel_braking  : -_pitch_accel_brake,
+    };
+    AP::logger().WriteBlock(&pkt_PIAB, sizeof(pkt_PIAB));
+}
+#endif
 
 // sanity check parameters.  should be called once before takeoff
 void AC_AttitudeControl_Multi::parameter_sanity_check()
