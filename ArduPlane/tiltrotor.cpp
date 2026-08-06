@@ -922,9 +922,9 @@ void Tiltrotor::dual_axis_output(void)
 #endif
         
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
-                                        constrain_float(tilt_left,  -SERVO_MAX, SERVO_MAX));
+                                        constrain_float(tilt_left_adjusted,  -SERVO_MAX, SERVO_MAX));
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
-                                        constrain_float(tilt_right, -SERVO_MAX, SERVO_MAX));
+                                        constrain_float(tilt_right_adjusted, -SERVO_MAX, SERVO_MAX));
         
         
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
