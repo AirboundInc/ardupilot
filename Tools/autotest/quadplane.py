@@ -1027,6 +1027,150 @@ class AutoTestQuadPlane(vehicle_test_suite.TestSuite):
                 raise NotAchievedException("Changed throttle output on mode change to QHOVER")
         self.disarm_vehicle()
 
+    def danger_zone_peak_level(self):
+        '''Highest DangerZone level announced in the collected STATUSTEXT so far'''
+        peak = 1
+        for m in self.context_collection('STATUSTEXT'):
+            if "DangerZone" in m.text and "(level " in m.text:
+                try:
+                    peak = max(peak, int(m.text.split("(level ")[1].split(")")[0]))
+                except (IndexError, ValueError):
+                    pass
+        return peak
+
+    def DangerZoneFlight(self):
+        '''Trigger the Danger Zone module through flight instability'''
+
+        self.customise_SITL_commandline(
+            [],
+            model="quadplane-copter_tailsitter",
+            defaults_filepath=self.model_defaults_filepath("quadplane-copter_tailsitter"),
+            wipe=True,
+        )
+        self.set_parameters({
+            "Q_TAILSIT_ENABLE": 1,
+            "DZ_ENABLE": 1,       # only logging, no actions
+            "DZ_HYST_TIMER": 0,
+        })
+        self.reboot_sitl()
+
+        self.takeoff(40, mode="QLOITER")
+        self.context_collect('STATUSTEXT')
+
+        # add strong turbulent wind
+        self.set_parameters({
+            "SIM_WIND_SPD": 15,
+            "SIM_WIND_DIR": 45,
+            "SIM_WIND_TURB": 10,
+        })
+        self.delay_sim_time(10)
+
+        # aggressive descent
+        self.set_rc(3, 1100)
+        self.delay_sim_time(6)
+        self.set_rc(3, 1500)
+        self.delay_sim_time(6)
+
+        # disable wind for recovery
+        self.set_parameters({"SIM_WIND_SPD": 0, "SIM_WIND_TURB": 0})
+
+        peak = self.danger_zone_peak_level()
+        self.progress("Maximum Danger Zone level reached: %u" % peak)
+        if peak < 2:
+            raise NotAchievedException(
+                "Danger Zone did not react to induced instability (peak level %u)" % peak)
+
+        # Force disarm rather than attempting to land
+        self.disarm_vehicle(force=True)
+
+    def DangerZoneForce(self):
+        '''Trigger the Danger Zone module with deterministic SITL force injection'''
+
+        self.customise_SITL_commandline(
+            [],
+            model="quadplane-copter_tailsitter",
+            defaults_filepath=self.model_defaults_filepath("quadplane-copter_tailsitter"),
+            wipe=True,
+        )
+        self.set_parameters({
+            "Q_TAILSIT_ENABLE": 1,
+            "DZ_ENABLE": 1,       # LOG: observe escalation, take no actions
+            "DZ_HYST_TIMER": 0,
+        })
+        self.reboot_sitl()
+
+        self.takeoff(40, mode="QLOITER")
+        self.context_collect('STATUSTEXT')
+
+        # Sustained twist in pitch
+        self.set_parameters({
+            "SIM_TWIST_Y": 1000.0,   # rad/s^2 about the pitch axis
+            "SIM_TWIST_TIME": 1500,  # ms sustained
+        })
+        self.delay_sim_time(6)
+        self.set_parameters({"SIM_TWIST_Y": 0.0})
+
+        peak = self.danger_zone_peak_level()
+        self.progress("DangerZone peak level from force injection: %u" % peak)
+        if peak < 3:
+            raise NotAchievedException(
+                "force upset did not escalate the Danger Zone (peak level %u)" % peak)
+
+        self.disarm_vehicle(force=True)
+
+    def DangerZoneTiltFlight(self):
+        '''Exercise the Danger Zone tilt-vectoring path and its zone-5 action on a vectored tailsitter.'''
+
+        self.customise_SITL_commandline(
+            [],
+            model="plane-tailsitter",
+            defaults_filepath=self.model_defaults_filepath("plane-tailsitter"),
+            wipe=True,
+        )
+        self.set_parameters({
+            "Q_TAILSIT_VHGAIN": 0.5,
+            "SERVO5_FUNCTION": 75,     # k_tiltMotorLeft
+            "SERVO6_FUNCTION": 76,     # k_tiltMotorRight
+            "DZ_ENABLE": 2,            # run zone actions
+            "DZ_HYST_TIMER": 0,
+            "CHUTE_ENABLED": 1,        # enable parachute
+            "CHUTE_TYPE": 10,
+            "SERVO7_FUNCTION": 27,     # parachute release
+            "SIM_PARA_ENABLE": 1,
+            "SIM_PARA_PIN": 7,
+        })
+        self.reboot_sitl()
+
+        self.change_mode('QHOVER')
+        self.wait_ready_to_arm()
+        self.arm_vehicle()
+        self.set_rc(3, 1800)
+        self.wait_altitude(25, 35, relative=True, timeout=60)
+        self.set_rc(3, 1500)
+
+        self.context_collect('STATUSTEXT')
+
+        # add hard yaw demand and pitch twist to cause TV angles to go to their extremes and trigger zone 5
+        tilt_railed = False
+        self.set_rc(4, 2000)
+        self.set_parameters({"SIM_TWIST_Y": 400.0, "SIM_TWIST_TIME": 8000})
+        tstart = self.get_sim_time()
+        while self.get_sim_time_cached() - tstart < 20:
+            tl = self.get_servo_channel_value(5)
+            tr = self.get_servo_channel_value(6)
+            if min(tl, tr) <= 1100 or max(tl, tr) >= 1900:
+                tilt_railed = True
+            if not self.mav.motors_armed():   # disarmed by zone 5 action
+                break
+            self.delay_sim_time(0.3)
+
+        # zone-5 action: parachute release + disarm
+        self.wait_statustext("Parachute: Released", timeout=5, check_context=True)
+        self.wait_disarmed(timeout=10)
+        if not tilt_railed:
+            raise NotAchievedException(
+                "tilt-vectoring outputs never saturated before the zone-5 action")
+
     def setup_ICEngine_vehicle(self, start_chan):
         '''restarts SITL with an IC Engine setup'''
         self.set_parameters({
@@ -1790,6 +1934,9 @@ class AutoTestQuadPlane(vehicle_test_suite.TestSuite):
             self.QAssist,
             self.GyroFFT,
             self.Tailsitter,
+            self.DangerZoneFlight,
+            self.DangerZoneForce,
+            self.DangerZoneTiltFlight,
             self.ICEngine,
             self.ICEngineMission,
             self.MAV_CMD_DO_ENGINE_CONTROL,
