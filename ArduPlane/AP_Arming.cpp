@@ -225,6 +225,14 @@ bool AP_Arming_Plane::quadplane_checks(bool display_failure)
         ret = false;
     }
 
+#if AP_DANGERZONE_ENABLED
+    // Check for danger zone parameter values before arming
+    if (!plane.danger_zone_param_checks(failure_msg, ARRAY_SIZE(failure_msg))) {
+        check_failed(ARMING_CHECK_PARAMETERS, display_failure, "Bad parameter: %s", failure_msg);
+        ret = false;
+    }
+#endif
+
     return ret;
 }
 #endif // HAL_QUADPLANE_ENABLED

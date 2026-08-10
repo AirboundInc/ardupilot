@@ -53,6 +53,10 @@ public:
     // rolling buffers), so evaluation starts fresh. Used e.g. on disarm.
     void reset();
 
+    // Clear every check's debounce timer and rolling buffer
+    // while staying in the current zone.
+    void reset_checks();
+
     // Current danger zone level
     uint8_t get_current_danger_zone() const { return _zone + 1; }
 

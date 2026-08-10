@@ -51,9 +51,13 @@ enum class DZ_Op   : uint8_t { OR = 0, AND };
 typedef float (*DZ_Getter)();
 
 // Per-check parameter structs, used for inline named-argument construction.
-struct DZ_ThresholdParams { float thresh; DZ_Cmp cmp; };
-struct DZ_DurationParams  { float thresh; DZ_Cmp cmp; uint32_t duration_ms; };
-struct DZ_WindowParams    { DZ_Stat stat; float thresh; DZ_Cmp cmp; uint32_t window_ms; uint32_t duration_ms; };
+// The optional *_fn getters, when set, override the corresponding literal at
+// evaluation time so a check's threshold/duration/window can be parameter-backed.
+// (No default member initializers here: these must stay aggregates so the
+// designated-initializer call sites keep working; omitted getters value-init to null.)
+struct DZ_ThresholdParams { float thresh; DZ_Cmp cmp; DZ_Getter thresh_fn; };
+struct DZ_DurationParams  { float thresh; DZ_Cmp cmp; uint32_t duration_ms; DZ_Getter thresh_fn; DZ_Getter dur_fn; };
+struct DZ_WindowParams    { DZ_Stat stat; float thresh; DZ_Cmp cmp; uint32_t window_ms; uint32_t duration_ms; DZ_Getter thresh_fn; DZ_Getter win_fn; };
 struct DZ_OscParams       { uint32_t window_ms; uint16_t min_crossings; uint32_t duration_ms; };
 
 // ---------------------------------------------------------------------------
@@ -138,20 +142,28 @@ struct DZ_Check {
     uint32_t     window_ms;
     uint16_t     min_crossings;
     uint32_t     duration_ms;
+    DZ_Getter    thresh_fn;    // optional runtime override for thresh
+    DZ_Getter    dur_fn;       // optional runtime override for duration_ms
+    DZ_Getter    win_fn;       // optional runtime override for window_ms
 
     // ---- typed factories (call sites never set `type`) ----
     static constexpr DZ_Check Threshold(DZ_Getter g, DZ_ThresholdParams p) {
-        return { DZ_CheckType::THRESHOLD, g, p.cmp, DZ_Stat::MEAN, p.thresh, 0, 0, 0 };
+        return { DZ_CheckType::THRESHOLD, g, p.cmp, DZ_Stat::MEAN, p.thresh, 0, 0, 0, p.thresh_fn, nullptr, nullptr };
     }
     static constexpr DZ_Check Duration(DZ_Getter g, DZ_DurationParams p) {
-        return { DZ_CheckType::DURATION, g, p.cmp, DZ_Stat::MEAN, p.thresh, 0, 0, p.duration_ms };
+        return { DZ_CheckType::DURATION, g, p.cmp, DZ_Stat::MEAN, p.thresh, 0, 0, p.duration_ms, p.thresh_fn, p.dur_fn, nullptr };
     }
     static constexpr DZ_Check Window(DZ_Getter g, DZ_WindowParams p) {
-        return { DZ_CheckType::WINDOW, g, p.cmp, p.stat, p.thresh, p.window_ms, 0, p.duration_ms };
+        return { DZ_CheckType::WINDOW, g, p.cmp, p.stat, p.thresh, p.window_ms, 0, p.duration_ms, p.thresh_fn, nullptr, p.win_fn };
     }
     static constexpr DZ_Check Oscillation(DZ_Getter g, DZ_OscParams p) {
-        return { DZ_CheckType::OSCILLATION, g, DZ_Cmp::ABOVE, DZ_Stat::MEAN, 0, p.window_ms, p.min_crossings, p.duration_ms };
+        return { DZ_CheckType::OSCILLATION, g, DZ_Cmp::ABOVE, DZ_Stat::MEAN, 0, p.window_ms, p.min_crossings, p.duration_ms, nullptr, nullptr, nullptr };
     }
+
+    // Effective values, resolving an optional getter override to its literal.
+    float    eff_thresh()      const { return thresh_fn ? thresh_fn() : thresh; }
+    uint32_t eff_duration_ms() const { return dur_fn ? (uint32_t)dur_fn() : duration_ms; }
+    uint32_t eff_window_ms()   const { return win_fn ? (uint32_t)win_fn() : window_ms; }
 
     // Raw (pre-debounce) predicate result for the injected value.
     bool raw_satisfied(DZ_CheckState& st, float value, uint32_t now_ms) const;
