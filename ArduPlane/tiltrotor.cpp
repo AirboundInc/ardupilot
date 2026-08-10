@@ -149,6 +149,13 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("FTBLD_MS", 19, Tiltrotor, fwd_trans_blend_ms, 1000),
 
+    // @Param: HVPOW
+    // @DisplayName: Tiltrotor vector thrust gain power in hover
+    // @Description: Power-law exponent applied to the normalized pitch error driving axis 2's extra hover vectoring correction. Values above 1 suppress correction for small pitch errors (avoiding twitchy/windup-prone behavior, e.g. on the ground before takeoff) while still reaching full correction authority at large errors. Negative disables the extra correction entirely.
+    // @Range: 0 4
+    // @Increment: 0.1
+    AP_GROUPINFO("HVPOW", 20, Tiltrotor, vectored_hover_power, 1.0),
+
     AP_GROUPEND
 };
 
@@ -887,15 +894,15 @@ void Tiltrotor::dual_axis_output(void)
         float des_pitch_cd2 = plane.nav_pitch_cd;
         float pitch_cd2 = plane.ahrs.pitch_sensor;
 
-        float pitch_error_cd = (des_pitch_cd2 - pitch_cd2) * vectoring_gain_hvr;
+        float pitch_error_cd = (des_pitch_cd - pitch_cd) * vectoring_gain_hvr;
 
         float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
         float extra_sign = extra_pitch > 0?1:-1;
         float extra_elevator = 0;
         bool is_vtol = quadplane.in_vtol_mode();
 
-        if (!is_zero(extra_pitch) && is_vtol) {
-            extra_elevator = extra_sign * fabsf(extra_pitch) * SERVO_MAX;
+        if (!is_zero(extra_pitch) && is_vtol && !is_negative(vectored_hover_power)) {
+            extra_elevator = extra_sign * powf(fabsf(extra_pitch), vectored_hover_power) * SERVO_MAX;
         }
 
         tilt_left_adjusted  += extra_elevator;
