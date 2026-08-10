@@ -822,6 +822,11 @@ private:
     uint8_t danger_zone_last_level{0};
     Mode::Number danger_zone_resume_mode{Mode::Number::QLOITER};    // mode to restore when recovering out of autobailout
     uint32_t danger_zone_vtol_entry_ms{0};                          // remember the danger zone vtol entry timestamp for backtransition delay
+    Mode::Number danger_zone_last_mode{Mode::Number::QLOITER};      // mode seen on the previous tick, to detect mode changes
+    uint8_t danger_zone_resume_count{0};                            // automatic resumes used so far this flight
+    bool danger_zone_resume_exhausted{false};                       // automatic resume limit reached
+    bool danger_zone_bailout_suppressed(uint32_t now_ms);
+    bool danger_zone_param_checks(char *failure_msg, uint8_t failure_msg_len);
 #endif
 
 #if AP_TUNING_ENABLED

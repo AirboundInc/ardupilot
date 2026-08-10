@@ -22,4 +22,7 @@ public:
     AP_Float win_tim;     // Zone 4 exit: rolling recovery window (s)
     AP_Float avg_lim;     // Zone 4 exit: mean pitch-error recovery limit (deg)
     AP_Float peak_lim;    // Zone 4 exit: peak pitch recovery limit (deg)
+    AP_Int32 pred_int;    // Zone 4 entry: pitch-rate extrapolation interval (ms)
+    AP_Float pred_ang;    // Zone 4 entry: predicted VTOL pitch magnitude limit (deg)
+    AP_Int8  res_cnt;     // maximum automatic resumes per flight
 };

@@ -47,6 +47,11 @@ void AP_DangerZone::reset()
     _exit_bits = 0;
     _self_bits = 0;
 
+    reset_checks();
+}
+
+void AP_DangerZone::reset_checks()
+{
     // Clear each check's debounce timer and rolling buffer (buffer wiring is
     // preserved; only the accumulated data is dropped).
     if (_states != nullptr) {

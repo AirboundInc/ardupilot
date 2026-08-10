@@ -3,6 +3,7 @@
 #if HAL_QUADPLANE_ENABLED && AP_DANGERZONE_ENABLED
 
 #include <AP_DangerZone/DZ_Zone.h>
+#include <float.h>
 
 /*
   Danger Zone vehicle wiring
@@ -24,7 +25,7 @@ public:
         return fabsf(pid.P + pid.D + pid.FF);
     }
 
-    // abs(pitch error) (degrees) in the AHRS frame.
+    // abs(pitch error) (degrees) in the VTOL frame.
     static float pitch_error_deg()
     {
         const auto *atc = plane.quadplane.attitude_control;
@@ -46,7 +47,7 @@ public:
         return atc->get_att_target_euler_cd().y * 0.01f;
     }
 
-    // abs(pitch) (degrees) in the AHRS frame
+    // abs(pitch) (degrees) in the VTOL frame
     static float att_pitch_deg()
     {
         const auto *view = plane.quadplane.ahrs_view;
@@ -56,7 +57,7 @@ public:
         return fabsf(degrees(view->pitch));
     }
 
-    // EKF pitch
+    // EKF pitch (degrees)
     static float raw_pitch_deg()
     {
         return degrees(AP::ahrs().get_pitch());
@@ -75,13 +76,55 @@ public:
         return (fabsf(l) < fabsf(r)) ? l : r;
     }
 
+    // Predicted pitch value (degrees) in the VTOL frame
+    static float pred_pitch_deg()
+    {
+        const auto *atc = plane.quadplane.attitude_control;
+        const auto *view = plane.quadplane.ahrs_view;
+        if (atc == nullptr || view == nullptr) {
+            return 0.0f;
+        }
+        const float rate_dps = degrees(atc->get_rate_pitch_pid().get_pid_info().actual);
+        return fabsf(degrees(view->pitch) + rate_dps * plane.autobailout.pred_int * 0.001f);
+    }
+
     // ---- Getters for parameter values ----
-    static float ab_pit_lim()   { return plane.autobailout.pit_lim; }
-    static float ab_pit_tout()  { return plane.autobailout.pit_tout; }
+
+    static float ab_pit_lim()
+    {
+        // disable pitch check when the timeout is negative
+        if (plane.autobailout.pit_tout < 0) {
+            return FLT_MAX;
+        }
+        return plane.autobailout.pit_lim;
+    }
+
+    static float ab_pit_tout()
+    {
+        // clamp negative timeout to 0
+        return MAX(0, plane.autobailout.pit_tout.get());
+    }
+
+    static float ab_pred_ang()
+    {
+        // disable predictive check when prediction interval is negative
+        if (plane.autobailout.pred_int < 0) {
+            return FLT_MAX;
+        }
+        return plane.autobailout.pred_ang;
+    }
+
     static float ab_para_ang()  { return plane.autobailout.para_ang; }
-    static float ab_para_tout() { return plane.autobailout.para_tout; }
+
+    static float ab_para_tout()
+    {
+        // clamp negative timeout to 0
+        return MAX(0, plane.autobailout.para_tout.get());
+    }
+
     static float ab_avg_lim()   { return plane.autobailout.avg_lim; }
     static float ab_peak_lim()  { return plane.autobailout.peak_lim; }
+
     // recovery window (s -> ms), clamped to the buffer's max retained window
     static float ab_win_ms()
     {
@@ -96,18 +139,18 @@ public:
 const AP_Param::GroupInfo Autobailout::var_info[] = {
     // @Param: PIT_LIM
     // @DisplayName: Autobailout pitch limit
-    // @Description: AHRS pitch angle below which autobailout (switch to QLOITER) is triggered.
+    // @Description: VTOL-frame pitch angle magnitude above which autobailout (switch to QLOITER) is triggered.
     // @Units: deg
     // @User: Advanced
-    AP_GROUPINFO("PIT_LIM", 1, Autobailout, pit_lim, 40),
+    AP_GROUPINFO("PIT_LIM", 1, Autobailout, pit_lim, 50),
 
     // @Param: PIT_TOUT
     // @DisplayName: Autobailout pitch timeout
-    // @Description: Time the pitch must remain below AB_PIT_LIM before autobailout triggers.
+    // @Description: Time the pitch must remain beyond AB_PIT_LIM before autobailout triggers. Negative disables the sustained pitch check.
     // @Units: ms
-    // @Range: 0 5000
+    // @Range: -1 5000
     // @User: Advanced
-    AP_GROUPINFO("PIT_TOUT", 2, Autobailout, pit_tout, 200),
+    AP_GROUPINFO("PIT_TOUT", 2, Autobailout, pit_tout, 100),
 
     // @Param: BTRN_DLY
     // @DisplayName: Autobailout back-transition delay
@@ -121,6 +164,7 @@ const AP_Param::GroupInfo Autobailout::var_info[] = {
     // @DisplayName: Autobailout parachute pitch angle
     // @Description: AHRS pitch angle below which the parachute deploy action is triggered.
     // @Units: deg
+    // @Range: -50 -10
     // @User: Advanced
     AP_GROUPINFO("PARA_ANG", 4, Autobailout, para_ang, -15),
 
@@ -160,6 +204,28 @@ const AP_Param::GroupInfo Autobailout::var_info[] = {
     // @Units: deg
     // @User: Advanced
     AP_GROUPINFO("PEAK_LIM", 9, Autobailout, peak_lim, 30),
+
+    // @Param: PRED_INT
+    // @DisplayName: Autobailout pitch prediction interval
+    // @Description: Interval over which the VTOL pitch is extrapolated from the current pitch rate to trigger autobailout early. Negative disables the prediction check.
+    // @Units: ms
+    // @Range: -1 5000
+    // @User: Advanced
+    AP_GROUPINFO("PRED_INT", 10, Autobailout, pred_int, 1000),
+
+    // @Param: PRED_ANG
+    // @DisplayName: Autobailout predicted pitch limit
+    // @Description: Predicted VTOL-frame pitch magnitude above which autobailout is triggered.
+    // @Units: deg
+    // @User: Advanced
+    AP_GROUPINFO("PRED_ANG", 11, Autobailout, pred_ang, 105),
+
+    // @Param: RES_CNT
+    // @DisplayName: Autobailout resume limit
+    // @Description: Maximum number of automatic resumes to the pre-bailout mode per flight. Once reached the vehicle stays in QLOITER and the pilot must change mode manually.
+    // @Range: 0 20
+    // @User: Advanced
+    AP_GROUPINFO("RES_CNT", 12, Autobailout, res_cnt, 5),
 
     AP_GROUPEND
 };
@@ -206,15 +272,19 @@ static constexpr DZ_Zone dz_zones[] = {
               { .stat = DZ_Stat::PEAK, .thresh = 15.0f, .cmp = DZ_Cmp::BELOW, .window_ms = 5000, .duration_ms = 0 })) },
 
     // Zone 4: autobailout
-    // entry: raw pitch < 40 deg for 200 ms
+    // entry: |att pitch| > 50 deg for 100 ms
+    //        OR |predicted pitch| > 105 deg
     //        OR both tilts maxed same direction (> 4499 or < -4499 cd, i.e. pinned
     //        to the +/-4500 rail; strict > can't match 4500 exactly) for 100 ms
     // exit:  rolling-avg pitch error < 20 deg AND peak |att pitch| < 30 deg over 5 s
     { .name = "zone4",
       .entry = dz::OR(
-          DZ_Check::Duration(DZ_Metrics::raw_pitch_deg,
-              { .thresh = 40.0f, .cmp = DZ_Cmp::BELOW, .duration_ms = 200,
+          DZ_Check::Duration(DZ_Metrics::att_pitch_deg,
+              { .thresh = 50.0f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 100,
                 .thresh_fn = DZ_Metrics::ab_pit_lim, .dur_fn = DZ_Metrics::ab_pit_tout }),
+          DZ_Check::Threshold(DZ_Metrics::pred_pitch_deg,
+              { .thresh = 105.0f, .cmp = DZ_Cmp::ABOVE,
+                .thresh_fn = DZ_Metrics::ab_pred_ang }),
           DZ_Check::Duration(DZ_Metrics::tilt_same_dir,
               { .thresh = 4499.0f, .cmp = DZ_Cmp::ABOVE, .duration_ms = 100 }),
           DZ_Check::Duration(DZ_Metrics::tilt_same_dir,
@@ -255,6 +325,61 @@ void Plane::danger_zone_init()
     danger_zone_last_level = danger_zone.get_current_danger_zone();
 }
 
+// Pre-arm validation of the autobailout parameters
+bool Plane::danger_zone_param_checks(char *failure_msg, uint8_t failure_msg_len)
+{
+    if (danger_zone.enabled() == DZ_Enable::OFF) {
+        return true;
+    }
+
+    // Limit AB_PARA_ANG between -50 and -10
+    const float para_ang = autobailout.para_ang;
+    if (para_ang >= -10.0f || para_ang <= -50.0f) {
+        hal.util->snprintf(failure_msg, failure_msg_len, "AB_PARA_ANG must be in (-50, -10)");
+        return false;
+    }
+
+    // ensure autobailout pitch limit is shallower than parachute to ensure Zone 5 is reachable
+    const float para_tilt = 90.0f - para_ang;
+    const float bail_tilt = autobailout.pit_lim + fabsf(quadplane.ahrs_trim_pitch);
+    if (bail_tilt >= para_tilt) {
+        hal.util->snprintf(failure_msg, failure_msg_len, "AB_PIT_LIM must be < %d", int(para_tilt));
+        return false;
+    }
+
+    return true;
+}
+
+// Conditions in which autobailout should not trigger
+bool Plane::danger_zone_bailout_suppressed(uint32_t now_ms)
+{
+    // have a post-transition delay before autobailout can be applied
+    if (quadplane.tailsitter_in_vtol_transition() ||
+        (now_ms - danger_zone_vtol_entry_ms) < (uint32_t)autobailout.btrn_dly) {
+        return true;
+    }
+
+    // don't bailout when in certain modes
+    const Mode::Number mode_num = control_mode->mode_number();
+    if (mode_num == Mode::Number::QSTABILIZE ||
+        mode_num == Mode::Number::QHOVER ||
+        mode_num == Mode::Number::QLOITER ||
+#if QAUTOTUNE_ENABLED
+        mode_num == Mode::Number::QAUTOTUNE ||
+#endif
+        mode_num == Mode::Number::QACRO) {
+        return true;
+    }
+
+    // don't bailout when in takeoff
+    if (in_auto_mission_id(MAV_CMD_NAV_VTOL_TAKEOFF) ||
+        in_auto_mission_id(MAV_CMD_NAV_TAKEOFF)) {
+        return true;
+    }
+
+    return false;
+}
+
 // 50Hz scheduler task
 void Plane::danger_zone_update()
 {
@@ -264,6 +389,11 @@ void Plane::danger_zone_update()
         danger_zone.reset();
         danger_zone_last_level = danger_zone.get_current_danger_zone();
         danger_zone_vtol_entry_ms = 0;
+        danger_zone_last_mode = control_mode->mode_number();
+        if (!arming.is_armed()) {
+            danger_zone_resume_count = 0;
+            danger_zone_resume_exhausted = false;
+        }
         return;
     }
 
@@ -273,14 +403,23 @@ void Plane::danger_zone_update()
     if (danger_zone_vtol_entry_ms == 0 || quadplane.tailsitter_in_vtol_transition()) {
         danger_zone_vtol_entry_ms = now;
     }
-    const bool backtransition_done = (now - danger_zone_vtol_entry_ms) >= (uint32_t)autobailout.btrn_dly;
+
+    // Reset checks when the mode changes, unless the mode changed because of bailout
+    if (control_mode->mode_number() != danger_zone_last_mode) {
+        danger_zone_last_mode = control_mode->mode_number();
+        const bool in_bailout = control_mode == &mode_qloiter &&
+                                control_mode_reason == ModeReason::DANGERZONE_BAILOUT;
+        if (!in_bailout) {
+            danger_zone.reset_checks();
+        }
+    }
 
     danger_zone.update(now);
 
     const uint8_t level = danger_zone.get_current_danger_zone();
 
 #if HAL_LOGGING_ENABLED
-    // Log the current zone level and bitmasks of the evaluations of 
+    // Log the current zone level and bitmasks of the evaluations of
     // the entry and exit conditions for each zone
     AP::logger().WriteStreaming("DZ", "TimeUS,Zone,Ent,Ext,SEnt", "QBBBB",
                                 AP_HAL::micros64(),
@@ -291,23 +430,12 @@ void Plane::danger_zone_update()
 #endif
 
     // Handle autobailout
-    if (danger_zone.actions_enabled() && level >= 4 && backtransition_done) {
-        const bool in_bailout = control_mode == &mode_qloiter &&
-                                control_mode_reason == ModeReason::DANGERZONE_BAILOUT;
-        const Mode::Number mode_num = control_mode->mode_number();
-        const bool bailout_excluded =
-            mode_num == Mode::Number::QSTABILIZE ||
-            mode_num == Mode::Number::QHOVER ||
-            mode_num == Mode::Number::QLOITER ||
-#if QAUTOTUNE_ENABLED
-            mode_num == Mode::Number::QAUTOTUNE ||
-#endif
-            mode_num == Mode::Number::QACRO;
-        if (!in_bailout && !bailout_excluded) {
-            // save the pre-bailout mode so it can be restored on recovery
-            danger_zone_resume_mode = mode_num;
-            set_mode_by_number(Mode::Number::QLOITER, ModeReason::DANGERZONE_BAILOUT);
-        }
+    if (danger_zone.actions_enabled() && level >= 4 &&
+        (danger_zone_last_level < 4 || danger_zone.get_self_entry_bits() != 0) &&
+        !danger_zone_bailout_suppressed(now)) {
+        // save the pre-bailout mode so it can be restored on recovery
+        danger_zone_resume_mode = control_mode->mode_number();
+        set_mode_by_number(Mode::Number::QLOITER, ModeReason::DANGERZONE_BAILOUT);
     }
 
     // Zone transition
@@ -318,12 +446,24 @@ void Plane::danger_zone_update()
         // Only run actions in Full mode
         if (danger_zone.actions_enabled()) {
             // Mission resumption after exiting Zone 4
-            // Only resume if the current mode is QLoiter 
+            // Only resume if the current mode is QLoiter
             // and the mode reason is bailout from the Danger Zone module
             if (level < 4 && danger_zone_last_level >= 4 &&
                 control_mode == &mode_qloiter &&
                 control_mode_reason == ModeReason::DANGERZONE_BAILOUT) {
-                set_mode_by_number(danger_zone_resume_mode, ModeReason::DANGERZONE_RECOVERED);
+                // stop auto resume after AB_RES_CNT resumes
+                const uint8_t resume_limit = MAX(0, autobailout.res_cnt.get());
+                if (danger_zone_resume_count < resume_limit) {
+                    if (set_mode_by_number(danger_zone_resume_mode, ModeReason::DANGERZONE_RECOVERED)) {
+                        danger_zone_resume_count++;
+                        gcs().send_text(MAV_SEVERITY_WARNING, "DangerZone: resumed (%u/%u)",
+                                        (unsigned)danger_zone_resume_count,
+                                        (unsigned)resume_limit);
+                    }
+                } else if (!danger_zone_resume_exhausted) {
+                    danger_zone_resume_exhausted = true;
+                    gcs().send_text(MAV_SEVERITY_WARNING, "DangerZone: resume limit reached, resume manually");
+                }
             }
 
             // Zone 5: Disarm and deploy parachute (if enabled)
