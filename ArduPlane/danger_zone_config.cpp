@@ -325,6 +325,45 @@ void Plane::danger_zone_init()
     danger_zone_last_level = danger_zone.get_current_danger_zone();
 }
 
+
+// Parachute trigger channel high value
+static constexpr uint16_t DZ_PARA_CHAN_HIGH = 1850;
+
+// Parachute trigger channel
+static AP_Float *dz_para_trig_ch;
+
+// Resolve parachute trigger channel
+static uint8_t dz_para_trig_chan()
+{
+    if (dz_para_trig_ch == nullptr) {
+        enum ap_var_type ptype;
+        AP_Param *p = AP_Param::find("PARA_TRIG_CH", &ptype);
+        if (p == nullptr || ptype != AP_PARAM_FLOAT) {
+            return 0;
+        }
+        dz_para_trig_ch = (AP_Float *)p;
+    }
+    const int32_t chan = int32_t(dz_para_trig_ch->get());
+    if (chan < 1 || chan > NUM_RC_CHANNELS) {
+        return 0;
+    }
+    return uint8_t(chan);
+}
+
+// Hold the trigger channel high for the rest of the flight once zone 5 has fired
+void Plane::danger_zone_para_hold()
+{
+    if (!danger_zone_para_triggered) {
+        return;
+    }
+    const uint8_t chan = dz_para_trig_chan();
+    if (chan == 0) {
+        return;
+    }
+
+    RC_Channels::set_override(chan - 1, DZ_PARA_CHAN_HIGH);
+}
+
 // Pre-arm validation of the autobailout parameters
 bool Plane::danger_zone_param_checks(char *failure_msg, uint8_t failure_msg_len)
 {
@@ -383,6 +422,8 @@ bool Plane::danger_zone_bailout_suppressed(uint32_t now_ms)
 // 50Hz scheduler task
 void Plane::danger_zone_update()
 {
+    danger_zone_para_hold();
+
     // only run when armed and in the VTOL phase
     if (danger_zone.enabled() == DZ_Enable::OFF ||
         !arming.is_armed() || !quadplane.in_vtol_mode()) {
@@ -466,11 +507,13 @@ void Plane::danger_zone_update()
                 }
             }
 
-            // Zone 5: Disarm and deploy parachute (if enabled)
+            // Zone 5: Disarm and trigger the parachute RC channel (if enabled)
             if (level >= 5 && danger_zone_last_level < 5 && autobailout.para_en) {
-#if PARACHUTE == ENABLED
-                parachute_release_with_disarm();
-#endif
+                danger_zone_para_triggered = true;
+                arming.disarm(AP_Arming::Method::PARACHUTE_RELEASE, false);
+                if (dz_para_trig_chan() == 0) {
+                    gcs().send_text(MAV_SEVERITY_CRITICAL, "DangerZone: PARA_TRIG_CH not set");
+                }
             }
         }
 

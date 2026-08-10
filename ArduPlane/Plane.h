@@ -825,6 +825,8 @@ private:
     Mode::Number danger_zone_last_mode{Mode::Number::QLOITER};      // mode seen on the previous tick, to detect mode changes
     uint8_t danger_zone_resume_count{0};                            // automatic resumes used so far this flight
     bool danger_zone_resume_exhausted{false};                       // automatic resume limit reached
+    bool danger_zone_para_triggered{false};                         // zone 5 has raised the parachute trigger channel
+    void danger_zone_para_hold();
     bool danger_zone_bailout_suppressed(uint32_t now_ms);
     bool danger_zone_param_checks(char *failure_msg, uint8_t failure_msg_len);
 #endif
