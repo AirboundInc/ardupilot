@@ -144,6 +144,15 @@ public:
     // during a forward transition (dual axis tiltrotor)
     AP_Float fwd_trans_blend_ms;
 
+    // Reaction-torque compensation for Axis 2 (dual axis tiltrotor). Models
+    // body pitch angular accel as static_ang_accel(phi) + reaction_ang_accel(alpha_tv)
+    // and clamps the commanded TV kinematics whenever the predicted total
+    // would overshoot the desired body accel.
+    AP_Int8  reaction_torque_enable;
+    AP_Float reaction_torque_tv_ang_const;
+    AP_Float reaction_torque_ang_accel_const;
+    AP_Float reaction_torque_accel_max;
+
     float current_tilt;
     float current_throttle;
     bool _motors_active:1;
@@ -219,6 +228,13 @@ private:
     // actuator output inside dual_axis_output(), before it gets restored
     // back to the fixed-wing forward-throttle value; for QTHR debug log
     float dual_axis_mixout_throttle = 0;
+
+    // reaction-torque compensation state (dual axis tiltrotor), for
+    // Axis 2's TV kinematics tracking in dual_axis_output()
+    bool  rtq_state_valid = false;
+    float rtq_phi_rad_prev = 0;
+    float rtq_omega_rad_prev = 0;
+    float rtq_alpha_rad_prev = 0;
 
     Tiltrotor_Transition* transition;
 

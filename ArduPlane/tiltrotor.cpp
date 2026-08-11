@@ -151,10 +151,37 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
 
     // @Param: HVPOW
     // @DisplayName: Tiltrotor vector thrust gain power in hover
-    // @Description: Power-law exponent applied to the normalized pitch error driving axis 2's extra hover vectoring correction. Values above 1 suppress correction for small pitch errors (avoiding twitchy/windup-prone behavior, e.g. on the ground before takeoff) while still reaching full correction authority at large errors. Negative disables the extra correction entirely.
+    // @Description: Power-law exponent applied to the normalized pitch error driving axis 2's extra hover vectoring correction when Q_TILT_RTQ_EN is disabled. Values above 1 suppress correction for small pitch errors (avoiding twitchy/windup-prone behavior, e.g. on the ground before takeoff) while still reaching full correction authority at large errors. Negative disables the extra correction entirely.
     // @Range: 0 4
     // @Increment: 0.1
     AP_GROUPINFO("HVPOW", 20, Tiltrotor, vectored_hover_power, 1.0),
+
+    // @Param: RTQ_EN
+    // @DisplayName: Reaction-torque compensation enable
+    // @Description: Enables reaction-torque compensation for Axis 2 (dual axis tiltrotor), replacing the Q_TILT_HVGAIN/Q_TILT_HVPOW despitch-based extra elevator correction. When enabled, models the commanded body pitch angular acceleration as a static term (proportional to TV angle) plus a reaction-torque term (proportional to the TV joint's own angular acceleration), and clamps the commanded TV kinematics whenever the predicted total would overshoot the desired body acceleration. Requires Q_TILT_RTQ_TVAC, Q_TILT_RTQ_RAAC and Q_TILT_RTQ_AMAX to be tuned for the airframe; leave disabled until those have been derived from flight logs.
+    // @Values: 0:Disabled,1:Enabled
+    // @User: Advanced
+    AP_GROUPINFO("RTQ_EN", 21, Tiltrotor, reaction_torque_enable, 0),
+
+    // @Param: RTQ_TVAC
+    // @DisplayName: Reaction-torque static TV angle to body accel constant
+    // @Description: Body pitch angular acceleration produced per radian of commanded Axis 2 TV angle (the "static_ang_accel" term), i.e. d*W/Iyy from the reaction-torque model. Derived empirically from flight logs; airframe/mount specific.
+    // @Units: rad/s/s
+    // @User: Advanced
+    AP_GROUPINFO("RTQ_TVAC", 22, Tiltrotor, reaction_torque_tv_ang_const, 3560),
+
+    // @Param: RTQ_RAAC
+    // @DisplayName: Reaction-torque reaction angular accel constant
+    // @Description: Dimensionless ratio mapping the TV joint's own angular acceleration to the reaction-torque angular acceleration it imparts on the body. Derived empirically from flight logs; airframe/mount specific. Zero disables the reaction-torque clamp entirely (Axis 2 falls back to plain pitch/yaw pass-through).
+    // @User: Advanced
+    AP_GROUPINFO("RTQ_RAAC", 23, Tiltrotor, reaction_torque_ang_accel_const, 25.4),
+
+    // @Param: RTQ_AMAX
+    // @DisplayName: Reaction-torque body accel max
+    // @Description: Target body pitch angular acceleration at full Axis 2 pitch stick deflection, used by the reaction-torque clamp to decide when the commanded TV kinematics would overshoot.
+    // @Units: rad/s/s
+    // @User: Advanced
+    AP_GROUPINFO("RTQ_AMAX", 24, Tiltrotor, reaction_torque_accel_max, 2),
 
     AP_GROUPEND
 };
@@ -879,55 +906,133 @@ void Tiltrotor::dual_axis_output(void)
             fwd_trans_start_ms = 0;
         }
 
-        
+
         float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
         float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
         float tilt_left_adjusted = tilt_left;
         float tilt_right_adjusted = tilt_right;
 
-        // drive TVs based on pitch error as well
+        if (reaction_torque_enable > 0) {
+            // --- Axis 2 reaction-torque compensation. tilt_left/tilt_right
+            // (centidegrees) are AP_MotorsTailsitter's mixed pitch+/-yaw
+            // command; recover the pitch (collective) and yaw (differential)
+            // components in degrees. ---
+            const float des_l_deg = tilt_left * 0.01f;
+            const float des_r_deg = tilt_right * 0.01f;
+            const float diff_deg = des_l_deg - des_r_deg;   // yaw, unaffected by reaction torque
+            const float tv_range_deg = SERVO_MAX * 0.01f;   // Axis 2 servo range, see Tiltrotor::setup()
 
+            const float pid_out = constrain_float((des_l_deg + des_r_deg) / SERVO_MAX, -1.0f, 1.0f);
+            float phi_rad = pid_out * radians(tv_range_deg);
 
-        float des_pitch_cd = quadplane.attitude_control->get_att_target_euler_cd().y;
-        float pitch_cd = quadplane.ahrs_view->pitch_sensor;
+            bool rtq_clamped = false;
+            float omega_tv_rad = 0;
+            float alpha_tv_rad = 0;
+            float static_ang_accel = 0;
+            float reaction_ang_accel = 0;
+            float body_accel_target = 0;
 
-        float des_pitch_cd2 = plane.nav_pitch_cd;
-        float pitch_cd2 = plane.ahrs.pitch_sensor;
+            const float dt = plane.G_Dt;
+            if (!is_zero(reaction_torque_ang_accel_const) && is_positive(dt)) {
+                if (!rtq_state_valid) {
+                    // just enabled, or first loop back in hover: seed state
+                    // from the current command to avoid a one-loop
+                    // derivative spike
+                    rtq_phi_rad_prev = phi_rad;
+                    rtq_omega_rad_prev = 0;
+                    rtq_alpha_rad_prev = 0;
+                    rtq_state_valid = true;
+                }
 
-        float pitch_error_cd = (des_pitch_cd - pitch_cd) * vectoring_gain_hvr;
+                body_accel_target = pid_out * reaction_torque_accel_max;
 
-        float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
-        float extra_sign = extra_pitch > 0?1:-1;
-        float extra_elevator = 0;
-        bool is_vtol = quadplane.in_vtol_mode();
+                omega_tv_rad = rtq_omega_rad_prev + (phi_rad - rtq_phi_rad_prev) / dt;
+                alpha_tv_rad = rtq_alpha_rad_prev + (omega_tv_rad - rtq_omega_rad_prev) / dt;
 
-        if (!is_zero(extra_pitch) && is_vtol && !is_negative(vectored_hover_power)) {
-            extra_elevator = extra_sign * powf(fabsf(extra_pitch), vectored_hover_power) * SERVO_MAX;
-        }
+                static_ang_accel = phi_rad * reaction_torque_tv_ang_const;
+                reaction_ang_accel = alpha_tv_rad * reaction_torque_ang_accel_const;
+                const float total_ang_accel = static_ang_accel + reaction_ang_accel;
 
-        tilt_left_adjusted  += extra_elevator;
-        tilt_right_adjusted += extra_elevator;
+                const float e_before = body_accel_target - static_ang_accel;
+                const float e_after  = body_accel_target - total_ang_accel;
+
+                if (e_before * e_after < 0) {
+                    // predicted overshoot of the body accel target -> clamp
+                    // the TV's own kinematics so the reaction torque doesn't
+                    // push past it
+                    alpha_tv_rad = e_before / reaction_torque_ang_accel_const;
+                    phi_rad = rtq_phi_rad_prev + rtq_omega_rad_prev * dt;
+                    omega_tv_rad = rtq_omega_rad_prev + alpha_tv_rad * dt;
+                    rtq_clamped = true;
+                }
+
+                rtq_phi_rad_prev = phi_rad;
+                rtq_omega_rad_prev = omega_tv_rad;
+                rtq_alpha_rad_prev = alpha_tv_rad;
+            } else {
+                // untuned/invalid dt: plain pass-through, reseed on next tick
+                rtq_state_valid = false;
+            }
+
+            const float phi_deg = degrees(phi_rad);
+            tilt_left_adjusted  = (phi_deg + diff_deg * 0.5f) * 100.0f;
+            tilt_right_adjusted = (phi_deg - diff_deg * 0.5f) * 100.0f;
 
 #if HAL_LOGGING_ENABLED
-        // Add logging for desired thrust vectoring angles
-        AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,ExtraEl,AdjL,AdjR,PitchErr,isVTOL,ExtraPit",
-                "sdddddddd", // seconds, degrees
-                "F00000000", // micro (1e-6), no mult (1e0)
-                "Qffffffff", // uint64_t, float
-                AP_HAL::micros64(), tilt_left/100, tilt_right/100, extra_elevator/100,
-                tilt_left_adjusted/100, 
-                tilt_right_adjusted/100,
-                pitch_error_cd/100,
-                (float)is_vtol,
-                extra_pitch/100);
-
-        AP::logger().WriteStreaming("PITE", "TimeUS,DesPit1,DesPit2,Pit1,Pit2",
-                "sdddd", // seconds, degrees
-                "F0000", // micro (1e-6), no mult (1e0)
-                "Qffff", // uint64_t, float
-                AP_HAL::micros64(), des_pitch_cd/100, des_pitch_cd2/100,pitch_cd/100,pitch_cd2/100);
+            // Reaction-torque vectoring controller debug log
+            AP::logger().WriteStreaming("RTVC", "TimeUS,Phi,Omega,Alpha,StaAcc,RactAcc,AccTgt,Clamped,AdjL,AdjR",
+                    "sd------dd", // seconds, degrees, unitless x6, degrees x2
+                    "F000000000", // micro (1e-6), no mult (1e0) elsewhere
+                    "Qfffffffff", // uint64_t, float x9
+                    AP_HAL::micros64(), phi_deg, omega_tv_rad, alpha_tv_rad,
+                    static_ang_accel, reaction_ang_accel, body_accel_target,
+                    (float)rtq_clamped, tilt_left_adjusted/100, tilt_right_adjusted/100);
 #endif
-        
+        } else {
+            // --- despitch-based extra elevator correction (legacy path) ---
+            rtq_state_valid = false;
+
+            float des_pitch_cd = quadplane.attitude_control->get_att_target_euler_cd().y;
+            float pitch_cd = quadplane.ahrs_view->pitch_sensor;
+
+            float des_pitch_cd2 = plane.nav_pitch_cd;
+            float pitch_cd2 = plane.ahrs.pitch_sensor;
+
+            float pitch_error_cd = (des_pitch_cd - pitch_cd) * vectoring_gain_hvr;
+
+            float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
+            float extra_sign = extra_pitch > 0?1:-1;
+            float extra_elevator = 0;
+            bool is_vtol = quadplane.in_vtol_mode();
+
+            if (!is_zero(extra_pitch) && is_vtol && !is_negative(vectored_hover_power)) {
+                extra_elevator = extra_sign * powf(fabsf(extra_pitch), vectored_hover_power) * SERVO_MAX;
+            }
+
+            tilt_left_adjusted  += extra_elevator;
+            tilt_right_adjusted += extra_elevator;
+
+#if HAL_LOGGING_ENABLED
+            // Add logging for desired thrust vectoring angles
+            AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,ExtraEl,AdjL,AdjR,PitchErr,isVTOL,ExtraPit",
+                    "sdddddddd", // seconds, degrees
+                    "F00000000", // micro (1e-6), no mult (1e0)
+                    "Qffffffff", // uint64_t, float
+                    AP_HAL::micros64(), tilt_left/100, tilt_right/100, extra_elevator/100,
+                    tilt_left_adjusted/100,
+                    tilt_right_adjusted/100,
+                    pitch_error_cd/100,
+                    (float)is_vtol,
+                    extra_pitch/100);
+
+            AP::logger().WriteStreaming("PITE", "TimeUS,DesPit1,DesPit2,Pit1,Pit2",
+                    "sdddd", // seconds, degrees
+                    "F0000", // micro (1e-6), no mult (1e0)
+                    "Qffff", // uint64_t, float
+                    AP_HAL::micros64(), des_pitch_cd/100, des_pitch_cd2/100,pitch_cd/100,pitch_cd2/100);
+#endif
+        }
+
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
                                         constrain_float(tilt_left_adjusted,  -SERVO_MAX, SERVO_MAX));
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
