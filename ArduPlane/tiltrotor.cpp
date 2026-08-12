@@ -922,7 +922,7 @@ void Tiltrotor::dual_axis_output(void)
             const float diff_deg = des_l_deg - des_r_deg;   // yaw, unaffected by reaction torque
             const float tv_range_deg = SERVO_MAX * 0.01f;   // Axis 2 servo range, see Tiltrotor::setup()
 
-            const float pid_out = constrain_float((des_l_deg + des_r_deg) / SERVO_MAX, -1.0f, 1.0f);
+            const float pid_out = constrain_float((des_l_deg + des_r_deg) / (2.0f * tv_range_deg), -1.0f, 1.0f);
             float phi_rad = pid_out * radians(tv_range_deg);
 
             bool rtq_clamped = false;
@@ -946,8 +946,11 @@ void Tiltrotor::dual_axis_output(void)
 
                 body_accel_target = pid_out * reaction_torque_accel_max;
 
-                omega_tv_rad = rtq_omega_rad_prev + (phi_rad - rtq_phi_rad_prev) / dt;
-                alpha_tv_rad = rtq_alpha_rad_prev + (omega_tv_rad - rtq_omega_rad_prev) / dt;
+                // plain finite-difference velocity/accel (NOT "prev + delta/dt",
+                // which accumulates and telescopes into omega/alpha tracking phi
+                // itself rather than its actual rate of change)
+                omega_tv_rad = (phi_rad - rtq_phi_rad_prev) / dt;
+                alpha_tv_rad = (omega_tv_rad - rtq_omega_rad_prev) / dt;
 
                 static_ang_accel = phi_rad * reaction_torque_tv_ang_const;
                 reaction_ang_accel = alpha_tv_rad * reaction_torque_ang_accel_const;
@@ -1051,6 +1054,11 @@ void Tiltrotor::dual_axis_output(void)
     last_fw_mode_ms = now;
     transition->backtrans_start_ms = 0;
     fwd_trans_start_ms = 0;
+
+    // not in the hover branch this tick, so the reaction-torque state above
+    // isn't being advanced; invalidate it so the next hover entry reseeds
+    // instead of differencing against a stale, possibly seconds-old value
+    rtq_state_valid = false;
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
