@@ -198,7 +198,11 @@ const AP_Param::GroupInfo SRV_Channels::var_info[] = {
     // @Path: ../AP_FETtecOneWire/AP_FETtecOneWire.cpp
     AP_SUBGROUPINFO(fetteconwire, "_FTW_",  25, SRV_Channels, AP_FETtecOneWire),
 #endif
-
+    
+    // @Group: _TTL_
+    // @Path: ../AP_TTLServo/AP_TTLServo.cpp
+    AP_SUBGROUPINFO(feetechservo,"_TTL_",  45, SRV_Channels, AP_TTLServo),
+    
     // @Param: _DSHOT_RATE
     // @DisplayName: Servo DShot output rate
     // @Description: DShot output rate for all outputs as a multiple of the loop rate. 0 sets the output rate to be fixed at 1Khz for low loop rates. This value should never be set below 500Hz.
@@ -501,7 +505,10 @@ void SRV_Channels::push()
     // give robotis library a chance to update
     robotis.update();
 #endif
-
+    
+    // Give TTLServo library a chance to update
+    feetechservo.update();
+    
 #if HAL_SUPPORT_RCOUT_SERIAL
     // give blheli telemetry a chance to update
     blheli.update_telemetry();

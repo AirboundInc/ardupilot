@@ -22,6 +22,7 @@
 #include <AP_SBusOut/AP_SBusOut.h>
 #include <AP_BLHeli/AP_BLHeli.h>
 #include <AP_FETtecOneWire/AP_FETtecOneWire.h>
+#include <AP_TTLServo/AP_TTLServo.h>
 
 #include "SRV_Channel_config.h"
 
@@ -654,6 +655,8 @@ private:
     // support for Robotis servo protocol
     AP_RobotisServo robotis;
 #endif
+
+    AP_TTLServo feetechservo;
 
 #if HAL_SUPPORT_RCOUT_SERIAL
     // support for BLHeli protocol
