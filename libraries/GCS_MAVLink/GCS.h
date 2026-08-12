@@ -495,6 +495,12 @@ public:
 
     MAV_RESULT set_message_interval(uint32_t msg_id, int32_t interval_us);
 
+    // configure the MAVLink2 signing key and activate it immediately
+    // on all channels. Used to bootstrap signing from a key obtained
+    // out-of-band (e.g. scripting fetching it over HTTPS), mirroring
+    // what handle_setup_signing() does for a SETUP_SIGNING message.
+    bool set_signing_key(const uint8_t key[32], uint64_t initial_timestamp);
+
 protected:
 
     bool mavlink_coordinate_frame_to_location_alt_frame(MAV_FRAME coordinate_frame,
@@ -1197,6 +1203,12 @@ public:
     virtual const GCS_MAVLINK *chan(const uint8_t ofs) const = 0;
     // return the number of valid GCS objects
     uint8_t num_gcs() const { return _num_gcs; };
+
+    // configure the MAVLink2 signing key; see GCS_MAVLINK::set_signing_key()
+    bool set_signing_key(const uint8_t key[32], uint64_t initial_timestamp) {
+        GCS_MAVLINK *backend = chan(0);
+        return backend != nullptr && backend->set_signing_key(key, initial_timestamp);
+    }
     void send_message(enum ap_message id);
     void send_mission_item_reached_message(uint16_t mission_index);
     void send_named_float(const char *name, float value) const;

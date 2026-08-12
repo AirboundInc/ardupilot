@@ -3002,6 +3002,21 @@ function gcs:last_seen() end
 ---@return integer -- MAV_RESULT
 function gcs:run_command_int(command, params) end
 
+-- configure the MAVLink2 signing key and activate it immediately on all
+-- channels. Fails and returns false if armed, if the key is not exactly
+-- 32 bytes, or if the key could not be saved to storage
+---@param key string -- 32 byte secret key
+---@param initial_timestamp uint64_t_ud -- initial signing timestamp
+---@return boolean
+function gcs:set_signing_key(key, initial_timestamp) end
+
+-- update the live outgoing MAVLink system id. Unlike setting the
+-- SYSID_THISMAV parameter, this takes effect immediately. Fails and
+-- returns false if armed.
+---@param sysid integer
+---@return boolean
+function gcs:set_sysid(sysid) end
+
 -- The relay library provides access to controlling relay outputs.
 relay = {}
 

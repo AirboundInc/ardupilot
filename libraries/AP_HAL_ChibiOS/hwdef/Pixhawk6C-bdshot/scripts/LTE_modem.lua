@@ -58,9 +58,15 @@ local P = {
 
 -- ---- HTTPS auth endpoint (returns the data-server IP/port) ---------------
 -- NOTE: these sit in cleartext on the SD card. Anyone with the card reads them.
-local AUTH_URL             = "https://testgcs.airbound.com/api/v1/auth/login"
-local AUTH_BODY            = "username=nh@airbound.com&password=1234"
+local AUTH_URL             = "https://poc.rudra.airbound.com/api/v1/users/aircraft-login"
+local AUTH_BODY            = "aircraftId=TRT-10&password=password123"
 local AUTH_EVERY_RECONNECT = false   -- false = fetch once/session, cache until hard reset
+local AUTH_APPLY_SIGNING_KEY = false -- MAVLink2 signing not verified end-to-end yet
+local AUTH_APPLY_SYSID = false -- mavlink_system.sysid is a single global shared by EVERY link (USB
+                                -- included) -- changing it mid-session disconnects any other GCS
+                                -- already attached under the old id. Bridge routes by ip:port, not
+                                -- sysid, so this isn't required for connectivity; only enable once
+                                -- there's an actual need for the backend to key off sysId.
 
 
 local supports_routing = networking and networking.add_route -- luacheck: ignore 143
@@ -443,7 +449,13 @@ local function reset_state()
     cmux_was_set = false  -- per-attempt marker; cmux_force_disabled stays sticky
     cs.ati_dbg_ms = nil
     cs.consec_stall = 0
-    cs.auth_done = false; cs.auth_ip = nil; cs.auth_port = nil; cs.http_sub = nil
+    -- NOTE: auth_done/auth_ip/auth_port deliberately survive a modem hard
+    -- reset (data timeout, CIPOPEN failures, etc). Re-authenticating is
+    -- only wanted on a fresh boot (cs is recreated from scratch then), not
+    -- every time the link drops and reconnects. http_sub still needs
+    -- clearing so a half-finished HTTPAUTH attempt restarts cleanly if a
+    -- reset happens to interrupt one.
+    cs.http_sub = nil
 end
 
 local function reset_to_ATI()
@@ -655,6 +667,53 @@ local function parse_auth_response(s)
     return nil, nil
 end
 
+-- Decode a hex string (as returned for mavlinkSigningKey) into raw bytes.
+-- Returns nil if the input isn't clean hex or isn't the expected length.
+local function hex_decode(hexstr, expected_len)
+    if not hexstr or #hexstr ~= expected_len * 2 then return nil end
+    local out = {}
+    for i = 1, #hexstr, 2 do
+        local byte_val = tonumber(hexstr:sub(i, i + 1), 16)
+        if not byte_val then return nil end
+        out[#out + 1] = string.char(byte_val)
+    end
+    return table.concat(out)
+end
+
+-- Pulls sysId/mavlinkSigningKey out of the same JSON body used for ip/port
+-- and applies them: sysId becomes the vehicle's live outgoing MAVLink
+-- system id (and SYSID_THISMAV, so incoming commands addressed to it are
+-- still accepted), and the signing key gets loaded and activated on all
+-- MAVLink channels immediately.
+local function apply_auth_identity(s)
+    if AUTH_APPLY_SYSID then
+        local sysid = s:match('"sysId"%s*:%s*(%d+)')
+        if sysid then
+            sysid = tonumber(sysid)
+            Parameter('SYSID_THISMAV'):set(sysid)
+            if gcs:set_sysid(sysid) then
+                gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE HTTPAUTH: sysid set to %d', sysid))
+            else
+                gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: sysid set failed (armed?)')
+            end
+        end
+    end
+
+    if AUTH_APPLY_SIGNING_KEY then
+        local key_hex = s:match('"mavlinkSigningKey"%s*:%s*"(%x+)"')
+        local key_bytes = hex_decode(key_hex, 32)
+        if key_bytes then
+            if gcs:set_signing_key(key_bytes, uint64_t(0)) then
+                gcs:send_text(MAV_SEVERITY.INFO, 'LTE HTTPAUTH: signing key applied')
+            else
+                gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: signing key apply failed (armed?)')
+            end
+        elseif key_hex then
+            gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: signing key wrong length')
+        end
+    end
+end
+
 -- CIPOPEN uses dynamic values if auth succeeded, else the static params.
 local function effective_server()
     if cs.auth_ip and cs.auth_port then
@@ -813,7 +872,7 @@ function dp.process_tx(now_ms, budget)
     cs.tx_state = "prompt"; cs.tx_ms = now_ms:tofloat()
 end
 
-local HTTP_TOTAL_TIMEOUT = 12000  -- ms cap on the whole auth attempt
+local HTTP_TOTAL_TIMEOUT = 25000  -- ms cap on the whole auth attempt (real logins routinely take 10-12s; no useful static fallback exists, so bias toward completing over timing out)
 local next_after_registration
 
 local function http_fail(reason)
@@ -832,8 +891,28 @@ local function step_HTTPAUTH()
     end
     if millis():tofloat() > cs.http_deadline then http_fail('timeout'); return end
 
-    local s = uart_read()
-    if s and #s > 0 then cs.http_buf = cs.http_buf .. s end
+    -- IMPORTANT: uart_read() returns the raw byte stream. When CMUX is
+    -- active (it is, for the whole session -- see "CMUX mode set" at boot)
+    -- that raw stream is still wrapped in CMUX frames (flag/address/control/
+    -- FCS bytes around each frame's payload). Long AT+QHTTPREAD responses
+    -- (e.g. once mavlinkSigningKey made the JSON body span multiple CMUX
+    -- frames) get a fresh set of these framing bytes injected mid-payload
+    -- at every frame boundary, corrupting whatever field straddles it --
+    -- this is what was truncating "port" mid-digit. De-frame through the
+    -- same cmux.feed_uart_in() path step_CONNECTED() already uses, instead
+    -- of treating the raw stream as plain text.
+    local raw = uart_read()
+    if cmux_enabled() then
+        if raw and #raw > 0 then buf.parse = buf.parse .. raw end
+        buf.parse = cmux.feed_uart_in(buf.parse)
+        if #cmux.buffers[cmux.DLC_AT] > 0 then
+            cs.http_buf = cs.http_buf .. cmux.buffers[cmux.DLC_AT]
+            cmux.buffers[cmux.DLC_AT] = ""
+        end
+        cmux.buffers[cmux.DLC_DATA] = ""  -- unexpected during HTTPAUTH; drop rather than let it leak into CONNECTED later
+    else
+        if raw and #raw > 0 then cs.http_buf = cs.http_buf .. raw end
+    end
     if #cs.http_buf > 4096 then cs.http_buf = cs.http_buf:sub(-2048) end
     local b = cs.http_buf
 
@@ -875,7 +954,9 @@ local function step_HTTPAUTH()
     elseif cs.http_sub == "POST_DATA" then
         if b:find('+QHTTPPOST:') then
             local err, code = b:match('+QHTTPPOST:%s*(%d+),(%d+)')
-            if err == "0" and code == "200" then
+            local code_num = tonumber(code)
+            if err == "0" and code_num and code_num >= 200 and code_num < 300 then
+                gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE HTTPAUTH: login OK (%d)', code_num))
                 cs.http_buf = ""; cs.http_sub = "READ"; AT_send(modem.http.read)
             else
                 http_fail('POST err='..tostring(err)..' http='..tostring(code))
@@ -892,6 +973,7 @@ local function step_HTTPAUTH()
                 cs.auth_ip = ip; cs.auth_port = port; cs.auth_done = true
                 gcs:send_text(MAV_SEVERITY.INFO, string.format(
                     'LTE HTTPAUTH: server %d.%d.%d.%d:%d', ip[1],ip[2],ip[3],ip[4], port))
+                apply_auth_identity(body)
                 cs.http_sub = nil
                 step = next_after_registration()
             else
@@ -1413,6 +1495,15 @@ local function step_CONNECTED()
     end
 
     local now_ms = millis()
+
+    -- Periodic TX/RX byte counters so it's visible from the GCS messages
+    -- tab whether the socket is actually moving data, without needing to
+    -- pull a dataflash log.
+    if not cs.last_stats_print_ms or now_ms - cs.last_stats_print_ms > uint32_t(5000) then
+        cs.last_stats_print_ms = now_ms
+        gcs:send_text(MAV_SEVERITY.INFO, string.format(
+            'LTE: Bout=%u Bin=%u', stats.bytes_out, stats.bytes_in))
+    end
 
     -- One-shot: arm continuous +QCSQ URC after a direct-push socket opens.
     if cs.direct_push and not cs.qcsq_armed and cs.tx_state == "idle" and modem.qcsq_enable then

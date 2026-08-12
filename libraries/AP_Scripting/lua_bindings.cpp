@@ -10,6 +10,7 @@
 #endif
 #include <AP_Logger/AP_Logger.h>
 #include <AP_Filesystem/AP_Filesystem.h>
+#include <GCS_MAVLink/GCS_MAVLink.h>
 
 #include "lua_bindings.h"
 
@@ -1241,6 +1242,56 @@ int lua_GCS_command_int(lua_State *L)
 
     // Return the resulting MAV_RESULT
     lua_pushinteger(L, result);
+
+    return 1;
+}
+
+/*
+  implement gcs:set_signing_key(key, initial_timestamp) to configure
+  MAVLink2 signing from a key obtained by the script out-of-band
+ */
+int lua_gcs_set_signing_key(lua_State *L)
+{
+    GCS *_gcs = check_GCS(L);
+    binding_argcheck(L, 3);
+
+    size_t key_len;
+    const char *key = luaL_checklstring(L, 2, &key_len);
+    if (key_len != 32) {
+        return luaL_error(L, "signing key must be 32 bytes");
+    }
+
+    const uint64_t initial_timestamp = *check_uint64_t(L, 3);
+
+    const bool ok = _gcs->set_signing_key((const uint8_t *)key, initial_timestamp);
+
+    lua_pushboolean(L, ok);
+
+    return 1;
+}
+
+/*
+  implement gcs:set_sysid(sysid) to update the live outgoing MAVLink
+  system id. Setting the SYSID_THISMAV parameter alone does not do this:
+  mavlink_system.sysid is latched from it once at boot and never re-read
+  afterward, so a script-time param change would silently have no effect
+  on already-running telemetry.
+ */
+int lua_gcs_set_sysid(lua_State *L)
+{
+    check_GCS(L);
+    binding_argcheck(L, 2);
+
+    const uint8_t sysid = get_uint8_t(L, 2);
+
+    if (hal.util->get_soft_armed()) {
+        lua_pushboolean(L, false);
+        return 1;
+    }
+
+    mavlink_system.sysid = sysid;
+
+    lua_pushboolean(L, true);
 
     return 1;
 }
