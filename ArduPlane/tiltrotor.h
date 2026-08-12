@@ -109,6 +109,7 @@ public:
     AP_Float flap_angle_deg;
     AP_Float vectoring_gain_hvr;
     AP_Float vectored_hover_power;
+    AP_Float vectoring_gain_hvr_d;
     AP_Float vectoring_gain_fw;
     AP_Float back_trans_angle;  // TODO: Implement this
 

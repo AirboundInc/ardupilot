@@ -156,6 +156,14 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @Increment: 0.1
     AP_GROUPINFO("HVPOW", 20, Tiltrotor, vectored_hover_power, 1.0),
 
+    // @Param: HVDGAIN
+    // @DisplayName: Tiltrotor vector thrust hover D gain
+    // @Description: Rate-damping gain on the extra hover pitch vectoring correction (paired with Q_TILT_HVGAIN). Needed because extra_elevator is summed in after AC_AttitudeControl and bypasses the rate loop's own D term entirely.
+    // @Range: 0 0.01
+    // @Increment: 0.0005
+    AP_GROUPINFO("HVDGAIN", 21, Tiltrotor, vectoring_gain_hvr_d, 0),
+
+
 
     AP_GROUPEND
 };
@@ -906,6 +914,12 @@ void Tiltrotor::dual_axis_output(void)
             extra_elevator = extra_sign * powf(fabsf(extra_pitch), vectored_hover_power) * SERVO_MAX;
         }
 
+        // damp the extra correction itself — it bypasses Q_A_RAT_PIT_D entirely
+        if (is_vtol) {
+            const float pitch_rate_dps = degrees(quadplane.ahrs_view->get_gyro().y);
+            extra_elevator -= vectoring_gain_hvr_d * pitch_rate_dps;
+        }
+
         tilt_left_adjusted  += extra_elevator;
         tilt_right_adjusted += extra_elevator;
 
@@ -928,6 +942,14 @@ void Tiltrotor::dual_axis_output(void)
                 "Qffff", // uint64_t, float
                 AP_HAL::micros64(), des_pitch_cd/100, des_pitch_cd2/100,pitch_cd/100,pitch_cd2/100);
 #endif
+
+        const bool tilt_saturated = (fabsf(tilt_left_adjusted) > SERVO_MAX) || (fabsf(tilt_right_adjusted) > SERVO_MAX);
+        if (tilt_saturated) {
+            // combined output is already pegged at axis 2's mechanical limit —
+            // signal this so the rate loop's I term stops winding up against
+            // authority that doesn't actually exist this tick
+            motors->limit.pitch = true;
+        }
         
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
                                         constrain_float(tilt_left_adjusted,  -SERVO_MAX, SERVO_MAX));
