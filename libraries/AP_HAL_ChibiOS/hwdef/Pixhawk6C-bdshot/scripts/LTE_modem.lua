@@ -906,11 +906,12 @@ local HTTP_TOTAL_TIMEOUT = 25000  -- ms cap on the whole auth attempt (real logi
 local next_after_registration
 
 local function http_fail(reason)
-    gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: ' .. reason .. ' — using static IP/port')
+    gcs:send_text(MAV_SEVERITY.CRITICAL, 'LTE HTTPAUTH: ' .. reason .. ' — no static fallback, halting')
     cs.auth_ip = nil; cs.auth_port = nil
-    cs.auth_done = true          -- don't loop this session; fall back
+    cs.auth_done = true
     cs.http_sub = nil
-    step = next_after_registration()
+    cs.halt_reason = 'HTTPAUTH failed (' .. reason .. ')'
+    step = "HALT"
 end
 
 local function step_HTTPAUTH()
@@ -1220,9 +1221,6 @@ local function step_CREG()
         if reg == "1" or reg == "5" then
             buf.setup = ""
             cs.cops_zero_sent = false
-            gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG OK')
-            if P.HTTPAUTH:get() == 1 and modem.http and (AUTH_EVERY_RECONNECT or not cs.auth_done) then
-                step = "HTTPAUTH"
             if cs.creg_search_ms then
                 gcs:send_text(MAV_SEVERITY.INFO, string.format(
                     'LTE_modem: CREG OK (search %.1fs)',
@@ -1231,8 +1229,8 @@ local function step_CREG()
             else
                 gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG OK')
             end
-            if P.PROTOCOL:get() == PPP then
-                step = modem.cgact and "CGACT" or "PPPOPEN"
+            if P.HTTPAUTH:get() == 1 and modem.http and (AUTH_EVERY_RECONNECT or not cs.auth_done) then
+                step = "HTTPAUTH"
             else
                 step = next_after_registration()
             end
