@@ -304,6 +304,12 @@ singleton GCS manual run_command_int lua_GCS_command_int 2 1
 singleton GCS manual set_signing_key lua_gcs_set_signing_key 2 1
 singleton GCS manual set_sysid lua_gcs_set_sysid 1 1
 
+include AP_CustomStorage/AP_CustomStorage.h depends AP_ENABLE_CUSTOM_STORAGE == 1
+singleton AP_CustomStorage depends AP_ENABLE_CUSTOM_STORAGE == 1
+singleton AP_CustomStorage rename custom_storage
+singleton AP_CustomStorage manual get_uuid lua_custom_storage_get_uuid 0 1
+singleton AP_CustomStorage manual get_password lua_custom_storage_get_password 0 1
+
 include AP_ONVIF/AP_ONVIF.h depends ENABLE_ONVIF == 1
 singleton AP_ONVIF depends ENABLE_ONVIF == 1
 singleton AP_ONVIF rename onvif

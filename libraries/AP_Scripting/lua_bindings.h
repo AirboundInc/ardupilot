@@ -36,6 +36,8 @@ int lua_range_finder_handle_script_msg(lua_State *L);
 int lua_GCS_command_int(lua_State *L);
 int lua_gcs_set_signing_key(lua_State *L);
 int lua_gcs_set_sysid(lua_State *L);
+int lua_custom_storage_get_uuid(lua_State *L);
+int lua_custom_storage_get_password(lua_State *L);
 int lua_DroneCAN_get_FlexDebug(lua_State *L);
 int lua_get_rate_pid_info(lua_State *L);
 int lua_get_att_target_euler_cd(lua_State *L);

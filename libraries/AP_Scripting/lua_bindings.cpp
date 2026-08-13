@@ -11,6 +11,7 @@
 #include <AP_Logger/AP_Logger.h>
 #include <AP_Filesystem/AP_Filesystem.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
+#include <AP_CustomStorage/AP_CustomStorage.h>
 
 #include "lua_bindings.h"
 
@@ -1292,6 +1293,54 @@ int lua_gcs_set_sysid(lua_State *L)
     mavlink_system.sysid = sysid;
 
     lua_pushboolean(L, true);
+
+    return 1;
+}
+#endif
+
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+/*
+  implement custom_storage:get_uuid() -- returns the stored UUID string,
+  or nil if custom storage isn't initialized / nothing has been stored yet.
+ */
+int lua_custom_storage_get_uuid(lua_State *L)
+{
+    binding_argcheck(L, 1);
+
+    AP_CustomStorage *storage = AP_CustomStorage::get_singleton();
+    if (storage == nullptr) {
+        return 0;
+    }
+
+    char buf[CUSTOM_PARAM_UUID_LEN + 1];
+    if (!storage->get_uuid(buf, sizeof(buf))) {
+        return 0;
+    }
+
+    lua_pushstring(L, buf);
+
+    return 1;
+}
+
+/*
+  implement custom_storage:get_password() -- returns the stored password
+  string, or nil if custom storage isn't initialized / nothing stored yet.
+ */
+int lua_custom_storage_get_password(lua_State *L)
+{
+    binding_argcheck(L, 1);
+
+    AP_CustomStorage *storage = AP_CustomStorage::get_singleton();
+    if (storage == nullptr) {
+        return 0;
+    }
+
+    char buf[CUSTOM_PARAM_PASS_LEN + 1];
+    if (!storage->get_password(buf, sizeof(buf))) {
+        return 0;
+    }
+
+    lua_pushstring(L, buf);
 
     return 1;
 }

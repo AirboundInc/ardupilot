@@ -65,8 +65,24 @@ local P = {
 -- ---- HTTPS auth endpoint (returns the data-server IP/port) ---------------
 -- NOTE: these sit in cleartext on the SD card. Anyone with the card reads them.
 local AUTH_URL             = "https://poc.rudra.airbound.com/api/v1/users/aircraft-login"
-local AUTH_BODY            = "aircraftId=TRT-10&password=password123"
+local AUTH_BODY_FALLBACK   = "aircraftId=TRT-10&password=password123"  -- used only if custom storage has no uuid/password yet
 local AUTH_EVERY_RECONNECT = false   -- false = fetch once/session, cache until hard reset
+
+-- Builds the login body from custom storage's per-aircraft UUID/password
+-- when available (custom_storage is only present on boards built with
+-- AP_ENABLE_CUSTOM_STORAGE, and get_uuid()/get_password() return nil until
+-- something has actually been provisioned). Falls back to the fixed test
+-- credentials otherwise.
+local function build_auth_body()
+    if custom_storage then
+        local aircraft_id = custom_storage:get_uuid()
+        local password = custom_storage:get_password()
+        if aircraft_id and password then
+            return string.format('aircraftId=%s&password=%s', aircraft_id, password)
+        end
+    end
+    return AUTH_BODY_FALLBACK
+end
 local AUTH_APPLY_SIGNING_KEY = false  -- print the key for manual entry into Mission Planner's own signing setup; don't self-apply
 
 
@@ -897,6 +913,9 @@ local function step_HTTPAUTH()
     if cs.http_sub == nil then
         cs.http_sub = "CFG"; cs.http_cfg_i = 0; cs.http_buf = ""
         cs.http_deadline = millis():tofloat() + HTTP_TOTAL_TIMEOUT
+        cs.auth_body = build_auth_body()  -- computed once per attempt: the length sent
+                                           -- in QHTTPPOST and the bytes sent afterward
+                                           -- must match exactly
         gcs:send_text(MAV_SEVERITY.INFO, 'LTE HTTPAUTH: fetching server addr')
     end
     if millis():tofloat() > cs.http_deadline then http_fail('timeout'); return end
@@ -953,12 +972,12 @@ local function step_HTTPAUTH()
     elseif cs.http_sub == "URL_DATA" then
         if b:find('OK\r\n') then
             cs.http_buf = ""; cs.http_sub = "POST_CMD"
-            AT_send(string.format(modem.http.post, #AUTH_BODY))
+            AT_send(string.format(modem.http.post, #cs.auth_body))
         elseif b:find('ERROR') then http_fail('URL data error') end
 
     elseif cs.http_sub == "POST_CMD" then
         if b:find('CONNECT') then
-            cs.http_buf = ""; AT_send(AUTH_BODY); cs.http_sub = "POST_DATA"
+            cs.http_buf = ""; AT_send(cs.auth_body); cs.http_sub = "POST_DATA"
         elseif b:find('ERROR') then http_fail('QHTTPPOST error') end
 
     elseif cs.http_sub == "POST_DATA" then

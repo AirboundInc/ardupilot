@@ -8,10 +8,13 @@
 StorageAccess AP_CustomStorage::_storage(StorageManager::StorageCustom);
 AP_CustomStorage g_custom_storage;  // Global singleton instance
 
+AP_CustomStorage *AP_CustomStorage::_singleton;
+
 AP_CustomStorage::AP_CustomStorage()
 {
     // Safety: Clear buffer to prevent stale data leaks
     memset(_data, 0, sizeof(_data));
+    _singleton = this;
 }
 
 void AP_CustomStorage::init()

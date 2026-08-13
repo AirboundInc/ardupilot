@@ -29,6 +29,8 @@ class AP_CustomStorage {
 public:
     AP_CustomStorage();
 
+    static AP_CustomStorage *get_singleton() { return _singleton; }
+
     bool _initialized = false;  ///< Tracks whether storage system has been initialized
 
     /**
@@ -108,6 +110,8 @@ public:
     bool get_uin(char *buf, uint8_t len) const;
 
 private:
+    static AP_CustomStorage *_singleton;
+
     static StorageAccess _storage;  ///< Storage manager interface
     char _data[DATA_BUFFER_SIZE + 1];  ///< Data buffer (+1 for null terminator)
 
