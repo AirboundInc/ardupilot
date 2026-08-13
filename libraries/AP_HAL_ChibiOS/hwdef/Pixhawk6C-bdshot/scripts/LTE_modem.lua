@@ -127,6 +127,24 @@ for _, m in ipairs({"EC25","EC20","EC200","BG95","EG800Q"}) do
     if modem_list[m] then modem_list[m].http = quectel_http end
 end
 
+-- SIM7500/SIM7600-family HTTP(S) Application AT commands. Unlike Quectel's
+-- QHTTPURL (which needs the URL length uploaded separately), SimCom takes
+-- the URL as a quoted AT+HTTPPARA string, so it's baked in here directly
+-- rather than formatted at send time.
+local simcom_http = {
+    style   = "simcom",
+    init    = 'AT+HTTPINIT\r\n',
+    cid     = 'AT+HTTPPARA="CID",1\r\n',
+    ssl     = 'AT+HTTPSSL=1\r\n',      -- best-effort; tolerated if firmware doesn't support/need it
+    url     = 'AT+HTTPPARA="URL","' .. AUTH_URL .. '"\r\n',
+    content = 'AT+HTTPPARA="CONTENT","application/x-www-form-urlencoded"\r\n',
+    data    = 'AT+HTTPDATA=%d,10000\r\n',  -- <body_len>,<upload_timeout_ms>
+    action  = 'AT+HTTPACTION=1\r\n',       -- 1 = POST
+    read    = 'AT+HTTPREAD=0,%d\r\n',      -- <start>,<byte_count>
+    term    = 'AT+HTTPTERM\r\n',
+}
+if modem_list["SimCom"] then modem_list["SimCom"].http = simcom_http end
+
 local default_modem = { reset = 'AT+CFUN=1,1\r\r' }
 local modem = default_modem
 
@@ -916,7 +934,8 @@ end
 
 local function step_HTTPAUTH()
     if cs.http_sub == nil then
-        cs.http_sub = "CFG"; cs.http_cfg_i = 0; cs.http_buf = ""
+        cs.http_sub = (modem.http.style == "simcom") and "SC_INIT" or "CFG"
+        cs.http_cfg_i = 0; cs.http_buf = ""
         cs.http_deadline = millis():tofloat() + HTTP_TOTAL_TIMEOUT
         cs.auth_body = build_auth_body()  -- computed once per attempt: the length sent
                                            -- in QHTTPPOST and the bytes sent afterward
@@ -1014,6 +1033,80 @@ local function step_HTTPAUTH()
                 http_fail('parse failed')
             end
         elseif b:find('ERROR') then http_fail('QHTTPREAD error') end
+
+    -- ===== SimCom (SIM7500/SIM7600-family) HTTP(S) Application AT flow =====
+    -- Same overall shape as the Quectel chain above, but SimCom takes the URL
+    -- and content-type as AT+HTTPPARA settings instead of a separate upload,
+    -- and reports the result asynchronously via a +HTTPACTION URC rather than
+    -- inline after the POST command.
+    elseif cs.http_sub == "SC_INIT" then
+        if cs.http_cfg_i == 0 or b:find('OK\r\n') or b:find('ERROR') then
+            if cs.http_cfg_i == 0 then
+                cs.http_cfg_i = 1; AT_send(modem.http.init)
+            else
+                cs.http_buf = ""; cs.http_sub = "SC_CID"; AT_send(modem.http.cid)
+            end
+        end
+
+    elseif cs.http_sub == "SC_CID" then
+        if b:find('OK\r\n') or b:find('ERROR') then
+            cs.http_buf = ""; cs.http_sub = "SC_SSL"; AT_send(modem.http.ssl)
+        end
+
+    elseif cs.http_sub == "SC_SSL" then
+        if b:find('OK\r\n') or b:find('ERROR') then    -- ERROR tolerated: some firmware has no/default SSL cfg
+            cs.http_buf = ""; cs.http_sub = "SC_URL"; AT_send(modem.http.url)
+        end
+
+    elseif cs.http_sub == "SC_URL" then
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "SC_CONTENT"; AT_send(modem.http.content)
+        elseif b:find('ERROR') then http_fail('HTTPPARA URL error') end
+
+    elseif cs.http_sub == "SC_CONTENT" then
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "SC_DATA_CMD"
+            AT_send(string.format(modem.http.data, #cs.auth_body))
+        elseif b:find('ERROR') then http_fail('HTTPPARA CONTENT error') end
+
+    elseif cs.http_sub == "SC_DATA_CMD" then
+        if b:find('DOWNLOAD') then
+            cs.http_buf = ""; AT_send(cs.auth_body); cs.http_sub = "SC_DATA_BODY"
+        elseif b:find('ERROR') then http_fail('HTTPDATA error') end
+
+    elseif cs.http_sub == "SC_DATA_BODY" then
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "SC_ACTION"; AT_send(modem.http.action)
+        elseif b:find('ERROR') then http_fail('HTTPDATA body error') end
+
+    elseif cs.http_sub == "SC_ACTION" then
+        if b:find('+HTTPACTION:') then
+            local code, len = b:match('+HTTPACTION:%s*%d+,(%d+),(%d+)')
+            local code_num = tonumber(code)
+            if code_num and code_num >= 200 and code_num < 300 then
+                gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE HTTPAUTH: login OK (%d)', code_num))
+                cs.http_buf = ""; cs.http_sub = "SC_READ"
+                AT_send(string.format(modem.http.read, math.max(tonumber(len) or 0, 1)))
+            else
+                http_fail('POST http='..tostring(code))
+            end
+        elseif b:find('ERROR') then http_fail('HTTPACTION error') end
+
+    elseif cs.http_sub == "SC_READ" then
+        if b:find('+HTTPREAD:') and b:find('\r\nOK\r\n') then
+            local ip, port = parse_auth_response(b)
+            if ip and port then
+                cs.auth_ip = ip; cs.auth_port = port; cs.auth_done = true
+                gcs:send_text(MAV_SEVERITY.INFO, string.format(
+                    'LTE HTTPAUTH: server %d.%d.%d.%d:%d', ip[1],ip[2],ip[3],ip[4], port))
+                apply_auth_identity(b)
+                AT_send(modem.http.term)   -- best-effort cleanup; response not awaited
+                cs.http_sub = nil
+                step = next_after_registration()
+            else
+                http_fail('parse failed')
+            end
+        elseif b:find('ERROR') then http_fail('HTTPREAD error') end
     end
 end
 
@@ -1105,6 +1198,7 @@ local function step_CPIN()
         if cs.sim_probe_count >= 3 then
             gcs:send_text(MAV_SEVERITY.CRITICAL,
                 "LTE FATAL: SIM unresponsive after 3 probes. Halting.")
+            cs.halt_reason = "SIM unresponsive after 3 probes"
             step = "HALT"; return
         end
     elseif s and (s:find("ERROR: 10") or s:find("NOT INSERTED") or s:find("SIM not inserted")) then
@@ -1117,6 +1211,7 @@ local function step_CPIN()
             "LTE: SIM reported missing, probe %d/3", cs.sim_missing_count))
         if cs.sim_missing_count >= 3 then
             gcs:send_text(MAV_SEVERITY.CRITICAL, "LTE FATAL: SIM CARD MISSING! Halting sequence.")
+            cs.halt_reason = "SIM card missing"
             step = "HALT"; return
         end
     end
@@ -1526,7 +1621,9 @@ local function step_CIPOPEN()
 
     if is_error then return end
 
-    if P.SERVER_PORT:get() <= 0 then gcs:send_text(MAV_SEVERITY.ERROR, "Must set LTE_SERVER_PORT"); return end
+    if not (cs.auth_ip and cs.auth_port) and P.SERVER_PORT:get() <= 0 then
+        gcs:send_text(MAV_SEVERITY.ERROR, "Must set LTE_SERVER_PORT"); return
+    end
 
     local use_dp = want_direct_push()
     local cipopen, dp_used
@@ -1543,6 +1640,7 @@ local function step_CIPOPEN()
     if dp_used then cs.qcsq_armed = false; cs.tx_state = "idle"; cs.tx_pending = ""; cs.rx_need = 0; buf.dp = "" end
     if not cipopen then
         gcs:send_text(MAV_SEVERITY.ERROR, "LTE: modem has no socket-open command")
+        cs.halt_reason = "modem has no socket-open command"
         step = "HALT"
         return
     end
@@ -1832,7 +1930,8 @@ local function run_step()
     if step == "HALT" then
         local time_in_halt = (now_ms:tofloat() - cs.step_timer_ms) / 1000
         if math.floor(time_in_halt) % 15 == 0 then
-            gcs:send_text(MAV_SEVERITY.CRITICAL, "LTE HALTED: SIM unresponsive. Power cycle modem.")
+            gcs:send_text(MAV_SEVERITY.CRITICAL,
+                "LTE HALTED: " .. (cs.halt_reason or "unknown reason") .. ". Power cycle modem.")
         end
         return 5000
     end
