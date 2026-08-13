@@ -53,7 +53,13 @@ local P = {
     STUCK_T     = bind_add_param('STUCK_T', 23, 15),
     TX_DEAD     = bind_add_param('TX_DEAD', 24, 5),   -- consecutive QISEND stalls before declaring socket dead (0=disable)
     SOCK_T      = bind_add_param('SOCK_T', 25, 4),     -- short timeout (s) for DP recovery steps before hard reset
-    HTTPAUTH    = bind_add_param('HTTPAUTH', 26, 0)   -- 1 = fetch server IP/port via HTTPS first
+    HTTPAUTH    = bind_add_param('HTTPAUTH', 26, 0),   -- 1 = fetch server IP/port via HTTPS first
+    AUTHSYS     = bind_add_param('AUTHSYS', 27, 1)     -- 1 = apply sysId from the HTTPAUTH response
+                                                        -- (also updates SYSID_THISMAV live). NOTE:
+                                                        -- mavlink_system.sysid is a single global
+                                                        -- shared by EVERY link (USB included) --
+                                                        -- changing it mid-session disconnects any
+                                                        -- other GCS already attached under the old id.
 }
 
 -- ---- HTTPS auth endpoint (returns the data-server IP/port) ---------------
@@ -61,12 +67,7 @@ local P = {
 local AUTH_URL             = "https://poc.rudra.airbound.com/api/v1/users/aircraft-login"
 local AUTH_BODY            = "aircraftId=TRT-10&password=password123"
 local AUTH_EVERY_RECONNECT = false   -- false = fetch once/session, cache until hard reset
-local AUTH_APPLY_SIGNING_KEY = false -- MAVLink2 signing not verified end-to-end yet
-local AUTH_APPLY_SYSID = false -- mavlink_system.sysid is a single global shared by EVERY link (USB
-                                -- included) -- changing it mid-session disconnects any other GCS
-                                -- already attached under the old id. Bridge routes by ip:port, not
-                                -- sysid, so this isn't required for connectivity; only enable once
-                                -- there's an actual need for the backend to key off sysId.
+local AUTH_APPLY_SIGNING_KEY = false  -- print the key for manual entry into Mission Planner's own signing setup; don't self-apply
 
 
 local supports_routing = networking and networking.add_route -- luacheck: ignore 143
@@ -686,7 +687,7 @@ end
 -- still accepted), and the signing key gets loaded and activated on all
 -- MAVLink channels immediately.
 local function apply_auth_identity(s)
-    if AUTH_APPLY_SYSID then
+    if P.AUTHSYS:get() == 1 then
         local sysid = s:match('"sysId"%s*:%s*(%d+)')
         if sysid then
             sysid = tonumber(sysid)
@@ -699,8 +700,17 @@ local function apply_auth_identity(s)
         end
     end
 
+    local key_hex = s:match('"mavlinkSigningKey"%s*:%s*"(%x+)"')
+    -- TESTING ONLY: print the raw key so it can be manually copied into
+    -- Mission Planner's own MAVLink signing setup -- there's no automated
+    -- key handoff to the GCS side yet, so without this the vehicle would
+    -- start rejecting unsigned commands with nothing able to sign them.
+    if key_hex and #key_hex == 64 then
+        gcs:send_text(MAV_SEVERITY.INFO, 'LTE KEY 1/2: ' .. key_hex:sub(1, 32))
+        gcs:send_text(MAV_SEVERITY.INFO, 'LTE KEY 2/2: ' .. key_hex:sub(33, 64))
+    end
+
     if AUTH_APPLY_SIGNING_KEY then
-        local key_hex = s:match('"mavlinkSigningKey"%s*:%s*"(%x+)"')
         local key_bytes = hex_decode(key_hex, 32)
         if key_bytes then
             if gcs:set_signing_key(key_bytes, uint64_t(0)) then
