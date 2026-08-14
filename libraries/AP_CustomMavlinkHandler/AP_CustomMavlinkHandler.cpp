@@ -55,19 +55,9 @@ void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, cons
         }
         break;
 
+    // The password is write-only over MAVLink
     case AIRBOUND_PARAMETER_PARAM_ID_PASS:
         switch (packet.action) {
-        case AIRBOUND_PARAMETER_ACTION_GET: {
-            char pass[MAX_AB_PARAM_SIZE] = {0};
-            AIRBOUND_PARAMETER_RESULT result = AIRBOUND_PARAMETER_RESULT_FAILED;
-            if (g_custom_storage.get_password(pass, sizeof(pass))) {
-                result = AIRBOUND_PARAMETER_RESULT_OK;
-            } else {
-                gcs().send_text(MAV_SEVERITY_WARNING,"AB:Failed to fetch password");
-            }
-            mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_PASS, (const char*)pass, result);
-            break;
-        }
         case AIRBOUND_PARAMETER_ACTION_SET: {
             char pass[MAX_AB_PARAM_SIZE] = {0};
             AIRBOUND_PARAMETER_RESULT result = AIRBOUND_PARAMETER_RESULT_FAILED;
@@ -77,7 +67,6 @@ void AP_CustomMavlinkHandler::handle_custom_message(mavlink_channel_t chan, cons
             } else {
                 gcs().send_text(MAV_SEVERITY_WARNING,"AB:Failed to update password");
             }
-            g_custom_storage.get_password(pass, sizeof(pass));
             mavlink_msg_airbound_parameter_status_send(chan, AIRBOUND_PARAMETER_PARAM_ID_PASS, (const char*)pass, result);
             break;
         }
