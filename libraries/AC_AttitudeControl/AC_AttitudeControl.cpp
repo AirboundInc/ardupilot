@@ -1079,6 +1079,7 @@ bool AC_AttitudeControl::ang_vel_to_euler_rate(const Vector3f& euler_rad, const 
 Vector3f AC_AttitudeControl::update_ang_vel_target_from_att_error(const Vector3f &attitude_error_rot_vec_rad)
 {
     Vector3f rate_target_ang_vel;
+    _use_sqrt_controller = false;
 
     // Compute the roll angular velocity demand from the roll angle error
     const float angleP_roll = _p_angle_roll.kP() * _angle_P_scale.x;
