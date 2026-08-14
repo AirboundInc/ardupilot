@@ -805,18 +805,7 @@ void AC_AttitudeControl::attitude_controller_run_quat()
 
     // Correct the thrust vector and smoothly add feedforward and yaw input
     _feedforward_scalar = 1.0f;
-    if (_thrust_error_angle > AC_ATTITUDE_THRUST_ERROR_ANGLE * 3.0f) {
-        _ang_vel_body.z = _ahrs.get_gyro().z;
-        get_rate_yaw_pid().reset_I();
-    } else if (_thrust_error_angle > AC_ATTITUDE_THRUST_ERROR_ANGLE * 2.0f) {
-        _feedforward_scalar = (1.0f - (_thrust_error_angle - AC_ATTITUDE_THRUST_ERROR_ANGLE * 2.0f) / AC_ATTITUDE_THRUST_ERROR_ANGLE);
-        _ang_vel_body.x += ang_vel_body_feedforward.x * _feedforward_scalar;
-        _ang_vel_body.y += ang_vel_body_feedforward.y * _feedforward_scalar;
-        _ang_vel_body.z += ang_vel_body_feedforward.z;
-        _ang_vel_body.z = _ahrs.get_gyro().z * (1.0 - _feedforward_scalar) + _ang_vel_body.z * _feedforward_scalar;
-    } else {
-        _ang_vel_body += ang_vel_body_feedforward;
-    }
+    _ang_vel_body += ang_vel_body_feedforward;
 
     if (_rate_bf_ff_enabled) {
         // rotate target and normalize
