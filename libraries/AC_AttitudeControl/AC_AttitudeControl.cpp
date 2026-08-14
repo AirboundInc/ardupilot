@@ -798,14 +798,14 @@ void AC_AttitudeControl::attitude_controller_run_quat()
     ang_vel_limit(_ang_vel_body, radians(_ang_vel_roll_max), radians(_ang_vel_pitch_max), radians(_ang_vel_yaw_max));
 
     // rotation from the target frame to the body frame
-    Quaternion rotation_target_to_body = attitude_body.inverse() * _attitude_target;
+    // Quaternion rotation_target_to_body = attitude_body.inverse() * _attitude_target;
 
     // target angle velocity vector in the body frame
-    Vector3f ang_vel_body_feedforward = rotation_target_to_body * _ang_vel_target;
+    // Vector3f ang_vel_body_feedforward = rotation_target_to_body * _ang_vel_target;
 
     // Correct the thrust vector and smoothly add feedforward and yaw input
     _feedforward_scalar = 1.0f;
-    _ang_vel_body += ang_vel_body_feedforward;
+    _ang_vel_body += _ang_vel_target;
 
     if (_rate_bf_ff_enabled) {
         // rotate target and normalize
