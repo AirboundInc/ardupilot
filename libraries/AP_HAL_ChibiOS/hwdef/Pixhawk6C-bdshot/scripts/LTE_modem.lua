@@ -53,11 +53,16 @@ local P = {
     STUCK_T     = bind_add_param('STUCK_T', 23, 15),
     TX_DEAD     = bind_add_param('TX_DEAD', 24, 5),   -- consecutive QISEND stalls before declaring socket dead (0=disable)
     SOCK_T      = bind_add_param('SOCK_T', 25, 4),     -- short timeout (s) for DP recovery steps before hard reset
-    HTTPAUTH    = bind_add_param('HTTPAUTH', 26, 0),   -- 1 = fetch server IP/port via HTTPS first
-                                                        -- left OFF by default: needs the CA cert
-                                                        -- upload flow in LTE_modem_TLS_CERT_SETUP.md
-                                                        -- done first, or QHTTPPOST fails closed
-                                                        -- (CME ERROR 732) and the modem halts hard.
+    HTTPAUTH    = bind_add_param('HTTPAUTH', 26, 1),   -- 1 = fetch server IP/port via HTTPS first.
+                                                        -- Runs with full server-cert verification
+                                                        -- (seclevel/authmode=1, see quectel_http/
+                                                        -- simcom_http below): the CA cert is uploaded
+                                                        -- to the modem automatically (once per aircraft,
+                                                        -- CERT_LIST/SC_CERT_LIST check before uploading)
+                                                        -- before every HTTPAUTH attempt. Bench-verified
+                                                        -- 2026-08-17 on EC200U and SIM7600 -- see
+                                                        -- LTE_modem_TLS_CERT_SETUP.md for the full log.
+                                                        -- EC25/EC20/BG95/EG800Q untested on this flow.
     AUTHSYS     = bind_add_param('AUTHSYS', 27, 1),    -- 1 = apply sysId from the HTTPAUTH response
                                                         -- (also updates SYSID_THISMAV live). NOTE:
                                                         -- mavlink_system.sysid is a single global
@@ -79,6 +84,50 @@ local P = {
 local AUTH_URL             = "https://poc.rudra.airbound.com/api/v1/users/aircraft-login"
 local AUTH_BODY_FALLBACK   = "aircraftId=TRT-10&password=password123"  -- used only if custom storage has no uuid/password yet
 local AUTH_EVERY_RECONNECT = false   -- false = fetch once/session, cache until hard reset
+
+-- ISRG Root X1 (Let's Encrypt) -- anchors the cert chain poc.rudra.airbound.com
+-- presents (leaf -> YE1 intermediate -> Root YE -> ISRG Root X2 -> this root).
+-- Trusting the root instead of the leaf/intermediate survives LE's periodic
+-- intermediate rotation. Bench-verified 2026-08-17 against the live endpoint
+-- on both EC200U (AT+QFUPL, CRC 4f64) and SIM7600 (AT+CCERTDOWN):
+-- SHA-256 96:BC:EC:06:26:49:76:F3:74:60:77:9A:CF:28:C5:A7:CF:E8:A3:C0:AA:E1:1A:8F:FC:EE:05:C0:BD:DF:08:C6
+-- valid 2015-06-04 to 2035-06-04. Source: https://letsencrypt.org/certs/isrgrootx1.pem
+-- If poc.rudra.airbound.com ever moves off this root (a different issuer, not
+-- just a new LE intermediate), every provisioned modem needs this updated.
+local CA_CERT_FILENAME = "isrgrootx1.pem"
+local CA_CERT_PEM = table.concat({
+    "-----BEGIN CERTIFICATE-----",
+    "MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw",
+    "TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh",
+    "cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4",
+    "WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJu",
+    "ZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBY",
+    "MTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJHP0FDfzm54rVygc",
+    "h77ct984kIxuPOZXoHj3dcKi/vVqbvYATyjb3miGbESTtrFj/RQSa78f0uoxmyF+",
+    "0TM8ukj13Xnfs7j/EvEhmkvBioZxaUpmZmyPfjxwv60pIgbz5MDmgK7iS4+3mX6U",
+    "A5/TR5d8mUgjU+g4rk8Kb4Mu0UlXjIB0ttov0DiNewNwIRt18jA8+o+u3dpjq+sW",
+    "T8KOEUt+zwvo/7V3LvSye0rgTBIlDHCNAymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qyH",
+    "B5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ4Q7e2RCOFvu396j3x+UC",
+    "B5iPNgiV5+I3lg02dZ77DnKxHZu8A/lJBdiB3QW0KtZB6awBdpUKD9jf1b0SHzUv",
+    "KBds0pjBqAlkd25HN7rOrFleaJ1/ctaJxQZBKT5ZPt0m9STJEadao0xAH0ahmbWn",
+    "OlFuhjuefXKnEgV4We0+UXgVCwOPjdAvBbI+e0ocS3MFEvzG6uBQE3xDk3SzynTn",
+    "jh8BCNAw1FtxNrQHusEwMFxIt4I7mKZ9YIqioymCzLq9gwQbooMDQaHWBfEbwrbw",
+    "qHyGO0aoSCqI3Haadr8faqU9GY/rOPNk3sgrDQoo//fb4hVC1CLQJ13hef4Y53CI",
+    "rU7m2Ys6xt0nUW7/vGT1M0NPAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNV",
+    "HRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY9umbbjANBgkq",
+    "hkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL",
+    "ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ",
+    "3BebYhtF8GaV0nxvwuo77x/Py9auJ/GpsMiu/X1+mvoiBOv/2X/qkSsisRcOj/KK",
+    "NFtY2PwByVS5uCbMiogziUwthDyC3+6WVwW6LLv3xLfHTjuCvjHIInNzktHCgKQ5",
+    "ORAzI4JMPJ+GslWYHb4phowim57iaztXOoJwTdwJx4nLCgdNbOhdjsnvzqvHu7Ur",
+    "TkXWStAmzOVyyghqpZXjFaH3pO3JLF+l+/+sKAIuvtd7u+Nxe5AW0wdeRlN8NwdC",
+    "jNPElpzVmbUq4JUagEiuTDkHzsxHpFKVK7q4+63SM1N95R1NbdWhscdCb+ZAJzVc",
+    "oyi3B43njTOQ5yOf+1CceWxG1bQVs5ZufpsMljq4Ui0/1lvh+wjChP4kqKOJ2qxq",
+    "4RgqsahDYVvTH9w7jXbyLeiNdd8XM2w9U/t7y0Ff/9yi0GE44Za4rF2LN9d11TPA",
+    "mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d",
+    "emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=",
+    "-----END CERTIFICATE-----",
+}, "\n") .. "\n"
 
 -- Builds the login body from custom storage's per-aircraft UUID/password
 -- when available (custom_storage is only present on boards built with
@@ -120,16 +169,32 @@ local modem_list = {
 }
 
 local quectel_http = {
+    -- Bench-verified 2026-08-17 on EC200U (EC200UCNAAR03A15M08, UNISOC platform).
+    -- NOT yet re-proven on EC25/EC20/BG95/EG800Q (Qualcomm-dialect Quectel
+    -- firmware) -- that log's own +CME ERROR: 58 responses came from applying
+    -- EC25-shaped syntax to this UNISOC module, so treat this whole table as
+    -- EC200-confirmed only until someone bench-tests the others.
+    cert_filename = CA_CERT_FILENAME,
+    cert_list     = 'AT+QFLST="*"\r\n',                          -- NOTE: "UFS:*" is rejected (+CME ERROR: 58); bare "*" works
+    cert_upload   = 'AT+QFUPL="' .. CA_CERT_FILENAME .. '",%d,300\r\n',  -- <size>,<timeout_s>; the 4-arg form with an
+                                                                          -- ackflag errors (+CME ERROR: 58) on this firmware
     cfg = {
         'AT+QHTTPCFG="contextid",1\r\n',
         'AT+QHTTPCFG="responseheader",0\r\n',
+        'AT+QHTTPCFG="contenttype",0\r\n',          -- 0 = x-www-form-urlencoded. Must be 0 -- the auth body is
+                                                     -- form-encoded; omitting this line entirely (as before) left
+                                                     -- it at the firmware default, which is not form-urlencoded.
         'AT+QHTTPCFG="sslctxid",1\r\n',            -- HTTPS: bind SSL context 1
         'AT+QSSLCFG="sslversion",1,4\r\n',         -- 4 = all TLS versions
         'AT+QSSLCFG="ciphersuite",1,0XFFFF\r\n',   -- allow all suites
-        'AT+QSSLCFG="seclevel",1,0\r\n',           -- 1 = verify server cert only (0 = no verification, 2 = mutual TLS).
-                                                    -- Requires the CA cert for poc.rudra.airbound.com to be uploaded to
-                                                    -- SSL context 1 first (AT+QFUPL + AT+QSSLCFG="cacert",1,"<name>"),
-                                                    -- or every HTTPACTION/HTTPPOST will fail the TLS handshake.
+        -- NOTE: input path only -- QSSLCFG/QFUPL reject a "UFS:" prefix on the
+        -- filename (+CME ERROR: 58) even though QFLST echoes "UFS:<name>" in
+        -- its own output. Always pass the bare filename here.
+        'AT+QSSLCFG="cacert",1,"' .. CA_CERT_FILENAME .. '"\r\n',  -- must be uploaded first (see cert_list/cert_upload
+                                                                    -- above) or seclevel=1 below fails every handshake
+        'AT+QSSLCFG="seclevel",1,1\r\n',           -- 1 = verify server cert (0 = no verification, 2 = mutual TLS)
+        'AT+QSSLCFG="sni",1,1\r\n',                -- required: endpoint is SNI-virtual-hosted: without this the
+                                                     -- wrong cert can be served and hostname validation fails
     },
     act  = 'AT+QIACT=1\r\n',            -- activate PDP context (ERROR usually = already active = OK)
     url  = 'AT+QHTTPURL=%d,30\r\n',     -- <url_len>,<timeout_s>
@@ -145,13 +210,21 @@ end
 -- the URL as a quoted AT+HTTPPARA string, so it's baked in here directly
 -- rather than formatted at send time.
 local simcom_http = {
+    -- Bench-verified 2026-08-17 on SIMCOM_SIM7600G-H, firmware SIM7600G_V2.0.2.
     style   = "simcom",
+    cert_filename = CA_CERT_FILENAME,
+    cert_list     = 'AT+CCERTLIST\r\n',                            -- bare OK on upload, so this listing (not a CRC)
+                                                                     -- is the only "is it actually there" check available
+    cert_upload   = 'AT+CCERTDOWN="' .. CA_CERT_FILENAME .. '",%d\r\n',  -- <size>; prompt is a bare ">" (not "CONNECT")
     init    = 'AT+HTTPINIT\r\n',
     cid     = 'AT+HTTPPARA="CID",1\r\n',
-    ssl     = 'AT+CSSLCFG="authmode",0,0\r\n',  -- SSL context 0 (default for HTTP(S) app), authmode 1 = verify server cert.
-                                                 -- Requires the CA cert for poc.rudra.airbound.com to be loaded onto the
-                                                 -- module first (AT+CCERTDOWN + AT+CSSLCFG="cacert",0,"<name>"), or every
-                                                 -- HTTPACTION will fail with an SSL handshake error.
+    cacert  = 'AT+CSSLCFG="cacert",0,"' .. CA_CERT_FILENAME .. '"\r\n',  -- context 0 = the default HTTP(S) app context;
+                                                                          -- must be sent (and OK'd) before authmode below
+    ssl     = 'AT+CSSLCFG="authmode",0,1\r\n',  -- 1 = verify server cert. NOTE: cacert without authmode=1 is a silent
+                                                 -- no-op -- the CA loads but is never consulted. authmode is what
+                                                 -- actually turns verification on. Both SSL-context settings above
+                                                 -- (CA cert bound above, this authmode) are cleared by AT+CRESET,
+                                                 -- unlike the cert file itself which survives it.
     url     = 'AT+HTTPPARA="URL","' .. AUTH_URL .. '"\r\n',
     content = 'AT+HTTPPARA="CONTENT","application/x-www-form-urlencoded"\r\n',
     data    = 'AT+HTTPDATA=%d,10000\r\n',  -- <body_len>,<upload_timeout_ms>
@@ -950,13 +1023,18 @@ end
 
 local function step_HTTPAUTH()
     if cs.http_sub == nil then
-        cs.http_sub = (modem.http.style == "simcom") and "SC_INIT" or "CFG"
+        -- Cert presence check always runs first, for both dialects. The cert
+        -- file itself survives a modem reset (AT+CFUN=1,1 / AT+CRESET) so this
+        -- is only a real upload on a never-provisioned or freshly-wiped
+        -- module; every other entry into HTTPAUTH just lists and moves on.
+        cs.http_sub = (modem.http.style == "simcom") and "SC_CERT_LIST" or "CERT_LIST"
         cs.http_cfg_i = 0; cs.http_buf = ""
         cs.http_deadline = millis():tofloat() + HTTP_TOTAL_TIMEOUT
         cs.auth_body = build_auth_body()  -- computed once per attempt: the length sent
                                            -- in QHTTPPOST and the bytes sent afterward
                                            -- must match exactly
         gcs:send_text(MAV_SEVERITY.INFO, 'LTE HTTPAUTH: fetching server addr')
+        AT_send(modem.http.cert_list)
     end
     if millis():tofloat() > cs.http_deadline then http_fail('timeout'); return end
 
@@ -985,7 +1063,32 @@ local function step_HTTPAUTH()
     if #cs.http_buf > 4096 then cs.http_buf = cs.http_buf:sub(-2048) end
     local b = cs.http_buf
 
-    if cs.http_sub == "CFG" then
+    if cs.http_sub == "CERT_LIST" then
+        -- AT+QFLST="*" echoes existing files as "UFS:<name>",<size> -- a bare
+        -- substring match on the filename is enough to know it's already there.
+        if b:find(modem.http.cert_filename, 1, true) then
+            cs.http_buf = ""; cs.http_sub = "CFG"; cs.http_cfg_i = 0
+        elseif b:find('OK\r\n') or b:find('ERROR') then
+            cs.http_buf = ""; cs.http_sub = "CERT_UPLOAD_CMD"
+            AT_send(string.format(modem.http.cert_upload, #CA_CERT_PEM))
+        end
+
+    elseif cs.http_sub == "CERT_UPLOAD_CMD" then
+        if b:find('CONNECT') then
+            cs.http_buf = ""; AT_send(CA_CERT_PEM); cs.http_sub = "CERT_UPLOAD_DATA"
+        elseif b:find('ERROR') then http_fail('cert upload error') end
+
+    elseif cs.http_sub == "CERT_UPLOAD_DATA" then
+        -- Module replies "+QFUPL: <size>,<crc>" then "OK"; not parsed here --
+        -- a bad upload just fails the handshake downstream at seclevel=1, and
+        -- the fix is the same either way (re-upload), so the CRC isn't worth
+        -- decoding on-vehicle. It's in the bench log if a mismatch needs to be
+        -- diagnosed by hand.
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "CFG"; cs.http_cfg_i = 0
+        elseif b:find('ERROR') then http_fail('cert upload data error') end
+
+    elseif cs.http_sub == "CFG" then
         -- one config command per OK/ERROR, then move to context activation
         if cs.http_cfg_i == 0 or b:find('OK\r\n') or b:find('ERROR') then
             cs.http_cfg_i = cs.http_cfg_i + 1
@@ -1055,16 +1158,39 @@ local function step_HTTPAUTH()
     -- and content-type as AT+HTTPPARA settings instead of a separate upload,
     -- and reports the result asynchronously via a +HTTPACTION URC rather than
     -- inline after the POST command.
+    elseif cs.http_sub == "SC_CERT_LIST" then
+        -- AT+CCERTLIST reports only the filename, no size/CRC -- unlike
+        -- QFLST there's no integrity signal here, just presence.
+        if b:find(modem.http.cert_filename, 1, true) then
+            cs.http_buf = ""; cs.http_sub = "SC_INIT"; AT_send(modem.http.init)
+        elseif b:find('OK\r\n') or b:find('ERROR') then
+            cs.http_buf = ""; cs.http_sub = "SC_CERT_UPLOAD_CMD"
+            AT_send(string.format(modem.http.cert_upload, #CA_CERT_PEM))
+        end
+
+    elseif cs.http_sub == "SC_CERT_UPLOAD_CMD" then
+        if b:find('>', 1, true) then    -- prompt here is a bare ">", not "CONNECT" (Quectel)
+            cs.http_buf = ""; AT_send(CA_CERT_PEM); cs.http_sub = "SC_CERT_UPLOAD_DATA"
+        elseif b:find('ERROR') then http_fail('cert upload error') end
+
+    elseif cs.http_sub == "SC_CERT_UPLOAD_DATA" then
+        -- No CRC on this dialect (see cert_list note above) -- a bad upload
+        -- just fails the handshake downstream, same recovery as Quectel.
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "SC_INIT"; AT_send(modem.http.init)
+        elseif b:find('ERROR') then http_fail('cert upload data error') end
+
     elseif cs.http_sub == "SC_INIT" then
-        if cs.http_cfg_i == 0 or b:find('OK\r\n') or b:find('ERROR') then
-            if cs.http_cfg_i == 0 then
-                cs.http_cfg_i = 1; AT_send(modem.http.init)
-            else
-                cs.http_buf = ""; cs.http_sub = "SC_CID"; AT_send(modem.http.cid)
-            end
+        if b:find('OK\r\n') or b:find('ERROR') then    -- ERROR tolerated: nothing was open to init over
+            cs.http_buf = ""; cs.http_sub = "SC_CID"; AT_send(modem.http.cid)
         end
 
     elseif cs.http_sub == "SC_CID" then
+        if b:find('OK\r\n') or b:find('ERROR') then
+            cs.http_buf = ""; cs.http_sub = "SC_CACERT"; AT_send(modem.http.cacert)
+        end
+
+    elseif cs.http_sub == "SC_CACERT" then
         if b:find('OK\r\n') or b:find('ERROR') then
             cs.http_buf = ""; cs.http_sub = "SC_SSL"; AT_send(modem.http.ssl)
         end
@@ -1683,15 +1809,6 @@ local function step_CONNECTED()
     end
 
     local now_ms = millis()
-
-    -- Periodic TX/RX byte counters so it's visible from the GCS messages
-    -- tab whether the socket is actually moving data, without needing to
-    -- pull a dataflash log.
-    if not cs.last_stats_print_ms or now_ms - cs.last_stats_print_ms > uint32_t(5000) then
-        cs.last_stats_print_ms = now_ms
-        gcs:send_text(MAV_SEVERITY.INFO, string.format(
-            'LTE: Bout=%u Bin=%u', stats.bytes_out, stats.bytes_in))
-    end
 
     -- One-shot: arm continuous +QCSQ URC after a direct-push socket opens.
     if cs.direct_push and not cs.qcsq_armed and cs.tx_state == "idle" and modem.qcsq_enable then
