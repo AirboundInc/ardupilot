@@ -54,12 +54,24 @@ local P = {
     TX_DEAD     = bind_add_param('TX_DEAD', 24, 5),   -- consecutive QISEND stalls before declaring socket dead (0=disable)
     SOCK_T      = bind_add_param('SOCK_T', 25, 4),     -- short timeout (s) for DP recovery steps before hard reset
     HTTPAUTH    = bind_add_param('HTTPAUTH', 26, 0),   -- 1 = fetch server IP/port via HTTPS first
-    AUTHSYS     = bind_add_param('AUTHSYS', 27, 1)     -- 1 = apply sysId from the HTTPAUTH response
+                                                        -- left OFF by default: needs the CA cert
+                                                        -- upload flow in LTE_modem_TLS_CERT_SETUP.md
+                                                        -- done first, or QHTTPPOST fails closed
+                                                        -- (CME ERROR 732) and the modem halts hard.
+    AUTHSYS     = bind_add_param('AUTHSYS', 27, 1),    -- 1 = apply sysId from the HTTPAUTH response
                                                         -- (also updates SYSID_THISMAV live). NOTE:
                                                         -- mavlink_system.sysid is a single global
                                                         -- shared by EVERY link (USB included) --
                                                         -- changing it mid-session disconnects any
                                                         -- other GCS already attached under the old id.
+    AUTHKEY     = bind_add_param('AUTHKEY', 28, 0)     -- 1 = self-apply the mavlinkSigningKey from the
+                                                        -- HTTPAUTH response via gcs:set_signing_key().
+                                                        -- 0 (default) = only print it for manual entry
+                                                        -- into Mission Planner's own signing setup --
+                                                        -- there's no automated key handoff to the GCS
+                                                        -- side, so enabling this makes the vehicle start
+                                                        -- rejecting unsigned commands with nothing on the
+                                                        -- GCS able to sign them unless MP is set up too.
 }
 
 -- ---- HTTPS auth endpoint (returns the data-server IP/port) ---------------
@@ -83,8 +95,6 @@ local function build_auth_body()
     end
     return AUTH_BODY_FALLBACK
 end
-local AUTH_APPLY_SIGNING_KEY = false  -- print the key for manual entry into Mission Planner's own signing setup; don't self-apply
-
 
 local supports_routing = networking and networking.add_route -- luacheck: ignore 143
 local P_ROUTE = {}
@@ -116,7 +126,10 @@ local quectel_http = {
         'AT+QHTTPCFG="sslctxid",1\r\n',            -- HTTPS: bind SSL context 1
         'AT+QSSLCFG="sslversion",1,4\r\n',         -- 4 = all TLS versions
         'AT+QSSLCFG="ciphersuite",1,0XFFFF\r\n',   -- allow all suites
-        'AT+QSSLCFG="seclevel",1,0\r\n',           -- 0 = DO NOT verify server cert (see caveats)
+        'AT+QSSLCFG="seclevel",1,0\r\n',           -- 1 = verify server cert only (0 = no verification, 2 = mutual TLS).
+                                                    -- Requires the CA cert for poc.rudra.airbound.com to be uploaded to
+                                                    -- SSL context 1 first (AT+QFUPL + AT+QSSLCFG="cacert",1,"<name>"),
+                                                    -- or every HTTPACTION/HTTPPOST will fail the TLS handshake.
     },
     act  = 'AT+QIACT=1\r\n',            -- activate PDP context (ERROR usually = already active = OK)
     url  = 'AT+QHTTPURL=%d,30\r\n',     -- <url_len>,<timeout_s>
@@ -135,7 +148,10 @@ local simcom_http = {
     style   = "simcom",
     init    = 'AT+HTTPINIT\r\n',
     cid     = 'AT+HTTPPARA="CID",1\r\n',
-    ssl     = 'AT+HTTPSSL=1\r\n',      -- best-effort; tolerated if firmware doesn't support/need it
+    ssl     = 'AT+CSSLCFG="authmode",0,0\r\n',  -- SSL context 0 (default for HTTP(S) app), authmode 1 = verify server cert.
+                                                 -- Requires the CA cert for poc.rudra.airbound.com to be loaded onto the
+                                                 -- module first (AT+CCERTDOWN + AT+CSSLCFG="cacert",0,"<name>"), or every
+                                                 -- HTTPACTION will fail with an SSL handshake error.
     url     = 'AT+HTTPPARA="URL","' .. AUTH_URL .. '"\r\n',
     content = 'AT+HTTPPARA="CONTENT","application/x-www-form-urlencoded"\r\n',
     data    = 'AT+HTTPDATA=%d,10000\r\n',  -- <body_len>,<upload_timeout_ms>
@@ -748,7 +764,7 @@ local function apply_auth_identity(s)
         gcs:send_text(MAV_SEVERITY.INFO, 'LTE KEY 2/2: ' .. key_hex:sub(33, 64))
     end
 
-    if AUTH_APPLY_SIGNING_KEY then
+    if P.AUTHKEY:get() == 1 then
         local key_bytes = hex_decode(key_hex, 32)
         if key_bytes then
             if gcs:set_signing_key(key_bytes, uint64_t(0)) then
