@@ -39,6 +39,17 @@ class AP_TTLServo {
     uint32_t us_per_byte;
     uint32_t us_gap;
 
+    enum class COMM_STATE{
+      IDLE = 0,
+      INITIALISING,
+      COMMAND_POSITION,
+      READ_POSITION,
+      AWAITING_PING_RESPONSE,
+      AWAITING_POS_RESPONSE,
+    };
+    
+    COMM_STATE comm_state = COMM_STATE::IDLE; 
+
     uint8_t calculate_crc(uint8_t *txpacket, uint8_t len);
     void configure_servos(void);
     void detect_servos(void);
@@ -47,6 +58,9 @@ class AP_TTLServo {
     void read_bytes();
     void send_command(uint8_t id, uint8_t reg, uint16_t value, uint8_t len);
     void send_packet(const uint8_t *packet, uint8_t len);
+    void read_register(uint8_t servo_id, uint8_t reg_address, uint16_t num_of_bytes_to_read);
+    void read_angle_position(uint8_t  servo_id);
+    void servos_output(void);
 
     bool initialised;
 
@@ -85,4 +99,23 @@ class AP_TTLServo {
     // Servo goal position register adress
     AP_Int8 servo_goal_pos_reg;
 
-};
+
+    //State Feedback
+    uint32_t last_pos_updated_time;
+    uint32_t last_read_pos_cmd_time;
+
+    //Feedback message
+    uint16_t bad_message_count;
+    struct Servo_State{
+      double position;
+      bool present{false};
+      double last_pos_update_time;
+    };
+
+    Servo_State servo_states[4];
+
+    //Debugging
+    double prev_angle_position;
+    COMM_STATE prev_comm_state;
+
+  };
