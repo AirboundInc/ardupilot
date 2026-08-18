@@ -69,14 +69,16 @@ local P = {
                                                         -- shared by EVERY link (USB included) --
                                                         -- changing it mid-session disconnects any
                                                         -- other GCS already attached under the old id.
-    AUTHKEY     = bind_add_param('AUTHKEY', 28, 0)     -- 1 = self-apply the mavlinkSigningKey from the
+    AUTHKEY     = bind_add_param('AUTHKEY', 28, 1)     -- 1 = self-apply the mavlinkSigningKey from the
                                                         -- HTTPAUTH response via gcs:set_signing_key().
-                                                        -- 0 (default) = only print it for manual entry
-                                                        -- into Mission Planner's own signing setup --
-                                                        -- there's no automated key handoff to the GCS
-                                                        -- side, so enabling this makes the vehicle start
-                                                        -- rejecting unsigned commands with nothing on the
-                                                        -- GCS able to sign them unless MP is set up too.
+                                                        -- 0 (default) = ignore it entirely. The key is
+                                                        -- deliberately never printed/logged (it would
+                                                        -- defeat MAVLink signing to broadcast the secret
+                                                        -- in plaintext over the same link signing is meant
+                                                        -- to protect) -- enabling this makes the vehicle
+                                                        -- start rejecting unsigned commands with nothing on
+                                                        -- the GCS able to sign them unless it's provisioned
+                                                        -- with the same key through some other channel.
 }
 
 -- ---- HTTPS auth endpoint (returns the data-server IP/port) ---------------
@@ -183,15 +185,21 @@ local quectel_http = {
         'AT+QHTTPCFG="sslctxid",1\r\n',            -- HTTPS: bind SSL context 1
         'AT+QSSLCFG="sslversion",1,4\r\n',         -- 4 = all TLS versions
         'AT+QSSLCFG="ciphersuite",1,0XFFFF\r\n',   -- allow all suites
-        -- NOTE: input path only -- QSSLCFG/QFUPL reject a "UFS:" prefix on the
-        -- filename (+CME ERROR: 58) even though QFLST echoes "UFS:<name>" in
-        -- its own output. Always pass the bare filename here.
-        'AT+QSSLCFG="cacert",1,"' .. CA_CERT_FILENAME .. '"\r\n',  -- must be uploaded first (see cert_list/cert_upload
-                                                                    -- above) or seclevel=1 below fails every handshake
-        'AT+QSSLCFG="seclevel",1,1\r\n',           -- 1 = verify server cert (0 = no verification, 2 = mutual TLS)
         'AT+QSSLCFG="sni",1,1\r\n',                -- required: endpoint is SNI-virtual-hosted: without this the
                                                      -- wrong cert can be served and hostname validation fails
     },
+    -- cacert/seclevel are pulled out of the tolerant cfg array above and sent
+    -- as their own hard-fail steps (see the CACERT/SECLEVEL states): these
+    -- two are what actually bind and enforce certificate verification, so an
+    -- ERROR here must halt HTTPAUTH rather than silently continuing on a
+    -- connection that isn't actually verified.
+    -- NOTE: input path only -- QSSLCFG/QFUPL reject a "UFS:" prefix on the
+    -- filename (+CME ERROR: 58) even though QFLST echoes "UFS:<name>" in
+    -- its own output. Always pass the bare filename here.
+    cacert    = 'AT+QSSLCFG="cacert",1,"' .. CA_CERT_FILENAME .. '"\r\n',  -- must be uploaded first (see cert_list/
+                                                                            -- cert_upload above) or seclevel below
+                                                                            -- fails every handshake
+    seclevel  = 'AT+QSSLCFG="seclevel",1,1\r\n',  -- 1 = verify server cert (0 = no verification, 2 = mutual TLS)
     act  = 'AT+QIACT=1\r\n',            -- activate PDP context (ERROR usually = already active = OK)
     url  = 'AT+QHTTPURL=%d,30\r\n',     -- <url_len>,<timeout_s>
     post = 'AT+QHTTPPOST=%d,80,80\r\n', -- <body_len>,<input_time>,<rsp_time>
@@ -474,9 +482,35 @@ local function want_direct_push()
     return (not cmux_enabled()) and modem ~= nil and modem.cipopen_udp_dp ~= nil
 end
 
+-- Conservative cap on outgoing CMUX frame payload size. GSM 07.10's N1
+-- (max frame size) is negotiated via AT+CMUX=...; this script sends a bare
+-- AT+CMUX=0 with no N1 override, so each modem's own default applies and
+-- that default is NOT consistent across chipsets -- Quectel EC200 accepts
+-- a single frame carrying the whole ~1.7KB CA cert PEM, but a SIM7600
+-- silently wedges (stops responding, just streams idle FLAG bytes) on the
+-- same single oversized frame. Splitting into <=127-byte frames is safe
+-- for every modem regardless of its N1: cmux.feed_uart_in() already
+-- reassembles a DLC's data across frame boundaries, so the AT parser on
+-- the other end sees one continuous byte stream either way.
+local CMUX_MAX_FRAME = 127
+
 local function AT_send(atcmd)
-    local s = cmux_enabled() and cmux.encode_cmux_frame(cmux.DLC_AT, cmux.UIH, atcmd) or atcmd
-    return uart_write(s) == #s
+    if not cmux_enabled() then
+        return uart_write(atcmd) == #atcmd
+    end
+    local pos = 1
+    local total = #atcmd
+    if total == 0 then
+        local s = cmux.encode_cmux_frame(cmux.DLC_AT, cmux.UIH, atcmd)
+        return uart_write(s) == #s
+    end
+    while pos <= total do
+        local chunk = atcmd:sub(pos, pos + CMUX_MAX_FRAME - 1)
+        local s = cmux.encode_cmux_frame(cmux.DLC_AT, cmux.UIH, chunk)
+        if uart_write(s) ~= #s then return false end
+        pos = pos + CMUX_MAX_FRAME
+    end
+    return true
 end
 
 local function send_data_reset()
@@ -509,24 +543,34 @@ function cmux.parse_cmux_frame(buf_in)
     if not start_idx then return nil, nil, nil end
     if #buf_in < 6 then return nil, nil, nil, "short" end
     local len_byte = buf_in:byte(4)
-    if (len_byte & cmux.EA) == 0 then return nil, nil, nil end
-    local len = len_byte >> 1
-    local end_idx = 6 + len
+    local len, hdr_len
+    if (len_byte & cmux.EA) ~= 0 then
+        len = len_byte >> 1
+        hdr_len = 3   -- addr, ctrl, 1 length octet
+    else
+        -- extended (2-octet) length: EA=0 on L1 means L2 follows with the
+        -- high bits -- the counterpart to encode_cmux_frame's extended
+        -- form, needed to receive anything over 127 bytes in one frame.
+        if #buf_in < 7 then return nil, nil, nil, "short" end
+        len = (len_byte >> 1) | (buf_in:byte(5) << 7)
+        hdr_len = 4   -- addr, ctrl, 2 length octets
+    end
+    local end_idx = 2 + hdr_len + len + 1
     if buf_in:byte(end_idx) ~= cmux.FLAG then return nil, nil, nil, "short" end
 
     local frame = buf_in:sub(start_idx + 1, end_idx - 1)
-    if #frame < 4 then return nil, nil, nil end
+    if #frame < hdr_len + 1 then return nil, nil, nil end
 
     local addr = frame:byte(1)
     local ctrl = frame:byte(2)
 
     if ctrl == cmux.SABM then return nil, nil, buf_in:sub(end_idx + 1) end
     if (ctrl & 0xef) ~= cmux.UIH then return nil, nil, nil end
-    if #frame ~= 3 + len + 1 then return nil, nil, nil end
+    if #frame ~= hdr_len + len + 1 then return nil, nil, nil end
 
-    local data = frame:sub(4, 3 + len)
-    local fcs_field = frame:byte(3 + len + 1)
-    local header = frame:sub(1, 3)
+    local data = frame:sub(hdr_len + 1, hdr_len + len)
+    local fcs_field = frame:byte(hdr_len + len + 1)
+    local header = frame:sub(1, hdr_len)
     if fcs_calc(header) ~= fcs_field then return nil, nil, nil end
 
     local dlc = (addr >> 2) & 0x3F
@@ -823,24 +867,20 @@ local function apply_auth_identity(s)
         local sysid = s:match('"sysId"%s*:%s*(%d+)')
         if sysid then
             sysid = tonumber(sysid)
-            Parameter('SYSID_THISMAV'):set(sysid)
-            if gcs:set_sysid(sysid) then
-                gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE HTTPAUTH: sysid set to %d', sysid))
+            if sysid > 0 then   -- 0 is a reserved/broadcast MAVLink system id, never a real vehicle id
+                Parameter('SYSID_THISMAV'):set(sysid)
+                if gcs:set_sysid(sysid) then
+                    gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE HTTPAUTH: sysid set to %d', sysid))
+                else
+                    gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: sysid set failed (armed?)')
+                end
             else
-                gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: sysid set failed (armed?)')
+                gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: ignoring invalid sysid 0 from server')
             end
         end
     end
 
     local key_hex = s:match('"mavlinkSigningKey"%s*:%s*"(%x+)"')
-    -- TESTING ONLY: print the raw key so it can be manually copied into
-    -- Mission Planner's own MAVLink signing setup -- there's no automated
-    -- key handoff to the GCS side yet, so without this the vehicle would
-    -- start rejecting unsigned commands with nothing able to sign them.
-    if key_hex and #key_hex == 64 then
-        gcs:send_text(MAV_SEVERITY.INFO, 'LTE KEY 1/2: ' .. key_hex:sub(1, 32))
-        gcs:send_text(MAV_SEVERITY.INFO, 'LTE KEY 2/2: ' .. key_hex:sub(33, 64))
-    end
 
     if P.AUTHKEY:get() == 1 then
         local key_bytes = hex_decode(key_hex, 32)
@@ -1015,10 +1055,25 @@ function dp.process_tx(now_ms, budget)
 end
 
 local HTTP_TOTAL_TIMEOUT = 25000  -- ms cap on the whole auth attempt (real logins routinely take 10-12s; no useful static fallback exists, so bias toward completing over timing out)
+local CERT_UPLOAD_EXTRA_TIMEOUT = 25000  -- extra ms granted only when a real cert upload actually
+                                          -- happens (never-provisioned/freshly-wiped module). Bench
+                                          -- observed: with the cert already present, HTTPAUTH finishes
+                                          -- in ~3-4s; a from-scratch upload (16+ chunked CMUX frames
+                                          -- plus the normal login sequence after it) can run past the
+                                          -- shared HTTP_TOTAL_TIMEOUT even though every step along the
+                                          -- way completes fine -- it's a budget problem, not a stall.
 local next_after_registration
 
 local function http_fail(reason)
     gcs:send_text(MAV_SEVERITY.CRITICAL, 'LTE HTTPAUTH: ' .. reason .. ' — no static fallback, halting')
+    -- SimCom's HTTP(S) app needs an explicit AT+HTTPTERM to close its session;
+    -- unlike the success path (READ, further down) this failure path never
+    -- called it, so a failed attempt left the session open and the next
+    -- AT+HTTPINIT piled on top of it. Best-effort, response not awaited --
+    -- we're already halting either way. No-op for Quectel (no modem.http.term).
+    if modem.http and modem.http.term then
+        AT_send(modem.http.term)
+    end
     cs.auth_ip = nil; cs.auth_port = nil
     cs.auth_done = true
     cs.http_sub = nil
@@ -1079,6 +1134,7 @@ local function step_HTTPAUTH()
             cs.http_buf = ""; cs.http_sub = "CFG"; cs.http_cfg_i = 0
         elseif b:find('OK\r\n') or b:find('ERROR') then
             cs.http_buf = ""; cs.http_sub = "CERT_UPLOAD_CMD"
+            cs.http_deadline = cs.http_deadline + CERT_UPLOAD_EXTRA_TIMEOUT
             AT_send(string.format(modem.http.cert_upload, #CA_CERT_PEM))
         end
 
@@ -1106,9 +1162,24 @@ local function step_HTTPAUTH()
             if cmd then
                 AT_send(cmd)
             else
-                cs.http_sub = "ACT"; AT_send(modem.http.act)
+                cs.http_sub = "CACERT"; AT_send(modem.http.cacert)
             end
         end
+
+    elseif cs.http_sub == "CACERT" then
+        -- Hard-fail, not tolerated: this binds the CA cert that seclevel=1
+        -- below verifies against. Silently continuing on ERROR would let
+        -- the login proceed over a connection that isn't actually verified.
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "SECLEVEL"; AT_send(modem.http.seclevel)
+        elseif b:find('ERROR') then http_fail('cacert bind error') end
+
+    elseif cs.http_sub == "SECLEVEL" then
+        -- Hard-fail: this is the command that actually turns on server-cert
+        -- verification. Same reasoning as CACERT above.
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "ACT"; AT_send(modem.http.act)
+        elseif b:find('ERROR') then http_fail('seclevel set error') end
 
     elseif cs.http_sub == "ACT" then
         if b:find('OK\r\n') or b:find('ERROR') then    -- ERROR = already active, fine
@@ -1150,7 +1221,8 @@ local function step_HTTPAUTH()
             local c1 = b:find('CONNECT')
             if c1 then body = b:sub(c1 + 7) end   -- payload sits between CONNECT and trailing OK
             local ip, port = parse_auth_response(body)
-            if ip and port then
+            if ip and port and port > 0 then   -- port==0 is truthy in Lua but never a valid TCP/UDP port;
+                                                -- treat it as a parse failure rather than a usable address
                 cs.auth_ip = ip; cs.auth_port = port; cs.auth_done = true
                 gcs:send_text(MAV_SEVERITY.INFO, string.format(
                     'LTE HTTPAUTH: server %d.%d.%d.%d:%d', ip[1],ip[2],ip[3],ip[4], port))
@@ -1174,6 +1246,7 @@ local function step_HTTPAUTH()
             cs.http_buf = ""; cs.http_sub = "SC_INIT"; AT_send(modem.http.init)
         elseif b:find('OK\r\n') or b:find('ERROR') then
             cs.http_buf = ""; cs.http_sub = "SC_CERT_UPLOAD_CMD"
+            cs.http_deadline = cs.http_deadline + CERT_UPLOAD_EXTRA_TIMEOUT
             AT_send(string.format(modem.http.cert_upload, #CA_CERT_PEM))
         end
 
@@ -1200,14 +1273,19 @@ local function step_HTTPAUTH()
         end
 
     elseif cs.http_sub == "SC_CACERT" then
-        if b:find('OK\r\n') or b:find('ERROR') then
+        -- Hard-fail, not tolerated: this binds the CA cert that authmode=1
+        -- below verifies against. Silently continuing on ERROR would let
+        -- the login proceed over a connection that isn't actually verified.
+        if b:find('OK\r\n') then
             cs.http_buf = ""; cs.http_sub = "SC_SSL"; AT_send(modem.http.ssl)
-        end
+        elseif b:find('ERROR') then http_fail('cacert bind error') end
 
     elseif cs.http_sub == "SC_SSL" then
-        if b:find('OK\r\n') or b:find('ERROR') then    -- ERROR tolerated: some firmware has no/default SSL cfg
+        -- Hard-fail: this is the command that actually turns on server-cert
+        -- verification (authmode=1). Same reasoning as SC_CACERT above.
+        if b:find('OK\r\n') then
             cs.http_buf = ""; cs.http_sub = "SC_URL"; AT_send(modem.http.url)
-        end
+        elseif b:find('ERROR') then http_fail('authmode set error') end
 
     elseif cs.http_sub == "SC_URL" then
         if b:find('OK\r\n') then
@@ -1246,7 +1324,8 @@ local function step_HTTPAUTH()
     elseif cs.http_sub == "SC_READ" then
         if b:find('+HTTPREAD:') and b:find('\r\nOK\r\n') then
             local ip, port = parse_auth_response(b)
-            if ip and port then
+            if ip and port and port > 0 then   -- port==0 is truthy in Lua but never a valid TCP/UDP port;
+                                                -- treat it as a parse failure rather than a usable address
                 cs.auth_ip = ip; cs.auth_port = port; cs.auth_done = true
                 gcs:send_text(MAV_SEVERITY.INFO, string.format(
                     'LTE HTTPAUTH: server %d.%d.%d.%d:%d', ip[1],ip[2],ip[3],ip[4], port))
@@ -1333,6 +1412,16 @@ local function set_BAND()
 end
 
 local function step_CONFIG()
+    -- Local echo is on by default and was never turned off -- harmless for
+    -- short commands (their echo is a few bytes lost in the noise), but the
+    -- ~1.7KB CA cert upload during HTTPAUTH gets mirrored back in full as a
+    -- dense burst of echoed CMUX frames on the same DLC. If de-framing ever
+    -- desyncs on one of those, the module's real completion OK can get lost
+    -- in the corruption that follows, leaving the upload step waiting
+    -- forever (a permanent stall, not just a slow one -- doubling the
+    -- timeout didn't help because there's nothing to wait longer for).
+    -- Turning echo off removes that whole burst instead of working around it.
+    AT_send('ATE0\r\n')
     set_BAND(); set_MCCMNC()
     if modem.config_extra then AT_send(modem.config_extra) end
     if modem.fast_connect then AT_send('AT+CEREG=1\r\n') end
