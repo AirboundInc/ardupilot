@@ -152,27 +152,6 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("INPUT_TC", 20, AC_AttitudeControl, _input_tc, AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT),
 
-    // @Param: LAND_R_MULT
-    // @DisplayName: Landed roll gain multiplier
-    // @Description: Roll gain multiplier active when landed. A factor of 1.0 means no reduction in gain while landed. Lower values reduce gain and are useful for preventing oscillations in vehicles with soft landing gear.
-    // @Range: 0.25 1.0
-    // @User: Advanced
-    AP_GROUPINFO("LAND_R_MULT", 21, AC_AttitudeControl, _land_roll_mult, 1.0),
-
-    // @Param: LAND_P_MULT
-    // @DisplayName: Landed pitch gain multiplier
-    // @Description: Pitch gain multiplier active when landed. A factor of 1.0 means no reduction in gain while landed. Lower values reduce gain and are useful for preventing oscillations in vehicles with soft landing gear.
-    // @Range: 0.25 1.0
-    // @User: Advanced
-    AP_GROUPINFO("LAND_P_MULT", 22, AC_AttitudeControl, _land_pitch_mult, 1.0),
-
-    // @Param: LAND_Y_MULT
-    // @DisplayName: Landed yaw gain multiplier
-    // @Description: Yaw gain multiplier active when landed. A factor of 1.0 means no reduction in gain while landed. Lower values reduce gain and are useful for preventing oscillations in vehicles with soft landing gear.
-    // @Range: 0.25 1.0
-    // @User: Advanced
-    AP_GROUPINFO("LAND_Y_MULT", 23, AC_AttitudeControl, _land_yaw_mult, 1.0),
-
     // @Param: RELX_LO
     // @DisplayName: Relaxation low threshold angle
     // @Description: Pitch angle (degrees) below which the hysteresis deactivates attitude relaxation
@@ -180,7 +159,7 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @Range: 0 90
     // @Increment: 0.1
     // @User: Standard
-    AP_GROUPINFO("RELX_LO", 24, AC_AttitudeControl, _low_tilt_relax, 30.0f),
+    AP_GROUPINFO("RELX_LO", 21, AC_AttitudeControl, _low_tilt_relax, 30.0f),
 
     // @Param: RELX_HI
     // @DisplayName: Max tilt angle for position controller relaxation
@@ -189,14 +168,14 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @Range: 0 90
     // @Increment: 0.01
     // @User: Standard
-    AP_GROUPINFO("RELX_HI", 25, AC_AttitudeControl, _high_tilt_relax, 45.0f),
+    AP_GROUPINFO("RELX_HI", 22, AC_AttitudeControl, _high_tilt_relax, 45.0f),
 
     // @Param: RELX_EN
     // @DisplayName: Position control relaxation enable
     // @Description: Enable/disable flag for position controller relaxation
     // @Values: 0:Disabled, 1:Enabled
     // @User: Advanced
-    AP_GROUPINFO("RELX_EN", 26, AC_AttitudeControl, _att_relax_enabled, 0),
+    AP_GROUPINFO("RELX_EN", 23, AC_AttitudeControl, _att_relax_enabled, 0),
 
     // @Param: RELX_TC
     // @DisplayName: Relaxation time constant
@@ -205,7 +184,7 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @Range: 0.01 10
     // @Increment: 0.01
     // @User: Advanced
-    AP_GROUPINFO("RELX_TC", 27, AC_AttitudeControl, _tc_tilt_relax, 1.0f),
+    AP_GROUPINFO("RELX_TC", 24, AC_AttitudeControl, _tc_tilt_relax, 1.0f),
 
     // @Param: PIT_CLIP_MAX
     // @DisplayName: Max Pitch angle in VTOL modes
@@ -214,7 +193,28 @@ const AP_Param::GroupInfo AC_AttitudeControl::var_info[] = {
     // @Range: 0 90
     // @Increment: 0.01
     // @User: Advanced
-    AP_GROUPINFO("PIT_CLIP_MAX", 28, AC_AttitudeControl, _att_max_pit, 25.0f),
+    AP_GROUPINFO("PIT_CLIP_MAX", 25, AC_AttitudeControl, _att_max_pit, 25.0f),
+
+    // @Param: LAND_R_MULT
+    // @DisplayName: Landed roll gain multiplier
+    // @Description: Roll gain multiplier active when landed. A factor of 1.0 means no reduction in gain while landed. Lower values reduce gain and are useful for preventing oscillations in vehicles with soft landing gear.
+    // @Range: 0.25 1.0
+    // @User: Advanced
+    AP_GROUPINFO("LAND_R_MULT", 29, AC_AttitudeControl, _land_roll_mult, 1.0),
+
+    // @Param: LAND_P_MULT
+    // @DisplayName: Landed pitch gain multiplier
+    // @Description: Pitch gain multiplier active when landed. A factor of 1.0 means no reduction in gain while landed. Lower values reduce gain and are useful for preventing oscillations in vehicles with soft landing gear.
+    // @Range: 0.25 1.0
+    // @User: Advanced
+    AP_GROUPINFO("LAND_P_MULT", 30, AC_AttitudeControl, _land_pitch_mult, 1.0),
+
+    // @Param: LAND_Y_MULT
+    // @DisplayName: Landed yaw gain multiplier
+    // @Description: Yaw gain multiplier active when landed. A factor of 1.0 means no reduction in gain while landed. Lower values reduce gain and are useful for preventing oscillations in vehicles with soft landing gear.
+    // @Range: 0.25 1.0
+    // @User: Advanced
+    AP_GROUPINFO("LAND_Y_MULT", 31, AC_AttitudeControl, _land_yaw_mult, 1.0),
 
     AP_GROUPEND
 };
