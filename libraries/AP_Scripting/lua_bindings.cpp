@@ -1344,6 +1344,30 @@ int lua_custom_storage_get_password(lua_State *L)
 
     return 1;
 }
+
+/*
+  implement custom_storage:get_craft_id() -- returns the stored craft ID
+  string (e.g. "AA-TRT-00659"), or nil if custom storage isn't initialized
+  / nothing has been stored yet.
+ */
+int lua_custom_storage_get_craft_id(lua_State *L)
+{
+    binding_argcheck(L, 1);
+
+    AP_CustomStorage *storage = AP_CustomStorage::get_singleton();
+    if (storage == nullptr) {
+        return 0;
+    }
+
+    char buf[CUSTOM_PARAM_CRAFT_ID_LEN + 1];
+    if (!storage->get_craft_id(buf, sizeof(buf))) {
+        return 0;
+    }
+
+    lua_pushstring(L, buf);
+
+    return 1;
+}
 #endif
 
 #if HAL_ENABLE_DRONECAN_DRIVERS

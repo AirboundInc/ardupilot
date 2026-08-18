@@ -82,7 +82,6 @@ local P = {
 -- ---- HTTPS auth endpoint (returns the data-server IP/port) ---------------
 -- NOTE: these sit in cleartext on the SD card. Anyone with the card reads them.
 local AUTH_URL             = "https://poc.rudra.airbound.com/api/v1/users/aircraft-login"
-local AUTH_BODY_FALLBACK   = "aircraftId=TRT-10&password=password123"  -- used only if custom storage has no uuid/password yet
 local AUTH_EVERY_RECONNECT = false   -- false = fetch once/session, cache until hard reset
 
 -- ISRG Root X1 (Let's Encrypt) -- anchors the cert chain poc.rudra.airbound.com
@@ -129,20 +128,17 @@ local CA_CERT_PEM = table.concat({
     "-----END CERTIFICATE-----",
 }, "\n") .. "\n"
 
--- Builds the login body from custom storage's per-aircraft UUID/password
--- when available (custom_storage is only present on boards built with
--- AP_ENABLE_CUSTOM_STORAGE, and get_uuid()/get_password() return nil until
--- something has actually been provisioned). Falls back to the fixed test
--- credentials otherwise.
+-- Builds the login body from custom storage's per-aircraft craft ID/password
+-- (custom_storage is only present on boards built with AP_ENABLE_CUSTOM_STORAGE).
+-- Craft ID is written directly onto each board, format "AA-TRT-00659".
+-- Returns nil if custom_storage isn't present or nothing has been
+-- provisioned yet -- there is no fallback; step_HTTPAUTH halts in that case.
 local function build_auth_body()
-    if custom_storage then
-        local aircraft_id = custom_storage:get_uuid()
-        local password = custom_storage:get_password()
-        if aircraft_id and password then
-            return string.format('aircraftId=%s&password=%s', aircraft_id, password)
-        end
-    end
-    return AUTH_BODY_FALLBACK
+    if not custom_storage then return nil end
+    local aircraft_id = custom_storage:get_craft_id()
+    local password = custom_storage:get_password()
+    if not (aircraft_id and password) then return nil end
+    return string.format('aircraftId=%s&password=%s', aircraft_id, password)
 end
 
 local supports_routing = networking and networking.add_route -- luacheck: ignore 143
@@ -401,8 +397,17 @@ function cmux.encode_cmux_frame(dlc, dtype, data)
     local addr = string.char((dlc << 2) | cmux.EA | cmux.CR_SEND)
     local ctrl = string.char(dtype | 0x10)
     local len = #data
-    local len_byte = string.char((len << 1) | cmux.EA)
-    local header = addr .. ctrl .. len_byte
+    local len_field
+    if len <= 127 then
+        len_field = string.char((len << 1) | cmux.EA)
+    else
+        -- GSM 07.10 extended (2-octet) length: L1 has EA=0 and carries the
+        -- low 7 bits, L2 carries the remaining high bits. Needed for any
+        -- payload over the single-octet cap of 127 bytes -- e.g. uploading
+        -- the ~1.7KB CA cert PEM over CMUX during HTTPAUTH.
+        len_field = string.char((len & 0x7f) << 1) .. string.char((len >> 7) & 0xff)
+    end
+    local header = addr .. ctrl .. len_field
     local fcs = string.char(fcs_calc(header))
     return string.char(cmux.FLAG) .. header .. data .. fcs .. string.char(cmux.FLAG)
 end
@@ -1023,6 +1028,13 @@ end
 
 local function step_HTTPAUTH()
     if cs.http_sub == nil then
+        cs.auth_body = build_auth_body()  -- computed once per attempt: the length sent
+                                           -- in QHTTPPOST and the bytes sent afterward
+                                           -- must match exactly
+        if not cs.auth_body then
+            http_fail('no craft ID/password provisioned in custom storage')
+            return
+        end
         -- Cert presence check always runs first, for both dialects. The cert
         -- file itself survives a modem reset (AT+CFUN=1,1 / AT+CRESET) so this
         -- is only a real upload on a never-provisioned or freshly-wiped
@@ -1030,9 +1042,6 @@ local function step_HTTPAUTH()
         cs.http_sub = (modem.http.style == "simcom") and "SC_CERT_LIST" or "CERT_LIST"
         cs.http_cfg_i = 0; cs.http_buf = ""
         cs.http_deadline = millis():tofloat() + HTTP_TOTAL_TIMEOUT
-        cs.auth_body = build_auth_body()  -- computed once per attempt: the length sent
-                                           -- in QHTTPPOST and the bytes sent afterward
-                                           -- must match exactly
         gcs:send_text(MAV_SEVERITY.INFO, 'LTE HTTPAUTH: fetching server addr')
         AT_send(modem.http.cert_list)
     end

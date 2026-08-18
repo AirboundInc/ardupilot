@@ -3029,6 +3029,10 @@ function custom_storage:get_uuid() end
 ---@return string|nil
 function custom_storage:get_password() end
 
+-- returns the stored craft ID string (e.g. "AA-TRT-00659"), or nil if unset/uninitialized
+---@return string|nil
+function custom_storage:get_craft_id() end
+
 -- The relay library provides access to controlling relay outputs.
 relay = {}
 
