@@ -38,30 +38,30 @@ local NAV_CMDS = {
 -- ###############################################################################
 local PARAM_TABLE_KEY = 88
 local PARAM_PREFIX = "DOOR_"
-local NUM_PARAMS = 19
+local NUM_PARAMS = 17
 assert(param:add_table(PARAM_TABLE_KEY, PARAM_PREFIX, NUM_PARAMS), "Failed to create param table")
 
 local PARAM_IDX = {
     -- Basic control parameters (1-5)
-    MAN_CMD_CH = 1, MAN_TIMEOUT = 2, ALT_TRIG_M = 3, VTOL_PITCH = 4, FW_PITCH = 5,
+    MAN_CMD_CH = 1, MAN_TIMEOUT = 2, ALT_TRIG_M = 3,
     
     -- Servo 1 (6-8)
-    S1_FUNC = 6, S1_OPEN = 7, S1_CLOSE = 8,
+    S1_FUNC = 4, S1_OPEN = 5, S1_CLOSE = 6,
     
     -- Servo 2 (9-11)  
-    S2_FUNC = 9, S2_OPEN = 10, S2_CLOSE = 11,
+    S2_FUNC = 7, S2_OPEN = 8, S2_CLOSE = 9,
     
     -- Servo 3 (12-14)
-    S3_FUNC = 12, S3_OPEN = 13, S3_CLOSE = 14,
+    S3_FUNC = 10, S3_OPEN = 11, S3_CLOSE = 12,
     
     -- Servo 4 (15-17)
-    S4_FUNC = 15, S4_OPEN = 16, S4_CLOSE = 17,
+    S4_FUNC = 13, S4_OPEN = 14, S4_CLOSE = 15,
     
     -- Slew rate parameter (18)
-    SLEW_RATE = 18,
+    SLEW_RATE = 16,
 
     -- OVERRIDE (19)
-    OVERRIDE = 19
+    OVERRIDE = 17
 }
 
 --[[ @Param: DOOR_MAN_CMD_CH, @DisplayName: Door Manual Command Chan, @Range: 1 16 --]]
@@ -70,10 +70,6 @@ assert(param:add_param(PARAM_TABLE_KEY, PARAM_IDX.MAN_CMD_CH, "MAN_CMD_CH", 9))
 assert(param:add_param(PARAM_TABLE_KEY, PARAM_IDX.MAN_TIMEOUT, "MAN_TIMEOUT", 5))
 --[[ @Param: DOOR_ALT_TRIG_M, @DisplayName: Take-off Altitude Trigger, @Units: m, @Range: 1 100 --]]
 assert(param:add_param(PARAM_TABLE_KEY, PARAM_IDX.ALT_TRIG_M, "ALT_TRIG_M", 3))
---[[ @Param: DOOR_VTOL_PITCH, @DisplayName: VTOL Min Pitch Angle, @Description: Pitch angle above which a tailsitter is considered in VTOL flight, @Units: deg, @Range: 45 85, @User: Standard --]]
-assert(param:add_param(PARAM_TABLE_KEY, PARAM_IDX.VTOL_PITCH, "VTOL_PITCH", 75))
---[[ @Param: DOOR_FW_PITCH, @DisplayName: Fixed-Wing Max Pitch Angle, @Description: Pitch angle below which a tailsitter is considered in Fixed-Wing flight, @Units: deg, @Range: 5 40, @User: Standard --]]
-assert(param:add_param(PARAM_TABLE_KEY, PARAM_IDX.FW_PITCH, "FW_PITCH", 25))
 
 -- Servo function and PWM parameters
 local open_pwms = {1000, 1900, 1000, 1900}
@@ -105,11 +101,8 @@ local state = {
     last_rc_pwm = 0,
     doors_are_commanded_closed = false,
     takeoff_climbout_complete = false,
-    was_in_vtol_state = false,
-    was_in_fw_state = false,
     last_config_update = 0,
     was_armed = false,
-    landing_latch = false,
     one_forward_transition_complete = false,
     -- State table for each servo's position
     servos = {}
@@ -151,19 +144,12 @@ function update_config_cache()
         man_cmd_ch = config.man_cmd_ch:get(),
         man_timeout = config.man_timeout:get(),
         alt_trig_m = config.alt_trig_m:get(),
-        vtol_pitch = config.vtol_pitch:get(),
-        fw_pitch = config.fw_pitch:get(),
         slew_rate = config.slew_rate:get(),
         man_override = config.man_override:get()
     }
 
     if config.cache.man_cmd_ch < 1 or config.cache.man_cmd_ch > 16 then
         log_message(MAV_SEVERITY.ERROR, "Invalid manual channel")
-        return false
-    end
-
-    if config.cache.vtol_pitch <= config.cache.fw_pitch then
-        log_message(MAV_SEVERITY.ERROR, "VTOL pitch must be > FW pitch")
         return false
     end
 
@@ -265,15 +251,6 @@ function get_current_altitude_agl()
     return nil
 end
 
-function get_tailsitter_flight_state()
-    local pitch_rad = ahrs:get_pitch()
-    if not pitch_rad then return nil end
-    local pitch_deg = math.abs(math.deg(pitch_rad))
-    if pitch_deg >= config.cache.vtol_pitch then return "VTOL"
-    elseif pitch_deg <= config.cache.fw_pitch then return "FIXED_WING"
-    else return "TRANSITIONING" end
-end
-
 function in_vtol_flight()
     local vtol_active = not quadplane:tailsitter_in_vtol_transition() and quadplane:in_vtol_mode()
     if vtol_active then
@@ -286,49 +263,19 @@ function in_vtol_flight()
     return false
 end
 
-function is_in_landing_phase(current_mode)
-    local MODES = { auto = 10 } -- other valid modes which need additional checks
-    if not current_mode then return false end
-
-    -- Return true for all q modes directly, regardless of pitch
-    if QMODES[current_mode] then
-        return true
-    end
-
-    -- Check for vertical mission commands for auto mode
-    if current_mode == MODES.auto then
-        local nav_cmd = mission:get_current_nav_id()
-        if NAV_CMDS[nav_cmd] then
-            -- valid command for landing phase
-            return true
-        end
-    end
-
-    -- Check VTOL descent flag
-    if quadplane and quadplane:in_vtol_land_descent() then
-        return true
-    end
-
-    return false
-end
-
 function run_auto_mode()
     if not arming:is_armed() then return end
 
     local current_mode = vehicle:get_mode()
     if not current_mode then return end
+
     local alt = get_current_altitude_agl()
     
-    local flight_state = get_tailsitter_flight_state()
-    if not flight_state then return end
-
-    local is_currently_in_vtol = (flight_state == "VTOL")
-    local is_currently_in_fw = (flight_state == "FIXED_WING")
     local is_vtol_flight = in_vtol_flight()
 
     -- Phase 1 - Check for takeoff
     if not state.takeoff_climbout_complete then
-        if is_currently_in_vtol then
+        if is_vtol_flight then
             if alt and alt >= config.cache.alt_trig_m then
                 log_message(MAV_SEVERITY.INFO, "Takeoff alt " .. string.format("%.1f", alt) .. "m reached - closing doors")
                 if close_all_doors() then
@@ -358,10 +305,6 @@ function run_auto_mode()
         close_all_doors()
     end -- landing phase checking
 
-    if flight_state ~= "TRANSITIONING" then
-        state.was_in_vtol_state = is_currently_in_vtol
-        state.was_in_fw_state = is_currently_in_fw
-    end
 end
 
 function check_manual_override()
@@ -425,18 +368,12 @@ function update()
     if is_armed_now and not state.was_armed then
         log_message(MAV_SEVERITY.INFO, "Armed! Ready for takeoff.")
         state.takeoff_climbout_complete = false
-        state.was_in_vtol_state = false
-        state.was_in_fw_state = false
-        state.landing_latch = false
         state.one_forward_transition_complete = false
     elseif not is_armed_now and state.was_armed then
         log_message(MAV_SEVERITY.INFO, "Disarmed. Resetting state and opening doors.")
         open_all_doors()
         state.is_in_manual_override = false
         state.takeoff_climbout_complete = false
-        state.was_in_vtol_state = false
-        state.was_in_fw_state = false
-        state.landing_latch = false
         state.one_forward_transition_complete = false
     end
     state.was_armed = is_armed_now
