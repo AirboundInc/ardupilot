@@ -248,9 +248,6 @@ float Tiltrotor::tilt_max_change(bool up, bool in_flap_range) const
     }
     if (type != TILT_TYPE_BINARY && !up && !in_flap_range) {
         bool fast_tilt = false;
-        if (plane.control_mode == &plane.mode_manual) {
-            fast_tilt = true;
-        }
         if (plane.arming.is_armed_and_safety_off() && !quadplane.in_vtol_mode() && !quadplane.assisted_flight) {
             fast_tilt = true;
         }
