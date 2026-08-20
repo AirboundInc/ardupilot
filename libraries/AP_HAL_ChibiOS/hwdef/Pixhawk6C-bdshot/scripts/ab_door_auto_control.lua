@@ -27,22 +27,22 @@ local PARAM_IDX = {
     MAN_CMD_CH = 1, MAN_TIMEOUT = 2, ALT_TRIG_M = 3,
     
     -- Servo 1 (6-8)
-    S1_FUNC = 4, S1_OPEN = 5, S1_CLOSE = 6,
+    S1_FUNC = 6, S1_OPEN = 7, S1_CLOSE = 8,
     
     -- Servo 2 (9-11)  
-    S2_FUNC = 7, S2_OPEN = 8, S2_CLOSE = 9,
+    S2_FUNC = 9, S2_OPEN = 10, S2_CLOSE = 11,
     
     -- Servo 3 (12-14)
-    S3_FUNC = 10, S3_OPEN = 11, S3_CLOSE = 12,
+    S3_FUNC = 12, S3_OPEN = 13, S3_CLOSE = 14,
     
     -- Servo 4 (15-17)
-    S4_FUNC = 13, S4_OPEN = 14, S4_CLOSE = 15,
+    S4_FUNC = 15, S4_OPEN = 16, S4_CLOSE = 17,
     
     -- Slew rate parameter (18)
-    SLEW_RATE = 16,
+    SLEW_RATE = 18,
 
     -- OVERRIDE (19)
-    OVERRIDE = 17
+    OVERRIDE = 19
 }
 
 --[[ @Param: DOOR_MAN_CMD_CH, @DisplayName: Door Manual Command Chan, @Range: 1 16 --]]
