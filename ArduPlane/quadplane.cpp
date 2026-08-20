@@ -1828,8 +1828,7 @@ void QuadPlane::update(void)
     if (!in_vtol_mode() && !in_vtol_airbrake()) {
         // we're in a fixed wing mode, cope with transitions and check
         // for assistance needed
-        if (plane.control_mode == &plane.mode_manual ||
-            plane.control_mode == &plane.mode_acro ||
+        if (plane.control_mode == &plane.mode_acro ||
             plane.control_mode == &plane.mode_training) {
             // in manual modes quad motors are always off
             if (!tailsitter.enabled()) {
