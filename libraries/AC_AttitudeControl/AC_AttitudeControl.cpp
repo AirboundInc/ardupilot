@@ -315,6 +315,9 @@ void AC_AttitudeControl::input_euler_angle_roll_pitch_euler_rate_yaw(float euler
     float euler_roll_angle = radians(euler_roll_angle_cd * 0.01f);
     float euler_pitch_angle = radians(euler_pitch_angle_cd * 0.01f);
     float euler_yaw_rate = radians(euler_yaw_rate_cds * 0.01f);
+    if(_ts_enabled && !_ts_in_transition){
+        euler_pitch_angle = constrain_float(euler_pitch_angle,radians(-_att_max_pit),radians(_att_max_pit));
+    }
 
     // calculate the attitude target euler angles
     _attitude_target.to_euler(_euler_angle_target);
@@ -366,6 +369,9 @@ void AC_AttitudeControl::input_euler_angle_roll_pitch_yaw(float euler_roll_angle
     float euler_roll_angle = radians(euler_roll_angle_cd * 0.01f);
     float euler_pitch_angle = radians(euler_pitch_angle_cd * 0.01f);
     float euler_yaw_angle = radians(euler_yaw_angle_cd * 0.01f);
+    if(_ts_enabled && !_ts_in_transition){
+        euler_pitch_angle = constrain_float(euler_pitch_angle,radians(-_att_max_pit),radians(_att_max_pit));
+    }
 
     // calculate the attitude target euler angles
     _attitude_target.to_euler(_euler_angle_target);
@@ -781,12 +787,6 @@ void AC_AttitudeControl::attitude_controller_run_quat()
         relaxation_factor_lpf = constrain_float(relaxation_factor_lpf, 0.0f, 1.0f);
         euler_sp.y *= (1.0f - relaxation_factor_lpf);
         _ang_vel_target.y *= (1.0f - relaxation_factor_lpf);
-        _attitude_target.from_euler(euler_sp.x, euler_sp.y, euler_sp.z);
-    }
-    if(_ts_enabled && !_ts_in_transition){
-        Vector3f euler_sp;
-        _attitude_target.to_euler(euler_sp.x, euler_sp.y, euler_sp.z);
-        euler_sp.y = constrain_float(euler_sp.y,radians(-_att_max_pit),radians(_att_max_pit));
         _attitude_target.from_euler(euler_sp.x, euler_sp.y, euler_sp.z);
     }
     thrust_heading_rotation_angles(_attitude_target, attitude_body, attitude_error, _thrust_angle, _thrust_error_angle);
