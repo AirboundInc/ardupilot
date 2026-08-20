@@ -367,6 +367,9 @@ public:
     virtual void send_attitude_quaternion() const;
     void send_autopilot_version() const;
     void send_extended_sys_state() const;
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+    void send_airbound_flight_information();
+#endif
     void send_local_position() const;
     void send_vfr_hud();
     void send_vibration() const;
@@ -499,6 +502,14 @@ protected:
 
     virtual MAV_VTOL_STATE vtol_state() const { return MAV_VTOL_STATE_UNDEFINED; }
     virtual MAV_LANDED_STATE landed_state() const { return MAV_LANDED_STATE_UNDEFINED; }
+
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+    virtual uint64_t arming_time_boot_us() const { return 0; }
+    virtual uint64_t takeoff_time_boot_us() const { return 0; }
+    virtual uint64_t landing_time_boot_us() const { return 0; }
+    virtual uint64_t disarm_time_boot_us() const { return 0; }
+    virtual uint32_t flight_time_ms() const { return 0; }
+#endif
 
     // return a MAVLink parameter type given a AP_Param type
     static MAV_PARAM_TYPE mav_param_type(enum ap_var_type t);

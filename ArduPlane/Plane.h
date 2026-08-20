@@ -620,6 +620,18 @@ private:
     // time since started flying in any mode in milliseconds
     uint32_t started_flying_ms;
 
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+    // boot-relative timestamps for flight information message
+    uint64_t arming_time_boot_us;
+    uint64_t takeoff_time_boot_us;
+    uint64_t landing_time_boot_us;
+    uint64_t disarm_time_boot_us;
+    bool has_taken_off;
+
+    // elapsed flight time since last takeoff
+    uint32_t flight_time_ms() const;
+#endif
+
     // ground mode is true when disarmed and not flying
     bool ground_mode;
 

@@ -99,4 +99,12 @@ private:
     MAV_VTOL_STATE vtol_state() const override;
     MAV_LANDED_STATE landed_state() const override;
 
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+    uint64_t arming_time_boot_us() const override;
+    uint64_t takeoff_time_boot_us() const override;
+    uint64_t landing_time_boot_us() const override;
+    uint64_t disarm_time_boot_us() const override;
+    uint32_t flight_time_ms() const override;
+#endif
+
 };
