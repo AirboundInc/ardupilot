@@ -112,8 +112,6 @@ local config = {
     man_cmd_ch = Parameter(PARAM_PREFIX .. "MAN_CMD_CH"),
     man_timeout = Parameter(PARAM_PREFIX .. "MAN_TIMEOUT"),
     alt_trig_m = Parameter(PARAM_PREFIX .. "ALT_TRIG_M"),
-    vtol_pitch = Parameter(PARAM_PREFIX .. "VTOL_PITCH"),
-    fw_pitch = Parameter(PARAM_PREFIX .. "FW_PITCH"),
     slew_rate = Parameter(PARAM_PREFIX .. "SLEW_RATE"),
     man_override = Parameter(PARAM_PREFIX .. "OVERRIDE")
 }
