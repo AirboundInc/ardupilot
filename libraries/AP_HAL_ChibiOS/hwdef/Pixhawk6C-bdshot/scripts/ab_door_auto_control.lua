@@ -14,25 +14,6 @@ local PWM_SAFE_MIN = 800
 local PWM_SAFE_MAX = 2200
 local backtransition_complete_time_ms = nil
 
--- Modes for landing
-local QMODES = {
-    [17] = true,  -- QSTABILIZE
-    [18] = true,  -- QHOVER
-    [19] = true,  -- QLOITER
-    [20] = true,  -- QLAND
-    [21] = true,  -- QRTL
-    [22] = true,  -- QAUTOTUNE
-    [23] = true,  -- QACRO
-}
-
--- Mission commands for landing phase
-local NAV_CMDS = {
-    [17] = true, -- MAV_CMD_NAV_LOITER_UNLIM
-    [19] = true, -- MAV_CMD_NAV_LOITER_TIME
-    [31] = true, -- MAV_CMD_NAV_LOITER_TO_ALT
-    [85] = true, -- MAV_CMD_NAV_VTOL_LAND
-}
-
 -- ###############################################################################
 -- # PARAMETER DEFINITIONS
 -- ###############################################################################
