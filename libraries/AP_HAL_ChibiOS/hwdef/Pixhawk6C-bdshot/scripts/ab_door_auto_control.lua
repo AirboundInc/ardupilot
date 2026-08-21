@@ -19,11 +19,11 @@ local backtransition_complete_time_ms = nil
 -- ###############################################################################
 local PARAM_TABLE_KEY = 88
 local PARAM_PREFIX = "DOOR_"
-local NUM_PARAMS = 17
+local NUM_PARAMS = 19
 assert(param:add_table(PARAM_TABLE_KEY, PARAM_PREFIX, NUM_PARAMS), "Failed to create param table")
 
 local PARAM_IDX = {
-    -- Basic control parameters (1-5)
+    -- Basic control parameters (1-3)
     MAN_CMD_CH = 1, MAN_TIMEOUT = 2, ALT_TRIG_M = 3,
     
     -- Servo 1 (6-8)
