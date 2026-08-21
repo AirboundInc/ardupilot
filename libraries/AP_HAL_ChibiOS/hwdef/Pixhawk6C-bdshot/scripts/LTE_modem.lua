@@ -314,6 +314,7 @@ local cs = {
     csq_toggle = false,
     post_reset = true,
     cipopen_preclosed = false,
+    cipmode_sent = false,
     last_sig_print_ms = nil,
     last_csq_print_ms = nil,
     last_poll_dbg_ms = nil,
@@ -623,6 +624,7 @@ local function reset_state()
     cs.step_times = {}; cs.step_timer_ms = millis():tofloat()
     cs.post_reset = true
     cs.cipopen_preclosed = false
+    cs.cipmode_sent = false
     cmux_was_set = false  -- per-attempt marker; cmux_force_disabled stays sticky
     cs.ati_dbg_ms = nil
     cs.consec_stall = 0
@@ -1770,8 +1772,17 @@ local function step_CIPMODE()
     local s = uart_read()
     if s:find('AT+CACID=0,0') then gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: network context set'); step = "NETOPEN"; return end
     if handle_error(s) then return end
-    if s:find('\r\r\nOK\r') or s:find('\r\nOK\r\n') then gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: transparent mode set'); step = "NETOPEN"; return end
+    -- Only trust a bare OK as "transparent mode set" once we've actually sent
+    -- AT+CIPMODE=1 ourselves -- otherwise a reply still in flight from an
+    -- earlier fire-and-forget command (AT+HTTPTERM in step_HTTPAUTH's SimCom
+    -- path) can arrive on this first read and get mistaken for it, skipping
+    -- the real command entirely and leaving the socket in non-transparent
+    -- mode with no error ever raised.
+    if cs.cipmode_sent and (s:find('\r\r\nOK\r') or s:find('\r\nOK\r\n')) then
+        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: transparent mode set'); step = "NETOPEN"; return
+    end
     data_send(modem.cipmode)
+    cs.cipmode_sent = true
 end
 
 local function step_NETOPEN()
@@ -2097,6 +2108,12 @@ local function run_step()
     end
     cs.reset_recorded = false
     cs.step_timer_ms = now_ms:tofloat()
+        -- Fresh entry into CIPMODE: cs.cipmode_sent gates step_CIPMODE's "OK
+        -- means transparent mode is set" check below, so a reply to some
+        -- earlier fire-and-forget command (e.g. HTTPTERM in step_HTTPAUTH)
+        -- that is still in flight can't be mistaken for the CIPMODE reply
+        -- before AT+CIPMODE=1 has actually been sent.
+        if step == "CIPMODE" then cs.cipmode_sent = false end
         
         -- Diagnostic Timing Dump
         if step == "CONNECTED" and #cs.step_times > 0 then
