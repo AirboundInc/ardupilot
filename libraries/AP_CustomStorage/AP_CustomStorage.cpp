@@ -8,10 +8,13 @@
 StorageAccess AP_CustomStorage::_storage(StorageManager::StorageCustom);
 AP_CustomStorage g_custom_storage;  // Global singleton instance
 
+AP_CustomStorage *AP_CustomStorage::_singleton;
+
 AP_CustomStorage::AP_CustomStorage()
 {
     // Safety: Clear buffer to prevent stale data leaks
     memset(_data, 0, sizeof(_data));
+    _singleton = this;
 }
 
 void AP_CustomStorage::init()
@@ -98,6 +101,56 @@ bool AP_CustomStorage::get_password(char *buf, uint8_t len) const
 
     strncpy(buf, &_data[_layout.pass_offset], _layout.pass_length);
     buf[_layout.pass_length] = '\0';
+    return true;
+}
+
+bool AP_CustomStorage::set_craft_id(const char *craft_id)
+{
+    if (!_initialized || craft_id == nullptr) {
+        return false;
+    }
+
+    if (strlen(craft_id) > _layout.craft_id_length) {
+        return false;
+    }
+
+    strncpy(&_data[_layout.craft_id_offset], craft_id, _layout.craft_id_length);
+    return save_to_flash();
+}
+
+bool AP_CustomStorage::get_craft_id(char *buf, uint8_t len) const
+{
+    if (!_initialized || buf == nullptr || len <= _layout.craft_id_length) {
+        return false;
+    }
+
+    strncpy(buf, &_data[_layout.craft_id_offset], _layout.craft_id_length);
+    buf[_layout.craft_id_length] = '\0';
+    return true;
+}
+
+bool AP_CustomStorage::set_uin(const char *uin)
+{
+    if (!_initialized || uin == nullptr) {
+        return false;
+    }
+
+    if (strlen(uin) > _layout.uin_length) {
+        return false;
+    }
+
+    strncpy(&_data[_layout.uin_offset], uin, _layout.uin_length);
+    return save_to_flash();
+}
+
+bool AP_CustomStorage::get_uin(char *buf, uint8_t len) const
+{
+    if (!_initialized || buf == nullptr || len <= _layout.uin_length) {
+        return false;
+    }
+
+    strncpy(buf, &_data[_layout.uin_offset], _layout.uin_length);
+    buf[_layout.uin_length] = '\0';
     return true;
 }
 

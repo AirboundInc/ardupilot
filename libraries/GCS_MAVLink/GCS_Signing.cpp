@@ -102,6 +102,39 @@ void GCS_MAVLINK::handle_setup_signing(const mavlink_message_t &msg) const
 
 
 /*
+  configure the signing key directly, without a SETUP_SIGNING
+  message. Used by scripting to bootstrap signing from a key
+  obtained out-of-band (e.g. over HTTPS).
+ */
+bool GCS_MAVLINK::set_signing_key(const uint8_t key[32], uint64_t initial_timestamp)
+{
+    // setting up signing key when armed generally not useful /
+    // possibly not a good idea
+    if (hal.util->get_soft_armed()) {
+        return false;
+    }
+
+    struct SigningKey skey {};
+    skey.magic = SIGNING_KEY_MAGIC;
+    skey.timestamp = initial_timestamp;
+    memcpy(skey.secret_key, key, 32);
+
+    if (!signing_key_save(skey)) {
+        return false;
+    }
+
+    // activate it immediately on all links:
+    for (uint8_t i=0; i<MAVLINK_COMM_NUM_BUFFERS; i++) {
+        GCS_MAVLINK *backend = gcs().chan(i);
+        if (backend == nullptr) {
+            break;
+        }
+        backend->load_signing_key();
+    }
+    return true;
+}
+
+/*
   callback to accept unsigned (or incorrectly signed) packets
  */
 extern "C" {

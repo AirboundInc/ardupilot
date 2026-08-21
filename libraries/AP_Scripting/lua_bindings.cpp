@@ -10,6 +10,8 @@
 #endif
 #include <AP_Logger/AP_Logger.h>
 #include <AP_Filesystem/AP_Filesystem.h>
+#include <GCS_MAVLink/GCS_MAVLink.h>
+#include <AP_CustomStorage/AP_CustomStorage.h>
 
 #include "lua_bindings.h"
 
@@ -21,6 +23,7 @@
 #include <string.h>
 
 #include "lua/src/lauxlib.h"
+
 
 extern const AP_HAL::HAL& hal;
 
@@ -1243,6 +1246,128 @@ int lua_GCS_command_int(lua_State *L)
 
     return 1;
 }
+
+/*
+  implement gcs:set_signing_key(key, initial_timestamp) to configure
+  MAVLink2 signing from a key obtained by the script out-of-band
+ */
+int lua_gcs_set_signing_key(lua_State *L)
+{
+    GCS *_gcs = check_GCS(L);
+    binding_argcheck(L, 3);
+
+    size_t key_len;
+    const char *key = luaL_checklstring(L, 2, &key_len);
+    if (key_len != 32) {
+        return luaL_error(L, "signing key must be 32 bytes");
+    }
+
+    const uint64_t initial_timestamp = *check_uint64_t(L, 3);
+
+    const bool ok = _gcs->set_signing_key((const uint8_t *)key, initial_timestamp);
+
+    lua_pushboolean(L, ok);
+
+    return 1;
+}
+
+/*
+  implement gcs:set_sysid(sysid) to update the live outgoing MAVLink
+  system id. Setting the SYSID_THISMAV parameter alone does not do this:
+  mavlink_system.sysid is latched from it once at boot and never re-read
+  afterward, so a script-time param change would silently have no effect
+  on already-running telemetry.
+ */
+int lua_gcs_set_sysid(lua_State *L)
+{
+    check_GCS(L);
+    binding_argcheck(L, 2);
+
+    const uint8_t sysid = get_uint8_t(L, 2);
+
+    if (hal.util->get_soft_armed()) {
+        lua_pushboolean(L, false);
+        return 1;
+    }
+
+    mavlink_system.sysid = sysid;
+
+    lua_pushboolean(L, true);
+
+    return 1;
+}
+#endif
+
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+/*
+  implement custom_storage:get_uuid() -- returns the stored UUID string,
+  or nil if custom storage isn't initialized / nothing has been stored yet.
+ */
+int lua_custom_storage_get_uuid(lua_State *L)
+{
+    binding_argcheck(L, 1);
+
+    AP_CustomStorage *storage = AP_CustomStorage::get_singleton();
+    if (storage == nullptr) {
+        return 0;
+    }
+
+    char buf[CUSTOM_PARAM_UUID_LEN + 1];
+    if (!storage->get_uuid(buf, sizeof(buf))) {
+        return 0;
+    }
+
+    lua_pushstring(L, buf);
+
+    return 1;
+}
+
+/*
+  implement custom_storage:get_password() -- returns the stored password
+  string, or nil if custom storage isn't initialized / nothing stored yet.
+ */
+int lua_custom_storage_get_password(lua_State *L)
+{
+    binding_argcheck(L, 1);
+
+    AP_CustomStorage *storage = AP_CustomStorage::get_singleton();
+    if (storage == nullptr) {
+        return 0;
+    }
+
+    char buf[CUSTOM_PARAM_PASS_LEN + 1];
+    if (!storage->get_password(buf, sizeof(buf))) {
+        return 0;
+    }
+
+    lua_pushstring(L, buf);
+
+    return 1;
+}
+
+/*
+  implement custom_storage:get_craft_id() -- returns the stored craft ID
+  string (e.g. "AA-TRT-00659"), or nil if custom storage isn't initialized
+  / nothing has been stored yet.
+ */
+int lua_custom_storage_get_craft_id(lua_State *L)
+{
+    binding_argcheck(L, 1);
+
+    AP_CustomStorage *storage = AP_CustomStorage::get_singleton();
+    if (storage == nullptr) {
+        return 0;
+    }
+
+    char buf[CUSTOM_PARAM_CRAFT_ID_LEN + 1];
+    if (!storage->get_craft_id(buf, sizeof(buf))) {
+        return 0;
+    }
+
+    lua_pushstring(L, buf);
+
+    return 1;
+}
 #endif
 
 #if HAL_ENABLE_DRONECAN_DRIVERS
@@ -1274,5 +1399,108 @@ int lua_DroneCAN_get_FlexDebug(lua_State *L)
     return 2;
 }
 #endif // HAL_ENABLE_DRONECAN_DRIVERS
+#if APM_BUILD_TYPE(APM_BUILD_ArduPlane) && HAL_QUADPLANE_ENABLED
+#include "../ArduPlane/quadplane.h"
+#include <AC_PID/AP_PIDInfo.h>
+int lua_get_rate_pid_info(lua_State *L) {
+    binding_argcheck(L, 1);
+
+    const uint8_t axis = get_uint8_t(L, 1);  // 0=roll, 1=pitch, 2=yaw
+
+    auto *qp = QuadPlane::get_singleton();
+    if (qp == nullptr) {
+        return luaL_error(L, "QuadPlane not available");
+    }
+    auto *att = qp->get_attitude_control();
+    if (att == nullptr) {
+        return luaL_error(L, "attitude_control not available");
+    }
+
+    const AP_PIDInfo *info = nullptr;
+    switch (axis) {
+        case 0: info = &att->get_rate_roll_pid().get_pid_info();  break;
+        case 1: info = &att->get_rate_pitch_pid().get_pid_info(); break;
+        case 2: info = &att->get_rate_yaw_pid().get_pid_info();   break;
+        default: return luaL_error(L, "axis must be 0=roll 1=pitch 2=yaw");
+    }
+
+    lua_newtable(L);
+    lua_pushnumber(L, info->P);      lua_setfield(L, -2, "P");
+    lua_pushnumber(L, info->I);      lua_setfield(L, -2, "I");
+    lua_pushnumber(L, info->D);      lua_setfield(L, -2, "D");
+    lua_pushnumber(L, info->FF);     lua_setfield(L, -2, "FF");
+    lua_pushnumber(L, info->target); lua_setfield(L, -2, "target");
+    lua_pushnumber(L, info->actual); lua_setfield(L, -2, "actual");
+    lua_pushnumber(L, info->error);  lua_setfield(L, -2, "error");
+
+    return 1;
+}
+
+int lua_get_att_target_euler_cd(lua_State *L) {
+    binding_argcheck(L, 0);
+
+    auto *qp = QuadPlane::get_singleton();
+    if (qp == nullptr) {
+        return luaL_error(L, "QuadPlane not available");
+    }
+    auto *att = qp->get_attitude_control();
+    if (att == nullptr) {
+        return luaL_error(L, "attitude_control not available");
+    }
+
+    const Vector3f target = att->get_att_target_euler_cd();
+
+    lua_newtable(L);
+    lua_pushnumber(L, target.x); lua_setfield(L, -2, "roll_cd");
+    lua_pushnumber(L, target.y); lua_setfield(L, -2, "pitch_cd");
+    lua_pushnumber(L, target.z); lua_setfield(L, -2, "yaw_cd");
+
+    return 1;
+}
+
+int lua_get_rate_ef_targets(lua_State *L) {
+    binding_argcheck(L, 0);
+
+    auto *qp = QuadPlane::get_singleton();
+    if (qp == nullptr) {
+        return luaL_error(L, "QuadPlane not available");
+    }
+    auto *att = qp->get_attitude_control();
+    if (att == nullptr) {
+        return luaL_error(L, "attitude_control not available");
+    }
+
+    const Vector3f &rates = att->get_rate_ef_targets();
+
+    lua_newtable(L);
+    lua_pushnumber(L, degrees(rates.x)); lua_setfield(L, -2, "roll_dps");
+    lua_pushnumber(L, degrees(rates.y)); lua_setfield(L, -2, "pitch_dps");
+    lua_pushnumber(L, degrees(rates.z)); lua_setfield(L, -2, "yaw_dps");
+
+    return 1;
+}
+
+int lua_get_actual_euler_cd(lua_State *L) {
+    binding_argcheck(L, 0);
+    auto *qp = QuadPlane::get_singleton();
+    if (qp == nullptr) {
+        return luaL_error(L, "QuadPlane not available");
+    }
+    auto *view = qp->get_ahrs_view();
+    if (view == nullptr) {
+        return luaL_error(L, "ahrs_view not available");
+    }
+
+    float roll_cd  = (float)view->roll_sensor;
+    float pitch_cd = (float)view->pitch_sensor;
+    float yaw_cd   = (float)view->yaw_sensor;
+
+    lua_newtable(L);
+    lua_pushstring(L, "roll_cd");  lua_pushnumber(L, roll_cd);  lua_settable(L, -3);
+    lua_pushstring(L, "pitch_cd"); lua_pushnumber(L, pitch_cd); lua_settable(L, -3);
+    lua_pushstring(L, "yaw_cd");   lua_pushnumber(L, yaw_cd);   lua_settable(L, -3);
+    return 1;
+}
+#endif
 
 #endif  // AP_SCRIPTING_ENABLED

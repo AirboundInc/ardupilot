@@ -308,6 +308,14 @@ bool AP_Arming_Plane::arm(const AP_Arming::Method method, const bool do_arming_c
         return false;
     }
 
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+    plane.arming_time_boot_us = AP_HAL::micros64();
+    plane.takeoff_time_boot_us = 0;
+    plane.landing_time_boot_us = 0;
+    plane.disarm_time_boot_us = 0;
+    plane.has_taken_off = false;
+#endif
+
     if (plane.update_home()) {
         // after update_home the home position could still be
         // different from the current_loc if the EKF refused the
@@ -355,6 +363,13 @@ bool AP_Arming_Plane::disarm(const AP_Arming::Method method, bool do_disarm_chec
     if (!AP_Arming::disarm(method, do_disarm_checks)) {
         return false;
     }
+
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+    plane.disarm_time_boot_us = AP_HAL::micros64();
+    plane.has_taken_off = false;
+    gcs().send_message(MSG_AIRBOUND_FLIGHT_INFORMATION);
+#endif
+
     if (plane.control_mode != &plane.mode_auto) {
         // reset the mission on disarm if we are not in auto
         plane.mission.reset();

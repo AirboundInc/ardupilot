@@ -9,6 +9,8 @@
 #define DATA_BUFFER_SIZE 127           ///< Size of data buffer (excluding null terminator)
 #define CUSTOM_PARAM_UUID_LEN 36       ///< Standard UUID string length (36 chars for "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
 #define CUSTOM_PARAM_PASS_LEN 32       ///< Maximum allowed password length
+#define CUSTOM_PARAM_CRAFT_ID_LEN 16   ///< Maximum allowed craft ID length (e.g. "AA-TRT-101")
+#define CUSTOM_PARAM_UIN_LEN 20        ///< Maximum allowed UIN length (fits remaining space in the 128-byte block)
 #define CUSTOM_PARAM_DATA_SIZE 128     ///< Total allocated storage size in bytes
 
 /**
@@ -18,12 +20,16 @@
  * Provides persistent storage for custom parameters including:
  * - UUID (Universally Unique Identifier)
  * - Password/authentication tokens
+ * - Craft ID (e.g. "AA-TRT-101")
+ * - UIN (Unique Identification Number)
  *
  * Data is stored in flash memory with a header structure for validation.
  */
 class AP_CustomStorage {
 public:
     AP_CustomStorage();
+
+    static AP_CustomStorage *get_singleton() { return _singleton; }
 
     bool _initialized = false;  ///< Tracks whether storage system has been initialized
 
@@ -73,7 +79,39 @@ public:
      */
     bool get_password(char *buf, uint8_t len) const;
 
+    /**
+     * @brief Store a craft ID string
+     * @param craft_id Null-terminated craft ID string (must be 16 chars or less)
+     * @return true if successful, false on error
+     */
+    bool set_craft_id(const char *craft_id);
+
+    /**
+     * @brief Retrieve stored craft ID
+     * @param buf Buffer to receive craft ID string
+     * @param len Length of provided buffer (must be > CUSTOM_PARAM_CRAFT_ID_LEN)
+     * @return true if successful, false on error
+     */
+    bool get_craft_id(char *buf, uint8_t len) const;
+
+    /**
+     * @brief Store a UIN string
+     * @param uin Null-terminated UIN string (must be 20 chars or less)
+     * @return true if successful, false on error
+     */
+    bool set_uin(const char *uin);
+
+    /**
+     * @brief Retrieve stored UIN
+     * @param buf Buffer to receive UIN string
+     * @param len Length of provided buffer (must be > CUSTOM_PARAM_UIN_LEN)
+     * @return true if successful, false on error
+     */
+    bool get_uin(char *buf, uint8_t len) const;
+
 private:
+    static AP_CustomStorage *_singleton;
+
     static StorageAccess _storage;  ///< Storage manager interface
     char _data[DATA_BUFFER_SIZE + 1];  ///< Data buffer (+1 for null terminator)
 
@@ -104,6 +142,10 @@ private:
         const uint8_t uuid_length = CUSTOM_PARAM_UUID_LEN;  ///< Allocated UUID storage length
         const uint8_t pass_offset = CUSTOM_PARAM_UUID_LEN + HEADER_SIZE;  ///< Password storage offset
         const uint8_t pass_length = CUSTOM_PARAM_PASS_LEN;  ///< Allocated password storage length
+        const uint8_t craft_id_offset = CUSTOM_PARAM_UUID_LEN + CUSTOM_PARAM_PASS_LEN + HEADER_SIZE;  ///< Craft ID storage offset
+        const uint8_t craft_id_length = CUSTOM_PARAM_CRAFT_ID_LEN;  ///< Allocated craft ID storage length
+        const uint8_t uin_offset = CUSTOM_PARAM_UUID_LEN + CUSTOM_PARAM_PASS_LEN + CUSTOM_PARAM_CRAFT_ID_LEN + HEADER_SIZE;  ///< UIN storage offset
+        const uint8_t uin_length = CUSTOM_PARAM_UIN_LEN;  ///< Allocated UIN storage length
     } _layout;
 
     /**

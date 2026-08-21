@@ -1156,6 +1156,9 @@ ap_message GCS_MAVLINK::mavlink_id_to_ap_message_id(const uint32_t mavlink_id) c
 #if AP_AIRSPEED_ENABLED
         { MAVLINK_MSG_ID_AIRSPEED, MSG_AIRSPEED},
 #endif
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+        { MAVLINK_MSG_ID_AIRBOUND_FLIGHT_INFORMATION, MSG_AIRBOUND_FLIGHT_INFORMATION},
+#endif
             };
 
     for (uint8_t i=0; i<ARRAY_SIZE(map); i++) {
@@ -5819,6 +5822,22 @@ void GCS_MAVLINK::send_extended_sys_state() const
     mavlink_msg_extended_sys_state_send(chan, vtol_state(), landed_state());
 }
 
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+void GCS_MAVLINK::send_airbound_flight_information()
+{
+    const AP_RTC &rtc = AP::rtc();
+
+    mavlink_msg_airbound_flight_information_send(
+        chan,
+        AP_HAL::millis(),
+        rtc.boot_us_to_utc_us(arming_time_boot_us()),
+        rtc.boot_us_to_utc_us(takeoff_time_boot_us()),
+        rtc.boot_us_to_utc_us(landing_time_boot_us()),
+        rtc.boot_us_to_utc_us(disarm_time_boot_us()),
+        flight_time_ms());
+}
+#endif  // AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+
 void GCS_MAVLINK::send_attitude() const
 {
 #if AP_AHRS_ENABLED
@@ -6401,6 +6420,13 @@ bool GCS_MAVLINK::try_send_message(const enum ap_message id)
         CHECK_PAYLOAD_SIZE(EXTENDED_SYS_STATE);
         send_extended_sys_state();
         break;
+
+#if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
+    case MSG_AIRBOUND_FLIGHT_INFORMATION:
+        CHECK_PAYLOAD_SIZE(AIRBOUND_FLIGHT_INFORMATION);
+        send_airbound_flight_information();
+        break;
+#endif
 
 #if AP_AHRS_ENABLED
     case MSG_VFR_HUD:
