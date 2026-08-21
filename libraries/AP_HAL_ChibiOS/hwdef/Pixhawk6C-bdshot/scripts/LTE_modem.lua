@@ -44,14 +44,104 @@ local P = {
     BAUD        = bind_add_param('BAUD',  9, 115200),
     TIMEOUT     = bind_add_param('TIMEOUT', 10, 30),
     PROTOCOL    = bind_add_param('PROTOCOL', 11, 2),
-    OPTIONS     = bind_add_param('OPTIONS', 12, 3),
+    OPTIONS     = bind_add_param('OPTIONS', 12, 2),
     IBAUD       = bind_add_param('IBAUD', 13, 115200),
     MCCMNC      = bind_add_param('MCCMNC', 14, -1),
     TX_RATE     = bind_add_param('TX_RATE',  20, 0),
     BAND        = bind_add_param('BAND', 21, -1),
-    GRACE       = bind_add_param('GRACE', 22, 3),    
-    STUCK_T     = bind_add_param('STUCK_T', 23, 15)  
+    GRACE       = bind_add_param('GRACE', 22, 3), 
+    STUCK_T     = bind_add_param('STUCK_T', 23, 15),
+    TX_DEAD     = bind_add_param('TX_DEAD', 24, 5),   -- consecutive QISEND stalls before declaring socket dead (0=disable)
+    SOCK_T      = bind_add_param('SOCK_T', 25, 4),     -- short timeout (s) for DP recovery steps before hard reset
+    HTTPAUTH    = bind_add_param('HTTPAUTH', 26, 1),   -- 1 = fetch server IP/port via HTTPS first.
+                                                        -- Runs with full server-cert verification
+                                                        -- (seclevel/authmode=1, see quectel_http/
+                                                        -- simcom_http below): the CA cert is uploaded
+                                                        -- to the modem automatically (once per aircraft,
+                                                        -- CERT_LIST/SC_CERT_LIST check before uploading)
+                                                        -- before every HTTPAUTH attempt. Bench-verified
+                                                        -- 2026-08-17 on EC200U and SIM7600 -- see
+                                                        -- LTE_modem_TLS_CERT_SETUP.md for the full log.
+                                                        -- EC25/EC20/BG95/EG800Q untested on this flow.
+    AUTHSYS     = bind_add_param('AUTHSYS', 27, 1),    -- 1 = apply sysId from the HTTPAUTH response
+                                                        -- (also updates SYSID_THISMAV live). NOTE:
+                                                        -- mavlink_system.sysid is a single global
+                                                        -- shared by EVERY link (USB included) --
+                                                        -- changing it mid-session disconnects any
+                                                        -- other GCS already attached under the old id.
+    AUTHKEY     = bind_add_param('AUTHKEY', 28, 1)     -- 1 = self-apply the mavlinkSigningKey from the
+                                                        -- HTTPAUTH response via gcs:set_signing_key().
+                                                        -- 0 (default) = ignore it entirely. The key is
+                                                        -- deliberately never printed/logged (it would
+                                                        -- defeat MAVLink signing to broadcast the secret
+                                                        -- in plaintext over the same link signing is meant
+                                                        -- to protect) -- enabling this makes the vehicle
+                                                        -- start rejecting unsigned commands with nothing on
+                                                        -- the GCS able to sign them unless it's provisioned
+                                                        -- with the same key through some other channel.
 }
+
+-- ---- HTTPS auth endpoint (returns the data-server IP/port) ---------------
+-- NOTE: these sit in cleartext on the SD card. Anyone with the card reads them.
+local AUTH_URL             = "https://poc.rudra.airbound.com/api/v1/users/aircraft-login"
+local AUTH_EVERY_RECONNECT = false   -- false = fetch once/session, cache until hard reset
+
+-- ISRG Root X1 (Let's Encrypt) -- anchors the cert chain poc.rudra.airbound.com
+-- presents (leaf -> YE1 intermediate -> Root YE -> ISRG Root X2 -> this root).
+-- Trusting the root instead of the leaf/intermediate survives LE's periodic
+-- intermediate rotation. Bench-verified 2026-08-17 against the live endpoint
+-- on both EC200U (AT+QFUPL, CRC 4f64) and SIM7600 (AT+CCERTDOWN):
+-- SHA-256 96:BC:EC:06:26:49:76:F3:74:60:77:9A:CF:28:C5:A7:CF:E8:A3:C0:AA:E1:1A:8F:FC:EE:05:C0:BD:DF:08:C6
+-- valid 2015-06-04 to 2035-06-04. Source: https://letsencrypt.org/certs/isrgrootx1.pem
+-- If poc.rudra.airbound.com ever moves off this root (a different issuer, not
+-- just a new LE intermediate), every provisioned modem needs this updated.
+local CA_CERT_FILENAME = "isrgrootx1.pem"
+local CA_CERT_PEM = table.concat({
+    "-----BEGIN CERTIFICATE-----",
+    "MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw",
+    "TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh",
+    "cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4",
+    "WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJu",
+    "ZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBY",
+    "MTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJHP0FDfzm54rVygc",
+    "h77ct984kIxuPOZXoHj3dcKi/vVqbvYATyjb3miGbESTtrFj/RQSa78f0uoxmyF+",
+    "0TM8ukj13Xnfs7j/EvEhmkvBioZxaUpmZmyPfjxwv60pIgbz5MDmgK7iS4+3mX6U",
+    "A5/TR5d8mUgjU+g4rk8Kb4Mu0UlXjIB0ttov0DiNewNwIRt18jA8+o+u3dpjq+sW",
+    "T8KOEUt+zwvo/7V3LvSye0rgTBIlDHCNAymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qyH",
+    "B5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ4Q7e2RCOFvu396j3x+UC",
+    "B5iPNgiV5+I3lg02dZ77DnKxHZu8A/lJBdiB3QW0KtZB6awBdpUKD9jf1b0SHzUv",
+    "KBds0pjBqAlkd25HN7rOrFleaJ1/ctaJxQZBKT5ZPt0m9STJEadao0xAH0ahmbWn",
+    "OlFuhjuefXKnEgV4We0+UXgVCwOPjdAvBbI+e0ocS3MFEvzG6uBQE3xDk3SzynTn",
+    "jh8BCNAw1FtxNrQHusEwMFxIt4I7mKZ9YIqioymCzLq9gwQbooMDQaHWBfEbwrbw",
+    "qHyGO0aoSCqI3Haadr8faqU9GY/rOPNk3sgrDQoo//fb4hVC1CLQJ13hef4Y53CI",
+    "rU7m2Ys6xt0nUW7/vGT1M0NPAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNV",
+    "HRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY9umbbjANBgkq",
+    "hkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL",
+    "ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ",
+    "3BebYhtF8GaV0nxvwuo77x/Py9auJ/GpsMiu/X1+mvoiBOv/2X/qkSsisRcOj/KK",
+    "NFtY2PwByVS5uCbMiogziUwthDyC3+6WVwW6LLv3xLfHTjuCvjHIInNzktHCgKQ5",
+    "ORAzI4JMPJ+GslWYHb4phowim57iaztXOoJwTdwJx4nLCgdNbOhdjsnvzqvHu7Ur",
+    "TkXWStAmzOVyyghqpZXjFaH3pO3JLF+l+/+sKAIuvtd7u+Nxe5AW0wdeRlN8NwdC",
+    "jNPElpzVmbUq4JUagEiuTDkHzsxHpFKVK7q4+63SM1N95R1NbdWhscdCb+ZAJzVc",
+    "oyi3B43njTOQ5yOf+1CceWxG1bQVs5ZufpsMljq4Ui0/1lvh+wjChP4kqKOJ2qxq",
+    "4RgqsahDYVvTH9w7jXbyLeiNdd8XM2w9U/t7y0Ff/9yi0GE44Za4rF2LN9d11TPA",
+    "mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d",
+    "emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=",
+    "-----END CERTIFICATE-----",
+}, "\n") .. "\n"
+
+-- Builds the login body from custom storage's per-aircraft craft ID/password
+-- (custom_storage is only present on boards built with AP_ENABLE_CUSTOM_STORAGE).
+-- Craft ID is written directly onto each board, format "AA-TRT-00659".
+-- Returns nil if custom_storage isn't present or nothing has been
+-- provisioned yet -- there is no fallback; step_HTTPAUTH halts in that case.
+local function build_auth_body()
+    if not custom_storage then return nil end
+    local aircraft_id = custom_storage:get_craft_id()
+    local password = custom_storage:get_password()
+    if not (aircraft_id and password) then return nil end
+    return string.format('aircraftId=%s&password=%s', aircraft_id, password)
+end
 
 local supports_routing = networking and networking.add_route -- luacheck: ignore 143
 local P_ROUTE = {}
@@ -63,7 +153,7 @@ if supports_routing then
     P_ROUTE.MASK = bind_add_param('ROUTE_MASK',  19, 32)
 end
 
-local OPT = { LOGALL = (1<<0), SIGNALS = (1<<1), NOMUX = (1<<2), NOSIGQUERY = (1<<3), TCP = (1<<4) }
+local OPT = { LOGALL=(1<<0), SIGNALS=(1<<1), NOMUX=(1<<2), NOSIGQUERY=(1<<3), TCP=(1<<4), DPUSH=(1<<5) }
 
 local modem_list = {
     ["SimCom"] = { banner = 'SIMCOM', cmux = 'AT+CMUX=0\r\n', setbaud = 'AT+IPR=%u\r\n', pppopen = 'ATD*99#\r', cpin = 'AT+CPIN?\r\n', cpsi = 'AT+CPSI?\r\n', reset = 'AT+CFUN=1,1\r\n', cipmode = 'AT+CIPMODE=1\r\n', cipopen_udp = 'AT+CIPOPEN=0,"UDP","%d.%d.%d.%d",%d,6001\r\n', cipopen_tcp = 'AT+CIPOPEN=0,"TCP","%d.%d.%d.%d",%d\r\n', cipclose = 'AT+CIPCLOSE=0\r\n', cgerep = 'AT+CGEREP=1,1\r\n', netopen = 'AT+NETOPEN\r\n', mccmnc = 'AT+COPS=1,2,"%u"\r\n', setband_mask = 'AT+CNBP=,0x%x\r\n', setband_all = 'AT+CNBP=,0x480000000000000000000000000000000000000000000042000007FFFFDF3FFF\r\n', config_extra = 'ATH\r\n', fast_connect = true, sim_probe = 'AT+CICCID\r\n', csq_gate = 'AT+CPSI?\r\n', socket_state = 'AT+CIPOPEN?\r\n' },
@@ -73,8 +163,80 @@ local modem_list = {
     ["BG95"] = { banner = 'BG95', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,0x%x\r\n', setband_all = 'AT+QCFG="band",0,0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' },
     ["EG800Q"] = { banner = 'EG800Q', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,0x%x\r\n', setband_all = 'AT+QCFG="band",0,0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' },
     ["EC20"] = { banner = 'EC20C', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,%x,0\r\n', setband_all  = 'AT+QCFG="band",0,7FFFFFFFFFFFFFFF,0\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' },
-    ["EC25"] = { banner = 'EC25', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', preflight = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,%x,0\r\n', setband_all = 'AT+QCFG="band",bff,00b0e18df,0\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' }
+    ["EC25"] = { banner = 'EC25', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', preflight = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,%x,0\r\n', setband_all = 'AT+QCFG="band",bff,00b0e18df,0\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' , cipopen_udp_dp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,1\r\n',cipopen_tcp_dp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,1\r\n',qisend = 'AT+QISEND=0,%d\r\n', qcsq_enable = 'AT+QCSQ=1\r\n', }
 }
+
+local quectel_http = {
+    -- Bench-verified 2026-08-17 on EC200U (EC200UCNAAR03A15M08, UNISOC platform).
+    -- NOT yet re-proven on EC25/EC20/BG95/EG800Q (Qualcomm-dialect Quectel
+    -- firmware) -- that log's own +CME ERROR: 58 responses came from applying
+    -- EC25-shaped syntax to this UNISOC module, so treat this whole table as
+    -- EC200-confirmed only until someone bench-tests the others.
+    cert_filename = CA_CERT_FILENAME,
+    cert_list     = 'AT+QFLST="*"\r\n',                          -- NOTE: "UFS:*" is rejected (+CME ERROR: 58); bare "*" works
+    cert_upload   = 'AT+QFUPL="' .. CA_CERT_FILENAME .. '",%d,300\r\n',  -- <size>,<timeout_s>; the 4-arg form with an
+                                                                          -- ackflag errors (+CME ERROR: 58) on this firmware
+    cfg = {
+        'AT+QHTTPCFG="contextid",1\r\n',
+        'AT+QHTTPCFG="responseheader",0\r\n',
+        'AT+QHTTPCFG="contenttype",0\r\n',          -- 0 = x-www-form-urlencoded. Must be 0 -- the auth body is
+                                                     -- form-encoded; omitting this line entirely (as before) left
+                                                     -- it at the firmware default, which is not form-urlencoded.
+        'AT+QHTTPCFG="sslctxid",1\r\n',            -- HTTPS: bind SSL context 1
+        'AT+QSSLCFG="sslversion",1,4\r\n',         -- 4 = all TLS versions
+        'AT+QSSLCFG="ciphersuite",1,0XFFFF\r\n',   -- allow all suites
+        'AT+QSSLCFG="sni",1,1\r\n',                -- required: endpoint is SNI-virtual-hosted: without this the
+                                                     -- wrong cert can be served and hostname validation fails
+    },
+    -- cacert/seclevel are pulled out of the tolerant cfg array above and sent
+    -- as their own hard-fail steps (see the CACERT/SECLEVEL states): these
+    -- two are what actually bind and enforce certificate verification, so an
+    -- ERROR here must halt HTTPAUTH rather than silently continuing on a
+    -- connection that isn't actually verified.
+    -- NOTE: input path only -- QSSLCFG/QFUPL reject a "UFS:" prefix on the
+    -- filename (+CME ERROR: 58) even though QFLST echoes "UFS:<name>" in
+    -- its own output. Always pass the bare filename here.
+    cacert    = 'AT+QSSLCFG="cacert",1,"' .. CA_CERT_FILENAME .. '"\r\n',  -- must be uploaded first (see cert_list/
+                                                                            -- cert_upload above) or seclevel below
+                                                                            -- fails every handshake
+    seclevel  = 'AT+QSSLCFG="seclevel",1,1\r\n',  -- 1 = verify server cert (0 = no verification, 2 = mutual TLS)
+    act  = 'AT+QIACT=1\r\n',            -- activate PDP context (ERROR usually = already active = OK)
+    url  = 'AT+QHTTPURL=%d,30\r\n',     -- <url_len>,<timeout_s>
+    post = 'AT+QHTTPPOST=%d,80,80\r\n', -- <body_len>,<input_time>,<rsp_time>
+    read = 'AT+QHTTPREAD=80\r\n',
+}
+for _, m in ipairs({"EC25","EC20","EC200","BG95","EG800Q"}) do
+    if modem_list[m] then modem_list[m].http = quectel_http end
+end
+
+-- SIM7500/SIM7600-family HTTP(S) Application AT commands. Unlike Quectel's
+-- QHTTPURL (which needs the URL length uploaded separately), SimCom takes
+-- the URL as a quoted AT+HTTPPARA string, so it's baked in here directly
+-- rather than formatted at send time.
+local simcom_http = {
+    -- Bench-verified 2026-08-17 on SIMCOM_SIM7600G-H, firmware SIM7600G_V2.0.2.
+    style   = "simcom",
+    cert_filename = CA_CERT_FILENAME,
+    cert_list     = 'AT+CCERTLIST\r\n',                            -- bare OK on upload, so this listing (not a CRC)
+                                                                     -- is the only "is it actually there" check available
+    cert_upload   = 'AT+CCERTDOWN="' .. CA_CERT_FILENAME .. '",%d\r\n',  -- <size>; prompt is a bare ">" (not "CONNECT")
+    init    = 'AT+HTTPINIT\r\n',
+    cid     = 'AT+HTTPPARA="CID",1\r\n',
+    cacert  = 'AT+CSSLCFG="cacert",0,"' .. CA_CERT_FILENAME .. '"\r\n',  -- context 0 = the default HTTP(S) app context;
+                                                                          -- must be sent (and OK'd) before authmode below
+    ssl     = 'AT+CSSLCFG="authmode",0,1\r\n',  -- 1 = verify server cert. NOTE: cacert without authmode=1 is a silent
+                                                 -- no-op -- the CA loads but is never consulted. authmode is what
+                                                 -- actually turns verification on. Both SSL-context settings above
+                                                 -- (CA cert bound above, this authmode) are cleared by AT+CRESET,
+                                                 -- unlike the cert file itself which survives it.
+    url     = 'AT+HTTPPARA="URL","' .. AUTH_URL .. '"\r\n',
+    content = 'AT+HTTPPARA="CONTENT","application/x-www-form-urlencoded"\r\n',
+    data    = 'AT+HTTPDATA=%d,10000\r\n',  -- <body_len>,<upload_timeout_ms>
+    action  = 'AT+HTTPACTION=1\r\n',       -- 1 = POST
+    read    = 'AT+HTTPREAD=0,%d\r\n',      -- <start>,<byte_count>
+    term    = 'AT+HTTPTERM\r\n',
+}
+if modem_list["SimCom"] then modem_list["SimCom"].http = simcom_http end
 
 local default_modem = { reset = 'AT+CFUN=1,1\r\r' }
 local modem = default_modem
@@ -102,7 +264,27 @@ local stats = { bytes_in = 0, bytes_out = 0 }
 
 uart:begin(P.IBAUD:get())
 
-local log_file = io.open('LTE_modem.log', 'w')
+local function next_log_filename()
+    local idx = 0
+    local f = io.open('LTE_log_idx.txt', 'r')
+    if f then
+        local line = f:read('*l')
+        f:close()
+        idx = tonumber(line) or 0
+    end
+    idx = idx + 1
+
+    local fw = io.open('LTE_log_idx.txt', 'w')
+    if fw then
+        fw:write(tostring(idx))
+        fw:close()
+    end
+
+    return string.format('LTE_modem_%04d.log', idx)
+end
+
+local log_file = io.open(next_log_filename(), 'w')
+
 local function log_data(s, marker)
     if s and #s > 0 and log_file then
         log_file:write(marker .. '[' .. s .. ']\n')
@@ -127,10 +309,36 @@ local cs = {
     last_route_ms = uint32_t(0),
     last_send_data_ms = uint32_t(0),
     sim_probe_count = 0,
+    sim_missing_count = 0,
     cpin_probe_n = 0,
     csq_toggle = false,
     post_reset = true,
-    cipopen_preclosed = false
+    cipopen_preclosed = false,
+    cipmode_sent = false,
+    last_sig_print_ms = nil,
+    last_csq_print_ms = nil,
+    last_poll_dbg_ms = nil,
+    last_parse_dbg_ms = nil,
+    direct_push = false,
+    qcsq_armed = false,
+    rx_need = 0,            -- bytes left to consume in current +QIURC recv block
+    tx_state = "idle",      -- idle | prompt | sendok
+    tx_pending = "",
+    tx_ms = 0,
+    consec_stall = 0,       -- consecutive QISEND stalls with no SEND OK between
+    dp_closed = false,
+    recv_nolen_warned = false,
+    ati_dbg_ms = nil,
+    dbg_qisend = 0, 
+    dbg_prompt = 0, 
+    dbg_sendok = 0, 
+    dbg_stall = 0,
+    dbg_recv = 0,
+    last_tx_dbg_ms = nil,
+    auth_ip = nil, auth_port = nil,
+    http_sub = nil, http_cfg_i = 0, http_buf = "", http_deadline = 0,
+    auth_done = false,
+    creg_search_ms = nil
 }
 
 local function uart_read()
@@ -142,7 +350,7 @@ local function uart_read()
     return s
 end
 
-local buf = { uart = "", modem = "", fc = "", parse = "", setup = "" }
+local buf = { uart="", modem="", fc="", parse="", setup="", at_scan="", dp="" }
 
 local function uart_write_pending()
     if #buf.uart > 0 then
@@ -198,22 +406,112 @@ function cmux.encode_cmux_frame(dlc, dtype, data)
     local addr = string.char((dlc << 2) | cmux.EA | cmux.CR_SEND)
     local ctrl = string.char(dtype | 0x10)
     local len = #data
-    local len_byte = string.char((len << 1) | cmux.EA)
-    local header = addr .. ctrl .. len_byte
+    local len_field
+    if len <= 127 then
+        len_field = string.char((len << 1) | cmux.EA)
+    else
+        -- GSM 07.10 extended (2-octet) length: L1 has EA=0 and carries the
+        -- low 7 bits, L2 carries the remaining high bits. Needed for any
+        -- payload over the single-octet cap of 127 bytes -- e.g. uploading
+        -- the ~1.7KB CA cert PEM over CMUX during HTTPAUTH.
+        len_field = string.char((len & 0x7f) << 1) .. string.char((len >> 7) & 0xff)
+    end
+    local header = addr .. ctrl .. len_field
     local fcs = string.char(fcs_calc(header))
     return string.char(cmux.FLAG) .. header .. data .. fcs .. string.char(cmux.FLAG)
 end
 
 local found_cmux = false
+-- Session-sticky flag set when CMUX is known broken on the current modem.
+-- Cleared only on full Lua script reload (e.g. on Pixhawk reboot).
+-- Set by either:
+--   (a) firmware revision auto-detect at modem identification time, OR
+--   (b) CPIN failure 5x after CMUX was supposedly set up (broken firmware
+--       that accepted AT+CMUX=0 but never opened DLC channels)
+local cmux_force_disabled = false
+-- Per-attempt marker: true once step_CMUX successfully transitions to BAUD.
+-- If CPIN later fails 5 probes while this is true, we conclude CMUX setup
+-- was a lie and trigger the (b) fallback above.
+local cmux_was_set = false
+-- Stores the firmware revision string (e.g. "EC25EFAR08A07M4G") once detected.
+-- Used for diagnostics and firmware-based CMUX auto-disable.
+local modem_revision = ""
+
+-- Known-broken firmware revision patterns. If the modem reports a revision
+-- matching any of these substrings, we skip CMUX entirely (saves the
+-- ~25 second broken-CMUX recovery cycle on every boot).
+-- Add more patterns here as Quectel ships new broken revisions.
+local BROKEN_CMUX_REVISIONS = {
+    "EC25EFAR08A07M4G",   -- confirmed broken; SABM frames silently ignored
+    "EC25EFAR02A08M4G",  -- confirmed broken; SABM frames silently ignored
+    -- "EC25EFAR08A08M4G", -- add future broken revisions here
+}
+
+local function is_known_broken_revision(rev)
+    if not rev or #rev == 0 then return false end
+    for _, pattern in ipairs(BROKEN_CMUX_REVISIONS) do
+        if rev:find(pattern, 1, true) then return true end
+    end
+    return false
+end
+
+-- Known-good EC25 firmware family (CMUX confirmed working on the bench).
+-- Anything that is EC25 but neither known-good nor known-broken is treated as
+-- CMUX-capable but flagged with a one-time warning so an unverified revision
+-- that turns out to hang is diagnosable instead of silently wrong.
+local KNOWN_GOOD_EC25_PREFIXES = { "EC25EFAR06", "EC25EFAR08A06" }
+local function is_known_good_ec25(rev)
+    if not rev then return false end
+    for _, p in ipairs(KNOWN_GOOD_EC25_PREFIXES) do
+        if rev:find(p, 1, true) == 1 then return true end
+    end
+    return false
+end
 
 local function cmux_enabled()
+    if cmux_force_disabled then return false end
     if found_cmux then return true end
     return modem and modem.cmux and not option_enabled(OPT.NOMUX)
 end
 
+-- Direct-push transport is derived from modem state, NOT from an operator bit:
+-- used only when CMUX is unavailable AND the current modem table defines
+-- direct-push commands (currently EC25 only — no other family has these fields).
+-- Result: broken EC25 auto-uses direct push, good EC25 auto-uses CMUX, all other
+-- modems keep their normal CMUX path, with one LTE_OPTIONS value for all.
+local function want_direct_push()
+    return (not cmux_enabled()) and modem ~= nil and modem.cipopen_udp_dp ~= nil
+end
+
+-- Conservative cap on outgoing CMUX frame payload size. GSM 07.10's N1
+-- (max frame size) is negotiated via AT+CMUX=...; this script sends a bare
+-- AT+CMUX=0 with no N1 override, so each modem's own default applies and
+-- that default is NOT consistent across chipsets -- Quectel EC200 accepts
+-- a single frame carrying the whole ~1.7KB CA cert PEM, but a SIM7600
+-- silently wedges (stops responding, just streams idle FLAG bytes) on the
+-- same single oversized frame. Splitting into <=127-byte frames is safe
+-- for every modem regardless of its N1: cmux.feed_uart_in() already
+-- reassembles a DLC's data across frame boundaries, so the AT parser on
+-- the other end sees one continuous byte stream either way.
+local CMUX_MAX_FRAME = 127
+
 local function AT_send(atcmd)
-    local s = cmux_enabled() and cmux.encode_cmux_frame(cmux.DLC_AT, cmux.UIH, atcmd) or atcmd
-    return uart_write(s) == #s
+    if not cmux_enabled() then
+        return uart_write(atcmd) == #atcmd
+    end
+    local pos = 1
+    local total = #atcmd
+    if total == 0 then
+        local s = cmux.encode_cmux_frame(cmux.DLC_AT, cmux.UIH, atcmd)
+        return uart_write(s) == #s
+    end
+    while pos <= total do
+        local chunk = atcmd:sub(pos, pos + CMUX_MAX_FRAME - 1)
+        local s = cmux.encode_cmux_frame(cmux.DLC_AT, cmux.UIH, chunk)
+        if uart_write(s) ~= #s then return false end
+        pos = pos + CMUX_MAX_FRAME
+    end
+    return true
 end
 
 local function send_data_reset()
@@ -246,24 +544,34 @@ function cmux.parse_cmux_frame(buf_in)
     if not start_idx then return nil, nil, nil end
     if #buf_in < 6 then return nil, nil, nil, "short" end
     local len_byte = buf_in:byte(4)
-    if (len_byte & cmux.EA) == 0 then return nil, nil, nil end
-    local len = len_byte >> 1
-    local end_idx = 6 + len
+    local len, hdr_len
+    if (len_byte & cmux.EA) ~= 0 then
+        len = len_byte >> 1
+        hdr_len = 3   -- addr, ctrl, 1 length octet
+    else
+        -- extended (2-octet) length: EA=0 on L1 means L2 follows with the
+        -- high bits -- the counterpart to encode_cmux_frame's extended
+        -- form, needed to receive anything over 127 bytes in one frame.
+        if #buf_in < 7 then return nil, nil, nil, "short" end
+        len = (len_byte >> 1) | (buf_in:byte(5) << 7)
+        hdr_len = 4   -- addr, ctrl, 2 length octets
+    end
+    local end_idx = 2 + hdr_len + len + 1
     if buf_in:byte(end_idx) ~= cmux.FLAG then return nil, nil, nil, "short" end
 
     local frame = buf_in:sub(start_idx + 1, end_idx - 1)
-    if #frame < 4 then return nil, nil, nil end
+    if #frame < hdr_len + 1 then return nil, nil, nil end
 
     local addr = frame:byte(1)
     local ctrl = frame:byte(2)
 
     if ctrl == cmux.SABM then return nil, nil, buf_in:sub(end_idx + 1) end
     if (ctrl & 0xef) ~= cmux.UIH then return nil, nil, nil end
-    if #frame ~= 3 + len + 1 then return nil, nil, nil end
+    if #frame ~= hdr_len + len + 1 then return nil, nil, nil end
 
-    local data = frame:sub(4, 3 + len)
-    local fcs_field = frame:byte(3 + len + 1)
-    local header = frame:sub(1, 3)
+    local data = frame:sub(hdr_len + 1, hdr_len + len)
+    local fcs_field = frame:byte(hdr_len + len + 1)
+    local header = frame:sub(1, hdr_len)
     if fcs_calc(header) ~= fcs_field then return nil, nil, nil end
 
     local dlc = (addr >> 2) & 0x3F
@@ -292,12 +600,13 @@ end
 local function data_send_connected(data)
     local s = cmux_enabled() and cmux.encode_cmux_frame(cmux.DLC_DATA, cmux.UIH, data) or data
     local n = uart_write(s)
+    stats.bytes_out = stats.bytes_out + n
     return n == #s
 end
 
 local function reset_buffers()
     cs.last_data_ms = millis()
-    buf.modem = ""; buf.fc = ""; buf.parse = ""; buf.setup = ""
+    buf.modem = ""; buf.fc = ""; buf.parse = ""; buf.setup = ""; buf.at_scan = ""
     cmux.buffers[cmux.DLC_AT] = ""; cmux.buffers[cmux.DLC_DATA] = ""
     while ser_device:available() > 0 do ser_device:readstring(512) end
 end
@@ -309,15 +618,63 @@ local function reset_state()
     cs.cops_zero_sent = false; cs.qcsq_tries = 0
     cs.cipopen_retry = 0; cs.cipopen_sent = false; cs.cipopen_sent_ms = 0
     cs.hard_reset_strikes = 0 
-    cs.sim_probe_count = 0; cs.cpin_probe_n = 0
-    cs.cereg_drop_ms = nil      
+    cs.sim_probe_count = 0; cs.sim_missing_count = 0; cs.cpin_probe_n = 0
+    cs.cereg_drop_ms = nil   
+    cs.creg_search_ms = nil 
     cs.step_times = {}; cs.step_timer_ms = millis():tofloat()
     cs.post_reset = true
     cs.cipopen_preclosed = false
+    cs.cipmode_sent = false
+    cmux_was_set = false  -- per-attempt marker; cmux_force_disabled stays sticky
+    cs.ati_dbg_ms = nil
+    cs.consec_stall = 0
+    -- NOTE: auth_done/auth_ip/auth_port deliberately survive a modem hard
+    -- reset (data timeout, CIPOPEN failures, etc). Re-authenticating is
+    -- only wanted on a fresh boot (cs is recreated from scratch then), not
+    -- every time the link drops and reconnects. http_sub still needs
+    -- clearing so a half-finished HTTPAUTH attempt restarts cleanly if a
+    -- reset happens to interrupt one.
+    cs.http_sub = nil
 end
 
 local function reset_to_ATI()
+    local timed_out_step = step
+    local elapsed_ms = math.floor(millis():tofloat() - cs.step_timer_ms)
     send_data_reset(); uart_write_pending(); reset_state()
+    table.insert(cs.step_times, {name = timed_out_step, ms = elapsed_ms})
+    cs.reset_recorded = true   -- tells the next step_changed check not to re-log this same transition
+end
+
+-- Extract firmware revision from ATI response and check against broken list.
+-- ATI typically returns something like:
+--   Quectel\r\nEC25\r\nRevision: EC25EFAR08A07M4G\r\nOK\r\n
+local function check_modem_revision(s)
+    -- Match "Revision: <something>" pattern (Quectel style)
+    local rev = s:match("Revision:%s*([%w%._]+)")
+    if not rev then
+        -- Fallback: match standalone firmware version string
+        rev = s:match("(EC25[%w]+)") or s:match("(EC20[%w]+)") or s:match("(BG95[%w]+)")
+    end
+    if rev and #rev > 0 then
+        modem_revision = rev
+        gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: firmware " .. rev)
+
+        -- CMUX auto-disable / direct-push is EC25-specific. Other families
+        -- (SimCom, EC20, BG95, Air780…) fall through untouched and use CMUX
+        -- normally via their modem.cmux field.
+        if rev:find("EC25", 1, true) == 1 then
+            if is_known_broken_revision(rev) then
+                cmux_force_disabled = true
+                gcs:send_text(MAV_SEVERITY.WARNING,
+                    "LTE_modem: known-broken CMUX firmware, using direct push")
+            elseif is_known_good_ec25(rev) then
+                -- known-good CMUX firmware: normal path, no message needed
+            else
+                gcs:send_text(MAV_SEVERITY.WARNING,
+                    "LTE: untested EC25 fw " .. rev .. " - assuming CMUX OK")
+            end
+        end
+    end
 end
 
 local function check_modem_banner(s)
@@ -325,6 +682,8 @@ local function check_modem_banner(s)
         if s:find(modem_list[model].banner) then
             modem = modem_list[model]
             gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: found modem: " .. model)
+            -- Try to extract firmware revision from the same response
+            check_modem_revision(s)
             return
         end
     end
@@ -422,16 +781,6 @@ local function check_QENG(s)
         local sinr = tonumber(t[tac_idx+4]) or 0
 
         logger:write("LTES", 'MCC,MNC,TAC,CID,PID,EF,RSRP,RSRQ,RSSI,SINR', 'iiiiiiiiii', mcc, mnc, tac, cid, tonumber(t[7]) or 0, earfcn, rsrp, rsrq, rssi, sinr)
-
-        if option_enabled(OPT.SIGNALS) then
-            gcs:send_named_float('LTE_RSRP', rsrp)
-            gcs:send_named_float('LTE_RSRQ', rsrq)
-            gcs:send_named_float('LTE_SINR', sinr)
-            gcs:send_named_float('LTE_BAND', band)
-            gcs:send_named_float('LTE_CID', cid>>8)
-            gcs:send_named_float('LTE_MCCMNC', mcc*100+mnc)
-        end
-
         local tower_id = cid >> 8
         if lte_track.band == nil then
             gcs:send_text(MAV_SEVERITY.INFO, string.format("LTE: connected on Band %d (EARFCN %d)", band, earfcn))
@@ -452,6 +801,113 @@ local function check_QENG(s)
     return false
 end
 
+local function check_QCSQ(s)
+    -- +QCSQ: "<sysmode>",<rssi>,<rsrp>,<sinr>,<rsrq>
+    local mode, rssi, rsrp, sinr_raw, rsrq =
+        s:match('+QCSQ:%s*"([^"]+)",(%-?%d+),(%-?%d+),(%-?%d+),(%-?%d+)')
+    if not mode then return false end
+    rssi = tonumber(rssi); rsrp = tonumber(rsrp)
+    sinr_raw = tonumber(sinr_raw); rsrq = tonumber(rsrq)
+    logger:write("LTEQ", 'RSSI,RSRP,SINRr,RSRQ', 'iiii', rssi, rsrp, sinr_raw, rsrq)
+    -- RSSI/RSRP/RSRQ are direct dBm/dB — publish continuously.
+    gcs:send_named_float('LTE_RSSI', rssi)
+    gcs:send_named_float('LTE_RSRP', rsrp)
+    gcs:send_named_float('LTE_RSRQ', rsrq)
+    -- QCSQ <sinr> is a SCALED index (not dB). Deliberately NOT published as
+    -- LTE_SINR — the slow QENG poll owns that with a calibrated dB value.
+    -- SINRr is logged above; once you find the linear map to QENG dB you can
+    -- publish it here for continuous SINR too.
+    return true
+end
+
+local function ip_to_octets(ipstr)
+    local a,b,c,d = ipstr:match("(%d+)%.(%d+)%.(%d+)%.(%d+)")
+    if not a then return nil end
+    a,b,c,d = tonumber(a),tonumber(b),tonumber(c),tonumber(d)
+    if a>255 or b>255 or c>255 or d>255 then return nil end
+    return {a,b,c,d}
+end
+
+-- Handles all three formats from the spec: JSON, ip:port, ip\nport
+local function parse_auth_response(s)
+    local jip  = s:match('"ip"%s*:%s*"([%d%.]+)"')
+    local jpt  = s:match('"port"%s*:%s*(%d+)')
+    if jip and jpt then return ip_to_octets(jip), tonumber(jpt) end
+
+    local cip, cpt = s:match('(%d+%.%d+%.%d+%.%d+)%s*:%s*(%d+)')
+    if cip and cpt then return ip_to_octets(cip), tonumber(cpt) end
+
+    local nip = s:match('(%d+%.%d+%.%d+%.%d+)')
+    if nip then
+        local after = s:sub((s:find(nip, 1, true) or 0) + #nip)
+        local npt = after:match('(%d+)')
+        if npt then return ip_to_octets(nip), tonumber(npt) end
+    end
+    return nil, nil
+end
+
+-- Decode a hex string (as returned for mavlinkSigningKey) into raw bytes.
+-- Returns nil if the input isn't clean hex or isn't the expected length.
+local function hex_decode(hexstr, expected_len)
+    if not hexstr or #hexstr ~= expected_len * 2 then return nil end
+    local out = {}
+    for i = 1, #hexstr, 2 do
+        local byte_val = tonumber(hexstr:sub(i, i + 1), 16)
+        if not byte_val then return nil end
+        out[#out + 1] = string.char(byte_val)
+    end
+    return table.concat(out)
+end
+
+-- Pulls sysId/mavlinkSigningKey out of the same JSON body used for ip/port
+-- and applies them: sysId becomes the vehicle's live outgoing MAVLink
+-- system id (and SYSID_THISMAV, so incoming commands addressed to it are
+-- still accepted), and the signing key gets loaded and activated on all
+-- MAVLink channels immediately.
+local function apply_auth_identity(s)
+    if P.AUTHSYS:get() == 1 then
+        local sysid = s:match('"sysId"%s*:%s*(%d+)')
+        if sysid then
+            sysid = tonumber(sysid)
+            if sysid > 0 then   -- 0 is a reserved/broadcast MAVLink system id, never a real vehicle id
+                Parameter('SYSID_THISMAV'):set(sysid)
+                if gcs:set_sysid(sysid) then
+                    gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE HTTPAUTH: sysid set to %d', sysid))
+                else
+                    gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: sysid set failed (armed?)')
+                end
+            else
+                gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: ignoring invalid sysid 0 from server')
+            end
+        end
+    end
+
+    local key_hex = s:match('"mavlinkSigningKey"%s*:%s*"(%x+)"')
+
+    if P.AUTHKEY:get() == 1 then
+        local key_bytes = hex_decode(key_hex, 32)
+        if key_bytes then
+            if gcs:set_signing_key(key_bytes, uint64_t(0)) then
+                gcs:send_text(MAV_SEVERITY.INFO, 'LTE HTTPAUTH: signing key applied')
+            else
+                gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: signing key apply failed (armed?)')
+            end
+        elseif key_hex then
+            gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: signing key wrong length')
+        end
+    end
+end
+
+-- CIPOPEN uses dynamic values if auth succeeded, else the static params.
+local function effective_server()
+    if cs.auth_ip and cs.auth_port then
+        return cs.auth_ip[1], cs.auth_ip[2], cs.auth_ip[3], cs.auth_ip[4], cs.auth_port
+    end
+    return P.SERVER_IP0:get(), P.SERVER_IP1:get(), P.SERVER_IP2:get(),
+           P.SERVER_IP3:get(), P.SERVER_PORT:get()
+end
+
+
 local function handle_AT_reply(s)
     check_CSQ(s)
     if check_CPSI(s) then return end
@@ -460,21 +916,468 @@ local function handle_AT_reply(s)
     if s:find("PPPD: DISCONNECTED") then step = "PPPOPEN" end
 end
 
+local dp = {}
+
+-- Receive parser. buf.dp carries AT-mode bytes interleaving:
+--   +QIURC: "recv",<id>,<len>\r\n<len raw bytes>  -> downlink payload (opaque)
+--   +QCSQ: ...                                     -> signal URC
+--   +CEREG: ...                                    -> registration URC
+--   +QIURC: "closed",<id>                          -> socket dropped
+--   \r\n>  / SEND OK / SEND FAIL                    -> QISEND handshake
+-- Raw payload inside a recv block is consumed by exact byte count, since it
+-- may contain \r\n or bytes that look like URCs.
+function dp.process_rx(now_ms)
+    while true do
+        if cs.rx_need > 0 then
+            if #buf.dp == 0 then return end
+            local take = cs.rx_need
+            if take > #buf.dp then take = #buf.dp end
+            buf.fc = buf.fc .. buf.dp:sub(1, take)
+            buf.dp = buf.dp:sub(take + 1)
+            cs.rx_need = cs.rx_need - take
+            cs.last_data_ms = now_ms
+            if cs.rx_need > 0 then return end
+        end
+
+        local nl = buf.dp:find("\r\n", 1, true)
+        if not nl then
+            -- The only non-line token we care about is the QISEND prompt
+            -- "\r\n> " (no trailing CRLF), and only while waiting for it.
+            if cs.tx_state == "prompt" then
+                local gt = buf.dp:find("> ", 1, true)   -- Quectel prompt "\r\n> "; CRLF already consumed by line loop
+                if gt then
+                    buf.dp = buf.dp:sub(gt + 2)
+                    uart_write(cs.tx_pending)
+                    cs.tx_state = "sendok";
+                    cs.dbg_prompt = cs.dbg_prompt + 1
+                    cs.tx_ms = now_ms:tofloat()
+                else
+                    if #buf.dp > 4096 then buf.dp = buf.dp:sub(-2048) end
+                    return
+                end
+            else
+                if #buf.dp > 4096 then buf.dp = buf.dp:sub(-2048) end
+                return
+            end
+        else
+            local line = buf.dp:sub(1, nl - 1)
+            buf.dp = buf.dp:sub(nl + 2)
+            if line == "" then
+                -- skip blank line
+            elseif line:find('"recv"', 1, true) then
+                local len = line:match('"recv",%s*%d+,%s*(%d+)')   -- direct-push form: connID,length
+                if len then
+                    cs.rx_need = tonumber(len)
+                else
+                    if not cs.recv_nolen_warned then
+                        cs.recv_nolen_warned = true
+                        gcs:send_text(MAV_SEVERITY.WARNING, 'LTE: recv URC without length - check QICFG recvind')
+                    end
+                end
+                cs.dbg_recv = cs.dbg_recv + 1
+            elseif line:find('+QCSQ:', 1, true) then
+                check_QCSQ(line)
+            elseif line:find('"closed"', 1, true) then
+                cs.dp_closed = true
+            elseif line:find('SEND OK', 1, true) then
+                if cs.tx_state == "sendok" then cs.tx_state = "idle"; cs.tx_pending = ""; cs.dbg_sendok = cs.dbg_sendok + 1 end
+                cs.last_data_ms = now_ms   -- uplink success proves the link is alive
+            elseif line:find('SEND FAIL', 1, true) then
+                if cs.tx_state == "sendok" then
+                    if #cs.tx_pending > 0 then buf.modem = cs.tx_pending .. buf.modem end  -- requeue for retry
+                    cs.tx_state = "idle"; cs.tx_pending = ""
+                end
+            elseif line:find('+CEREG:', 1, true) or line:find('+CREG:', 1, true) then
+                if line:find('+CEREG: 0') or line:find('+CEREG: 2') or
+                   line:find('+CREG: 0,0') or line:find('+CREG: 0,2') then
+                    if not cs.cereg_drop_ms then
+                        cs.cereg_drop_ms = now_ms
+                        gcs:send_text(MAV_SEVERITY.WARNING, string.format('LTE: CEREG lost — %ds grace', P.GRACE:get()))
+                    end
+                elseif line:find('+CEREG: 1') or line:find('+CEREG: 5') or
+                       line:find('+CREG: 0,1') or line:find('+CREG: 0,5') then
+                    cs.cereg_drop_ms = nil
+                end
+            elseif line:find('+QENG:', 1, true) or line:find('+CPSI:', 1, true) or line:find('+CSQ:', 1, true) then
+                handle_AT_reply(line)
+            elseif line:find('ERROR', 1, true) then
+                if cs.tx_state ~= "idle" then cs.tx_state = "idle"; cs.tx_pending = "" end
+            end
+            -- else: echo / OK / other -> ignore
+        end
+    end
+end
+
+-- Transmit pump. One QISEND in flight at a time, non-blocking across ticks.
+function dp.process_tx(now_ms, budget)
+
+    if cs.tx_state ~= "idle" then
+        if (now_ms:tofloat() - cs.tx_ms) > 2000 then
+            -- Requeue the unconfirmed chunk rather than dropping it.
+            if #cs.tx_pending > 0 then buf.modem = cs.tx_pending .. buf.modem end
+            cs.tx_state = "idle"; cs.tx_pending = ""; cs.dbg_stall = cs.dbg_stall + 1
+            cs.consec_stall = cs.consec_stall + 1
+
+            local dead_n = math.floor(P.TX_DEAD:get())
+            if dead_n > 0 and cs.consec_stall >= dead_n then
+                -- N stalls, zero SEND OKs in between: bearer silently died under
+                -- the UDP socket (post-handover). No URC will ever fire for this.
+                -- Go straight to the recovery path that provably works:
+                -- QISTATE? -> QICLOSE -> QIOPEN (~150ms), skipping blind reopens
+                -- that fail while the modem still thinks socket 0 is in use.
+                gcs:send_text(MAV_SEVERITY.ERROR,
+                    string.format('LTE: %d consecutive stalls - socket dead, fast recover', cs.consec_stall))
+                cs.consec_stall = 0
+                if not cs.disconnect_ms then
+                    cs.disconnect_ms = now_ms:tofloat() - (dead_n * 2000)
+                end
+                cs.last_data_ms = now_ms
+                cs.cipopen_sent = false
+                buf.setup = ""
+                step = "CEREG_CHECK"
+                return
+
+            end
+            gcs:send_text(MAV_SEVERITY.WARNING,
+                string.format('LTE: QISEND stalled %d/%d', cs.consec_stall, math.max(1, math.floor(P.TX_DEAD:get()))))
+        end
+        return
+    end
+    if #buf.modem == 0 then return end
+    if budget ~= nil and budget <= 0 then return end   -- rate quota exhausted this tick
+    local n = #buf.modem
+    if n > 1024 then n = 1024 end
+    if budget ~= nil and n > budget then n = budget end
+    cs.tx_pending = buf.modem:sub(1, n)
+    buf.modem = buf.modem:sub(n + 1)   -- popped into tx_pending; requeued on stall/FAIL, cleared on SEND OK
+    cs.last_send_data_ms = now_ms
+    AT_send(string.format(modem.qisend, n))
+    cs.dbg_qisend = cs.dbg_qisend + 1
+    cs.tx_state = "prompt"; cs.tx_ms = now_ms:tofloat()
+end
+
+local HTTP_TOTAL_TIMEOUT = 25000  -- ms cap on the whole auth attempt (real logins routinely take 10-12s; no useful static fallback exists, so bias toward completing over timing out)
+local CERT_UPLOAD_EXTRA_TIMEOUT = 25000  -- extra ms granted only when a real cert upload actually
+                                          -- happens (never-provisioned/freshly-wiped module). Bench
+                                          -- observed: with the cert already present, HTTPAUTH finishes
+                                          -- in ~3-4s; a from-scratch upload (16+ chunked CMUX frames
+                                          -- plus the normal login sequence after it) can run past the
+                                          -- shared HTTP_TOTAL_TIMEOUT even though every step along the
+                                          -- way completes fine -- it's a budget problem, not a stall.
+local next_after_registration
+
+local function http_fail(reason)
+    gcs:send_text(MAV_SEVERITY.CRITICAL, 'LTE HTTPAUTH: ' .. reason .. ' — no static fallback, halting')
+    -- SimCom's HTTP(S) app needs an explicit AT+HTTPTERM to close its session;
+    -- unlike the success path (READ, further down) this failure path never
+    -- called it, so a failed attempt left the session open and the next
+    -- AT+HTTPINIT piled on top of it. Best-effort, response not awaited --
+    -- we're already halting either way. No-op for Quectel (no modem.http.term).
+    if modem.http and modem.http.term then
+        AT_send(modem.http.term)
+    end
+    cs.auth_ip = nil; cs.auth_port = nil
+    cs.auth_done = true
+    cs.http_sub = nil
+    cs.halt_reason = 'HTTPAUTH failed (' .. reason .. ')'
+    step = "HALT"
+end
+
+local function step_HTTPAUTH()
+    if cs.http_sub == nil then
+        cs.auth_body = build_auth_body()  -- computed once per attempt: the length sent
+                                           -- in QHTTPPOST and the bytes sent afterward
+                                           -- must match exactly
+        if not cs.auth_body then
+            http_fail('no craft ID/password provisioned in custom storage')
+            return
+        end
+        -- Cert presence check always runs first, for both dialects. The cert
+        -- file itself survives a modem reset (AT+CFUN=1,1 / AT+CRESET) so this
+        -- is only a real upload on a never-provisioned or freshly-wiped
+        -- module; every other entry into HTTPAUTH just lists and moves on.
+        cs.http_sub = (modem.http.style == "simcom") and "SC_CERT_LIST" or "CERT_LIST"
+        cs.http_cfg_i = 0; cs.http_buf = ""
+        cs.http_deadline = millis():tofloat() + HTTP_TOTAL_TIMEOUT
+        gcs:send_text(MAV_SEVERITY.INFO, 'LTE HTTPAUTH: fetching server addr')
+        AT_send(modem.http.cert_list)
+    end
+    if millis():tofloat() > cs.http_deadline then http_fail('timeout'); return end
+
+    -- IMPORTANT: uart_read() returns the raw byte stream. When CMUX is
+    -- active (it is, for the whole session -- see "CMUX mode set" at boot)
+    -- that raw stream is still wrapped in CMUX frames (flag/address/control/
+    -- FCS bytes around each frame's payload). Long AT+QHTTPREAD responses
+    -- (e.g. once mavlinkSigningKey made the JSON body span multiple CMUX
+    -- frames) get a fresh set of these framing bytes injected mid-payload
+    -- at every frame boundary, corrupting whatever field straddles it --
+    -- this is what was truncating "port" mid-digit. De-frame through the
+    -- same cmux.feed_uart_in() path step_CONNECTED() already uses, instead
+    -- of treating the raw stream as plain text.
+    local raw = uart_read()
+    if cmux_enabled() then
+        if raw and #raw > 0 then buf.parse = buf.parse .. raw end
+        buf.parse = cmux.feed_uart_in(buf.parse)
+        if #cmux.buffers[cmux.DLC_AT] > 0 then
+            cs.http_buf = cs.http_buf .. cmux.buffers[cmux.DLC_AT]
+            cmux.buffers[cmux.DLC_AT] = ""
+        end
+        cmux.buffers[cmux.DLC_DATA] = ""  -- unexpected during HTTPAUTH; drop rather than let it leak into CONNECTED later
+    else
+        if raw and #raw > 0 then cs.http_buf = cs.http_buf .. raw end
+    end
+    if #cs.http_buf > 4096 then cs.http_buf = cs.http_buf:sub(-2048) end
+    local b = cs.http_buf
+
+    if cs.http_sub == "CERT_LIST" then
+        -- AT+QFLST="*" echoes existing files as "UFS:<name>",<size> -- a bare
+        -- substring match on the filename is enough to know it's already there.
+        if b:find(modem.http.cert_filename, 1, true) then
+            cs.http_buf = ""; cs.http_sub = "CFG"; cs.http_cfg_i = 0
+        elseif b:find('OK\r\n') or b:find('ERROR') then
+            cs.http_buf = ""; cs.http_sub = "CERT_UPLOAD_CMD"
+            cs.http_deadline = cs.http_deadline + CERT_UPLOAD_EXTRA_TIMEOUT
+            AT_send(string.format(modem.http.cert_upload, #CA_CERT_PEM))
+        end
+
+    elseif cs.http_sub == "CERT_UPLOAD_CMD" then
+        if b:find('CONNECT') then
+            cs.http_buf = ""; AT_send(CA_CERT_PEM); cs.http_sub = "CERT_UPLOAD_DATA"
+        elseif b:find('ERROR') then http_fail('cert upload error') end
+
+    elseif cs.http_sub == "CERT_UPLOAD_DATA" then
+        -- Module replies "+QFUPL: <size>,<crc>" then "OK"; not parsed here --
+        -- a bad upload just fails the handshake downstream at seclevel=1, and
+        -- the fix is the same either way (re-upload), so the CRC isn't worth
+        -- decoding on-vehicle. It's in the bench log if a mismatch needs to be
+        -- diagnosed by hand.
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "CFG"; cs.http_cfg_i = 0
+        elseif b:find('ERROR') then http_fail('cert upload data error') end
+
+    elseif cs.http_sub == "CFG" then
+        -- one config command per OK/ERROR, then move to context activation
+        if cs.http_cfg_i == 0 or b:find('OK\r\n') or b:find('ERROR') then
+            cs.http_cfg_i = cs.http_cfg_i + 1
+            cs.http_buf = ""
+            local cmd = modem.http.cfg[cs.http_cfg_i]
+            if cmd then
+                AT_send(cmd)
+            else
+                cs.http_sub = "CACERT"; AT_send(modem.http.cacert)
+            end
+        end
+
+    elseif cs.http_sub == "CACERT" then
+        -- Hard-fail, not tolerated: this binds the CA cert that seclevel=1
+        -- below verifies against. Silently continuing on ERROR would let
+        -- the login proceed over a connection that isn't actually verified.
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "SECLEVEL"; AT_send(modem.http.seclevel)
+        elseif b:find('ERROR') then http_fail('cacert bind error') end
+
+    elseif cs.http_sub == "SECLEVEL" then
+        -- Hard-fail: this is the command that actually turns on server-cert
+        -- verification. Same reasoning as CACERT above.
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "ACT"; AT_send(modem.http.act)
+        elseif b:find('ERROR') then http_fail('seclevel set error') end
+
+    elseif cs.http_sub == "ACT" then
+        if b:find('OK\r\n') or b:find('ERROR') then    -- ERROR = already active, fine
+            cs.http_buf = ""; cs.http_sub = "URL_CMD"
+            AT_send(string.format(modem.http.url, #AUTH_URL))
+        end
+
+    elseif cs.http_sub == "URL_CMD" then
+        if b:find('CONNECT') then
+            cs.http_buf = ""; AT_send(AUTH_URL); cs.http_sub = "URL_DATA"  -- exactly #AUTH_URL bytes, no CRLF
+        elseif b:find('ERROR') then http_fail('QHTTPURL error') end
+
+    elseif cs.http_sub == "URL_DATA" then
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "POST_CMD"
+            AT_send(string.format(modem.http.post, #cs.auth_body))
+        elseif b:find('ERROR') then http_fail('URL data error') end
+
+    elseif cs.http_sub == "POST_CMD" then
+        if b:find('CONNECT') then
+            cs.http_buf = ""; AT_send(cs.auth_body); cs.http_sub = "POST_DATA"
+        elseif b:find('ERROR') then http_fail('QHTTPPOST error') end
+
+    elseif cs.http_sub == "POST_DATA" then
+        if b:find('+QHTTPPOST:') then
+            local err, code = b:match('+QHTTPPOST:%s*(%d+),(%d+)')
+            local code_num = tonumber(code)
+            if err == "0" and code_num and code_num >= 200 and code_num < 300 then
+                gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE HTTPAUTH: login OK (%d)', code_num))
+                cs.http_buf = ""; cs.http_sub = "READ"; AT_send(modem.http.read)
+            else
+                http_fail('POST err='..tostring(err)..' http='..tostring(code))
+            end
+        elseif b:find('ERROR') then http_fail('POST data error') end
+
+    elseif cs.http_sub == "READ" then
+        if b:find('+QHTTPREAD:') or (b:find('CONNECT') and b:find('OK\r\n')) then
+            local body = b
+            local c1 = b:find('CONNECT')
+            if c1 then body = b:sub(c1 + 7) end   -- payload sits between CONNECT and trailing OK
+            local ip, port = parse_auth_response(body)
+            if ip and port and port > 0 then   -- port==0 is truthy in Lua but never a valid TCP/UDP port;
+                                                -- treat it as a parse failure rather than a usable address
+                cs.auth_ip = ip; cs.auth_port = port; cs.auth_done = true
+                gcs:send_text(MAV_SEVERITY.INFO, string.format(
+                    'LTE HTTPAUTH: server %d.%d.%d.%d:%d', ip[1],ip[2],ip[3],ip[4], port))
+                apply_auth_identity(body)
+                cs.http_sub = nil
+                step = next_after_registration()
+            else
+                http_fail('parse failed')
+            end
+        elseif b:find('ERROR') then http_fail('QHTTPREAD error') end
+
+    -- ===== SimCom (SIM7500/SIM7600-family) HTTP(S) Application AT flow =====
+    -- Same overall shape as the Quectel chain above, but SimCom takes the URL
+    -- and content-type as AT+HTTPPARA settings instead of a separate upload,
+    -- and reports the result asynchronously via a +HTTPACTION URC rather than
+    -- inline after the POST command.
+    elseif cs.http_sub == "SC_CERT_LIST" then
+        -- AT+CCERTLIST reports only the filename, no size/CRC -- unlike
+        -- QFLST there's no integrity signal here, just presence.
+        if b:find(modem.http.cert_filename, 1, true) then
+            cs.http_buf = ""; cs.http_sub = "SC_INIT"; AT_send(modem.http.init)
+        elseif b:find('OK\r\n') or b:find('ERROR') then
+            cs.http_buf = ""; cs.http_sub = "SC_CERT_UPLOAD_CMD"
+            cs.http_deadline = cs.http_deadline + CERT_UPLOAD_EXTRA_TIMEOUT
+            AT_send(string.format(modem.http.cert_upload, #CA_CERT_PEM))
+        end
+
+    elseif cs.http_sub == "SC_CERT_UPLOAD_CMD" then
+        if b:find('>', 1, true) then    -- prompt here is a bare ">", not "CONNECT" (Quectel)
+            cs.http_buf = ""; AT_send(CA_CERT_PEM); cs.http_sub = "SC_CERT_UPLOAD_DATA"
+        elseif b:find('ERROR') then http_fail('cert upload error') end
+
+    elseif cs.http_sub == "SC_CERT_UPLOAD_DATA" then
+        -- No CRC on this dialect (see cert_list note above) -- a bad upload
+        -- just fails the handshake downstream, same recovery as Quectel.
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "SC_INIT"; AT_send(modem.http.init)
+        elseif b:find('ERROR') then http_fail('cert upload data error') end
+
+    elseif cs.http_sub == "SC_INIT" then
+        if b:find('OK\r\n') or b:find('ERROR') then    -- ERROR tolerated: nothing was open to init over
+            cs.http_buf = ""; cs.http_sub = "SC_CID"; AT_send(modem.http.cid)
+        end
+
+    elseif cs.http_sub == "SC_CID" then
+        if b:find('OK\r\n') or b:find('ERROR') then
+            cs.http_buf = ""; cs.http_sub = "SC_CACERT"; AT_send(modem.http.cacert)
+        end
+
+    elseif cs.http_sub == "SC_CACERT" then
+        -- Hard-fail, not tolerated: this binds the CA cert that authmode=1
+        -- below verifies against. Silently continuing on ERROR would let
+        -- the login proceed over a connection that isn't actually verified.
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "SC_SSL"; AT_send(modem.http.ssl)
+        elseif b:find('ERROR') then http_fail('cacert bind error') end
+
+    elseif cs.http_sub == "SC_SSL" then
+        -- Hard-fail: this is the command that actually turns on server-cert
+        -- verification (authmode=1). Same reasoning as SC_CACERT above.
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "SC_URL"; AT_send(modem.http.url)
+        elseif b:find('ERROR') then http_fail('authmode set error') end
+
+    elseif cs.http_sub == "SC_URL" then
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "SC_CONTENT"; AT_send(modem.http.content)
+        elseif b:find('ERROR') then http_fail('HTTPPARA URL error') end
+
+    elseif cs.http_sub == "SC_CONTENT" then
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "SC_DATA_CMD"
+            AT_send(string.format(modem.http.data, #cs.auth_body))
+        elseif b:find('ERROR') then http_fail('HTTPPARA CONTENT error') end
+
+    elseif cs.http_sub == "SC_DATA_CMD" then
+        if b:find('DOWNLOAD') then
+            cs.http_buf = ""; AT_send(cs.auth_body); cs.http_sub = "SC_DATA_BODY"
+        elseif b:find('ERROR') then http_fail('HTTPDATA error') end
+
+    elseif cs.http_sub == "SC_DATA_BODY" then
+        if b:find('OK\r\n') then
+            cs.http_buf = ""; cs.http_sub = "SC_ACTION"; AT_send(modem.http.action)
+        elseif b:find('ERROR') then http_fail('HTTPDATA body error') end
+
+    elseif cs.http_sub == "SC_ACTION" then
+        if b:find('+HTTPACTION:') then
+            local code, len = b:match('+HTTPACTION:%s*%d+,(%d+),(%d+)')
+            local code_num = tonumber(code)
+            if code_num and code_num >= 200 and code_num < 300 then
+                gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE HTTPAUTH: login OK (%d)', code_num))
+                cs.http_buf = ""; cs.http_sub = "SC_READ"
+                AT_send(string.format(modem.http.read, math.max(tonumber(len) or 0, 1)))
+            else
+                http_fail('POST http='..tostring(code))
+            end
+        elseif b:find('ERROR') then http_fail('HTTPACTION error') end
+
+    elseif cs.http_sub == "SC_READ" then
+        if b:find('+HTTPREAD:') and b:find('\r\nOK\r\n') then
+            local ip, port = parse_auth_response(b)
+            if ip and port and port > 0 then   -- port==0 is truthy in Lua but never a valid TCP/UDP port;
+                                                -- treat it as a parse failure rather than a usable address
+                cs.auth_ip = ip; cs.auth_port = port; cs.auth_done = true
+                gcs:send_text(MAV_SEVERITY.INFO, string.format(
+                    'LTE HTTPAUTH: server %d.%d.%d.%d:%d', ip[1],ip[2],ip[3],ip[4], port))
+                apply_auth_identity(b)
+                AT_send(modem.http.term)   -- best-effort cleanup; response not awaited
+                cs.http_sub = nil
+                step = next_after_registration()
+            else
+                http_fail('parse failed')
+            end
+        elseif b:find('ERROR') then http_fail('HTTPREAD error') end
+    end
+end
+
+
 -- =========================================================================
 -- MAIN STATE MACHINE STEPS
 -- =========================================================================
 
 local function step_ATI()
     local s = uart_read()
+    -- Stay silent on a normal fast boot (ATI exits in ~3s), but once ATI drags
+    -- past 2s (modem mid-reboot after a reset), chirp every 5s so the recovery
+    -- window is no longer a black hole in the messages tab.
+    local ati_s = (millis():tofloat() - cs.step_timer_ms) / 1000
+    if ati_s > 2 and (not cs.ati_dbg_ms or (millis() - cs.ati_dbg_ms) > 5000) then
+        cs.ati_dbg_ms = millis()
+        gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE: waiting for modem (ATI, %ds)', math.floor(ati_s)))
+    end
+    -- A reset (AT+CFUN=1,1) does not always drop the modem's CMUX session -
+    -- some firmware (seen on EC200) keeps replying in CMUX framing straight
+    -- through the reset. Detect that by looking for the frame FLAG byte
+    -- anywhere in this read, not just at the exact start/end of the chunk -
+    -- UART reads are chunked arbitrarily and rarely align on frame edges.
+    -- This must run before the modem~=default_modem branch below: once the
+    -- banner has matched even once, that branch always returns first, so a
+    -- mux session revealed in the same read as the banner would otherwise
+    -- never be detected.
+    if not found_cmux and not option_enabled(OPT.NOMUX) and not cmux_force_disabled
+       and s and #s >= 4 and s:find(string.char(cmux.FLAG), 1, true) then
+        found_cmux = true; gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: in CMUX mode"); log_data("{INCMUX}", '***')
+    end
+
     if s and modem == default_modem then check_modem_banner(s) end
     if modem ~= default_modem then
         if not cmux_enabled() then step = "BAUD" else step = "CMUX" end
         return
     end
-    if not option_enabled(OPT.NOMUX) and s and #s >= 4 and s:byte(1) == cmux.FLAG and s:byte(-1) == cmux.FLAG then
-        found_cmux = true; gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: in CMUX mode"); log_data("{INCMUX}", '***')
-        AT_send('ATI\r'); return
-    end
+    if found_cmux then AT_send('ATI\r'); return end
+
     if cs.ati_sequence % 3 == 2 then uart_write('+++')
     elseif cs.ati_sequence % 3 == 1 and not option_enabled(OPT.NOMUX) then uart_write(cmux.encode_cmux_frame(cmux.DLC_AT, cmux.UIH, "ATI\r"))
     else uart_write('\rATI\r') end
@@ -511,6 +1414,16 @@ local function set_BAND()
 end
 
 local function step_CONFIG()
+    -- Local echo is on by default and was never turned off -- harmless for
+    -- short commands (their echo is a few bytes lost in the noise), but the
+    -- ~1.7KB CA cert upload during HTTPAUTH gets mirrored back in full as a
+    -- dense burst of echoed CMUX frames on the same DLC. If de-framing ever
+    -- desyncs on one of those, the module's real completion OK can get lost
+    -- in the corruption that follows, leaving the upload step waiting
+    -- forever (a permanent stall, not just a slow one -- doubling the
+    -- timeout didn't help because there's nothing to wait longer for).
+    -- Turning echo off removes that whole burst instead of working around it.
+    AT_send('ATE0\r\n')
     set_BAND(); set_MCCMNC()
     if modem.config_extra then AT_send(modem.config_extra) end
     if modem.fast_connect then AT_send('AT+CEREG=1\r\n') end
@@ -527,11 +1440,22 @@ local function step_CPIN()
         if cs.sim_probe_count >= 3 then
             gcs:send_text(MAV_SEVERITY.CRITICAL,
                 "LTE FATAL: SIM unresponsive after 3 probes. Halting.")
+            cs.halt_reason = "SIM unresponsive after 3 probes"
             step = "HALT"; return
         end
     elseif s and (s:find("ERROR: 10") or s:find("NOT INSERTED") or s:find("SIM not inserted")) then
-        gcs:send_text(MAV_SEVERITY.CRITICAL, "LTE FATAL: SIM CARD MISSING! Halting sequence.")
-        step = "HALT"; return
+        -- Debounced like the QCCID path above: a UART bounce (cable pulled and
+        -- reseated mid-session) can make a modem report the SIM as missing for
+        -- one reply before its SIM interface settles, even with a card seated.
+        -- Require 3 consecutive sightings before treating it as a real pull.
+        cs.sim_missing_count = (cs.sim_missing_count or 0) + 1
+        gcs:send_text(MAV_SEVERITY.WARNING, string.format(
+            "LTE: SIM reported missing, probe %d/3", cs.sim_missing_count))
+        if cs.sim_missing_count >= 3 then
+            gcs:send_text(MAV_SEVERITY.CRITICAL, "LTE FATAL: SIM CARD MISSING! Halting sequence.")
+            cs.halt_reason = "SIM card missing"
+            step = "HALT"; return
+        end
     end
 
     local now_ms = millis():tofloat()
@@ -543,7 +1467,7 @@ local function step_CPIN()
         return
     end
 
-    -- Phase 2: 1–5s — probe once per second (5 probes max), then hard reset
+    -- Phase 2: 1–5s — probe once per second (3 probes max), then hard reset
     local probe_tick = math.floor(time_in_step) -- integer seconds since step start
     if probe_tick > cs.cpin_probe_n then
         cs.cpin_probe_n = probe_tick
@@ -554,10 +1478,41 @@ local function step_CPIN()
             AT_send('AT+CPIN?\r\n')
             if modem.sim_probe then AT_send(modem.sim_probe) end
         else
+            -- Defense in depth: if CMUX was set up but CPIN still fails after 5
+            -- probes, the firmware is broken even though revision auto-detect
+            -- didn't catch it. Add this revision to BROKEN_CMUX_REVISIONS so
+            -- future boots will catch it via auto-detect.
+            local is_known_good_fw = is_known_good_ec25(modem_revision)
+            if cmux_was_set and not cmux_force_disabled and not is_known_good_fw and modem.cipopen_udp_dp ~= nil then
+                gcs:send_text(MAV_SEVERITY.WARNING,
+                    "LTE: CPIN failed after CMUX setup — disabling CMUX (firmware bug)")
+                if #modem_revision > 0 then
+                    gcs:send_text(MAV_SEVERITY.WARNING,
+                        "LTE: consider adding '" .. modem_revision .. "' to BROKEN_CMUX_REVISIONS")
+                end
+                cmux_force_disabled = true
+                -- Send a framed reset so the modem actually receives it
+                -- (its UART is in CMUX framing mode, plain bytes are dropped)
+                if modem.reset then
+                    uart_write(cmux.encode_cmux_frame(cmux.DLC_AT, cmux.UIH, modem.reset))
+                    uart_write_pending()
+                end
+            end
             gcs:send_text(MAV_SEVERITY.CRITICAL, "LTE: CPIN failed 5 probes, hard reset")
             reset_to_ATI()
         end
     end
+end
+
+function next_after_registration()
+    if P.PROTOCOL:get() == PPP then
+        return modem.cgact and "CGACT" or "PPPOPEN"
+    end
+    if modem.fast_connect then return "SIGNAL_GATE" end
+    if modem.preflight then return "QENG" end
+    if modem.cipmode then return "CIPMODE" end
+    if modem.cipclose then return "CIPCLOSE" end
+    return "CIPOPEN"
 end
 
 local function step_QENG()
@@ -583,28 +1538,38 @@ local function step_CREG()
     end
 
     if s and #s > 0 then
-        -- Use #raw to ensure we only evaluate CMUX if new data just arrived
-        if cmux_enabled() and #raw > 0 and #s > 4 and not cmux.parse_cmux_frame(s) then 
+        -- Use #raw to ensure we only evaluate CMUX if new data just arrived.
+        -- parse_cmux_frame's 4th return is "short" when the buffer just hasn't
+        -- finished arriving yet (normal mid-frame) - that must NOT be treated
+        -- as corruption, or a real frame gets discarded and CMUX renegotiated
+        -- for no reason on every tick that happens to catch it mid-arrival.
+        -- Genuine corruption returns no dlc and no "short" marker, so gate on
+        -- "parse failed AND it wasn't merely incomplete", not on cerr alone.
+        local dlc, _, _, cerr = cmux.parse_cmux_frame(s)
+        if cmux_enabled() and #raw > 0 and #s > 4 and not dlc and cerr ~= "short" then
             -- Check if it's just a standard AT text response before panicking
             if not (s:find('+CEREG:') or s:find('+CREG:') or s:find('OK\r\n')) then
-                step = "CMUX"; buf.setup = ""; return 
+                step = "CMUX"; buf.setup = ""; return
             end
         end
         
         local reg = s:match('+CEREG: %d,(%d+)') or s:match('+CREG: %d,(%d+)\r\n')
         
         if reg == "1" or reg == "5" then
-            buf.setup = "" -- Clear after success
+            buf.setup = ""
             cs.cops_zero_sent = false
-            gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG OK')
-            if P.PROTOCOL:get() == PPP then
-                step = modem.cgact and "CGACT" or "PPPOPEN"
+            if cs.creg_search_ms then
+                gcs:send_text(MAV_SEVERITY.INFO, string.format(
+                    'LTE_modem: CREG OK (search %.1fs)',
+                    (millis() - cs.creg_search_ms):tofloat() / 1000))
+                cs.creg_search_ms = nil
             else
-                if modem.fast_connect then step = "SIGNAL_GATE"
-                elseif modem.preflight then step = "QENG"
-                elseif modem.cipmode then step = "CIPMODE"
-                elseif modem.cipclose then step = "CIPCLOSE"
-                else step = "CIPOPEN" end
+                gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG OK')
+            end
+            if P.HTTPAUTH:get() == 1 and modem.http and (AUTH_EVERY_RECONNECT or not cs.auth_done) then
+                step = "HTTPAUTH"
+            else
+                step = next_after_registration()
             end
             return
             
@@ -630,7 +1595,12 @@ local function step_CREG()
             
         elseif reg == "2" then
             -- Do not clear the buffer here! Let it print, and let the OK catch it below.
-            gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG searching...')
+            -- Print once per search, not once per 150ms poll (Cat 1 scan can take
+            -- 10s+, which was ~65 identical GCS lines per boot).
+            if not cs.creg_search_ms then
+                cs.creg_search_ms = millis()
+                gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG searching...')
+            end
         end
 
         -- Self-cleaning mechanism: wipe the slate clean when the modem finishes a sentence
@@ -642,6 +1612,40 @@ local function step_CREG()
     -- Unconditionally poll the modem (the 200ms delay in run_step prevents spamming)
     AT_send(modem.fast_connect and 'AT+CEREG?\r\n' or 'AT+CREG?\r\n')
 end
+
+-- Recovery router. After the stall counter declares the socket dead we don't
+-- know whether the modem is still registered (socket wedged, radio fine) or
+-- genuinely fell off the network. The modem won't volunteer it, so ask once:
+--   registered (1/5)   -> only the socket died -> SOCKET_STATE (reopen ~1-2s)
+--   not reg (0/2/3/4)  -> radio dropped -> close socket, go re-register (CREG)
+--   no reply in SOCK_T -> AT channel wedged -> hard reset (run_step watchdog)
+-- Routes each failure to the right recovery immediately instead of always
+-- trying reopen first and finding out registration is gone the slow way (via
+-- the CIPOPEN retry ladder).
+local function step_CEREG_CHECK()
+    local s = uart_read()
+    if s and #s > 0 then buf.setup = buf.setup .. s end
+    if #buf.setup > 2048 then buf.setup = buf.setup:sub(-1024) end
+
+    local reg = buf.setup:match('+CEREG:%s*%d,(%d+)') or buf.setup:match('+CEREG:%s*(%d+)')
+    if reg then
+        buf.setup = ""
+        if reg == "1" or reg == "5" then
+            gcs:send_text(MAV_SEVERITY.INFO, 'LTE: registered - socket dead, reopening')
+            cs.cipopen_sent = false
+            step = modem.socket_state and "SOCKET_STATE" or "CIPOPEN"
+        else
+            gcs:send_text(MAV_SEVERITY.WARNING, string.format('LTE: not registered (CEREG=%s) - re-registering', reg))
+            if not cs.disconnect_ms then cs.disconnect_ms = millis():tofloat() end
+            if modem.cipclose then AT_send(modem.cipclose) end
+            cs.cipopen_sent = false; cs.hard_reset_strikes = 0
+            step = "CREG"
+        end
+        return
+    end
+    AT_send(modem.fast_connect and 'AT+CEREG?\r\n' or 'AT+CREG?\r\n')
+end
+
 
 local function step_SOCKET_STATE()
     local s = uart_read()
@@ -673,6 +1677,7 @@ local function step_CMUX()
     if found_cmux then
         cmux.send_sabm()
         gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CMUX mode set')
+        cmux_was_set = true  -- marker for CPIN-failure fallback
         step = "BAUD"
         return
     end
@@ -681,6 +1686,7 @@ local function step_CMUX()
         if s:find("CME ERROR") then AT_send('AT+CFUN=1\r\n')
         elseif #s >= 4 and (cmux.parse_cmux_frame(s) or s:find('CMUX=0\r\r\nOK\r') or s == string.char(cmux.FLAG,cmux.FLAG,cmux.FLAG,cmux.FLAG)) then
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CMUX mode set')
+            cmux_was_set = true  -- marker for CPIN-failure fallback
             cmux.send_sabm(); step = "BAUD"; return
         end
     end
@@ -766,8 +1772,17 @@ local function step_CIPMODE()
     local s = uart_read()
     if s:find('AT+CACID=0,0') then gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: network context set'); step = "NETOPEN"; return end
     if handle_error(s) then return end
-    if s:find('\r\r\nOK\r') or s:find('\r\nOK\r\n') then gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: transparent mode set'); step = "NETOPEN"; return end
+    -- Only trust a bare OK as "transparent mode set" once we've actually sent
+    -- AT+CIPMODE=1 ourselves -- otherwise a reply still in flight from an
+    -- earlier fire-and-forget command (AT+HTTPTERM in step_HTTPAUTH's SimCom
+    -- path) can arrive on this first read and get mistaken for it, skipping
+    -- the real command entirely and leaving the socket in non-transparent
+    -- mode with no error ever raised.
+    if cs.cipmode_sent and (s:find('\r\r\nOK\r') or s:find('\r\nOK\r\n')) then
+        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: transparent mode set'); step = "NETOPEN"; return
+    end
     data_send(modem.cipmode)
+    cs.cipmode_sent = true
 end
 
 local function step_NETOPEN()
@@ -807,7 +1822,7 @@ local function step_CIPOPEN()
     -- Pre-close stale socket on first entry only
     if s == "" and modem.cipclose and not cs.cipopen_sent and not cs.cipopen_preclosed then
         gcs:send_text(MAV_SEVERITY.INFO, "LTE: pre-close stale socket")
-        cs.cipopen_preclosed = true  -- ← dedicated flag, doesn't touch retry counter
+        cs.cipopen_preclosed = true
         step = "CIPCLOSE"
         return
     end
@@ -821,6 +1836,7 @@ local function step_CIPOPEN()
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: connected')
             cs.cipopen_sent = false; cs.cipopen_retry = 0
             cs.hard_reset_strikes = 0 
+            cs.consec_stall = 0
             cs.cipopen_preclosed = false
             reset_buffers(); step = "CONNECTED"; return
         end
@@ -845,7 +1861,7 @@ local function step_CIPOPEN()
                     reset_to_ATI()
                 else
                     gcs:send_text(MAV_SEVERITY.ERROR, 'LTE CIPOPEN failed 3x — soft reset to CREG')
-                    cs.cipopen_retry = 0;
+                    cs.cipopen_retry = 0
                     cs.cipopen_preclosed = false
                     step = "CREG"
                 end
@@ -856,15 +1872,30 @@ local function step_CIPOPEN()
 
     if is_error then return end
 
-    if P.SERVER_PORT:get() <= 0 then gcs:send_text(MAV_SEVERITY.ERROR, "Must set LTE_SERVER_PORT"); return end
+    if not (cs.auth_ip and cs.auth_port) and P.SERVER_PORT:get() <= 0 then
+        gcs:send_text(MAV_SEVERITY.ERROR, "Must set LTE_SERVER_PORT"); return
+    end
 
-    local cipopen = option_enabled(OPT.TCP) and modem.cipopen_tcp or modem.cipopen_udp
+    local use_dp = want_direct_push()
+    local cipopen, dp_used
+    if option_enabled(OPT.TCP) then
+        if use_dp and modem.cipopen_tcp_dp then
+            cipopen = modem.cipopen_tcp_dp; dp_used = true
+        else cipopen = modem.cipopen_tcp; dp_used = false end
+    else
+        if use_dp and modem.cipopen_udp_dp then
+            cipopen = modem.cipopen_udp_dp; dp_used = true
+        else cipopen = modem.cipopen_udp; dp_used = false end
+    end
+    cs.direct_push = dp_used
+    if dp_used then cs.qcsq_armed = false; cs.tx_state = "idle"; cs.tx_pending = ""; cs.rx_need = 0; buf.dp = "" end
     if not cipopen then
         gcs:send_text(MAV_SEVERITY.ERROR, "LTE: modem has no socket-open command")
+        cs.halt_reason = "modem has no socket-open command"
         step = "HALT"
         return
     end
-    data_send(string.format(cipopen, P.SERVER_IP0:get(), P.SERVER_IP1:get(), P.SERVER_IP2:get(), P.SERVER_IP3:get(), P.SERVER_PORT:get()))
+    data_send(string.format(cipopen, effective_server()))
     cs.cipopen_sent = true; cs.cipopen_sent_ms = millis():tofloat()
 end
 
@@ -873,39 +1904,35 @@ local function step_CONNECTED()
     stats.bytes_in = stats.bytes_in + #s
     if option_enabled(OPT.LOGALL) then log_data(s, '<<<') end
 
-    if s and s:find('\r\nCLOSED\r\n') then
-        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: connection closed, reconnecting')
-        cs.cipopen_sent = false; step = "CIPOPEN"; return
-    end
-
-    if s and s:find('PPPD: DISCONNECTED\r\n') then
-        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: PPP closed, reconnecting')
-        step = "PPPOPEN"; return
+    -- Transparent/PPP socket-close strings. In direct push these arrive as
+    -- +QIURC: "closed" lines, handled inside dp.process_rx instead.
+    if not cs.direct_push then
+        if s:find('\r\nCLOSED\r\n') then
+            gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: connection closed, reconnecting')
+            cs.cipopen_sent = false; step = "CIPOPEN"; return
+        end
+        if s:find('PPPD: DISCONNECTED\r\n') then
+            gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: PPP closed, reconnecting')
+            step = "PPPOPEN"; return
+        end
     end
 
     local now_ms = millis()
-    if s and #s > 0 then
-        if not cmux_enabled() then
-            buf.fc = buf.fc .. s; cs.last_data_ms = now_ms
 
-            if s:find('+CEREG: 0') or s:find('+CEREG: 2') or s:find('+CREG: 0,0') or s:find('+CREG: 0,2') then
-                if not cs.cereg_drop_ms then
-                    cs.cereg_drop_ms = now_ms
-                    gcs:send_text(MAV_SEVERITY.WARNING, string.format('LTE: CEREG lost — %ds grace', P.GRACE:get()))
-                end
-            elseif s:find('+CEREG: 1') or s:find('+CEREG: 5') or s:find('+CREG: 0,1') or s:find('+CREG: 0,5') then
-                cs.cereg_drop_ms = nil
-            end
-        else
+    -- One-shot: arm continuous +QCSQ URC after a direct-push socket opens.
+    if cs.direct_push and not cs.qcsq_armed and cs.tx_state == "idle" and modem.qcsq_enable then
+        AT_send(modem.qcsq_enable); cs.qcsq_armed = true
+        gcs:send_text(MAV_SEVERITY.INFO, 'LTE: enabled +QCSQ push (direct mode)')
+    end
+
+    if s and #s > 0 then
+        if cmux_enabled() then
             buf.parse = buf.parse .. s
             buf.parse = cmux.feed_uart_in(buf.parse)
             if now_ms - cs.last_parse_ms > 1000 then buf.parse = "" end
-
             if #cmux.buffers[cmux.DLC_AT] > 0 then
                 local at_text = cmux.buffers[cmux.DLC_AT]
-                cmux.buffers[cmux.DLC_AT] = ""
-                cs.last_parse_ms = now_ms
-
+                cmux.buffers[cmux.DLC_AT] = ""; cs.last_parse_ms = now_ms
                 if at_text:find('+CEREG: 0') or at_text:find('+CEREG: 2') or
                    at_text:find('+CREG: 0,0') or at_text:find('+CREG: 0,2') then
                     if not cs.cereg_drop_ms then
@@ -914,70 +1941,138 @@ local function step_CONNECTED()
                     end
                 elseif at_text:find('+CEREG: 1') or at_text:find('+CEREG: 5') or
                        at_text:find('+CREG: 0,1') or at_text:find('+CREG: 0,5') then
-                    cs.cereg_drop_ms = nil  
+                    cs.cereg_drop_ms = nil
                 end
-
                 handle_AT_reply(at_text)
             end
-
             if #cmux.buffers[cmux.DLC_DATA] > 0 then
                 cs.last_data_ms = now_ms; cs.last_parse_ms = now_ms
                 buf.fc = buf.fc .. cmux.buffers[cmux.DLC_DATA]; cmux.buffers[cmux.DLC_DATA] = ""
             end
+
+        elseif cs.direct_push then
+            buf.dp = buf.dp .. s
+            dp.process_rx(now_ms)
+            if cs.dp_closed then
+                cs.dp_closed = false
+                gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: socket closed (URC), reconnecting')
+                cs.cipopen_sent = false; cs.tx_state = "idle"; cs.tx_pending = ""
+                step = "CIPOPEN"; return
+            end
+
+        else
+            -- plain transparent no-CMUX (unchanged behaviour)
+            buf.fc = buf.fc .. s; cs.last_data_ms = now_ms
+            buf.at_scan = (buf.at_scan or "") .. s
+            if #buf.at_scan > 4096 then buf.at_scan = buf.at_scan:sub(-2048) end
+            if buf.at_scan:find('OK\r\n') or buf.at_scan:find('ERROR\r\n') then
+                handle_AT_reply(buf.at_scan)
+                local after_ok = buf.at_scan:find('OK\r\n', 1, true)
+                local after_err = buf.at_scan:find('ERROR\r\n', 1, true)
+                if after_ok then buf.at_scan = buf.at_scan:sub(after_ok + 4)
+                elseif after_err then buf.at_scan = buf.at_scan:sub(after_err + 7) end
+            end
+            if s:find('+CEREG: 0') or s:find('+CEREG: 2') or s:find('+CREG: 0,0') or s:find('+CREG: 0,2') then
+                if not cs.cereg_drop_ms then
+                    cs.cereg_drop_ms = now_ms
+                    gcs:send_text(MAV_SEVERITY.WARNING, string.format('LTE: CEREG lost — %ds grace', P.GRACE:get()))
+                end
+            elseif s:find('+CEREG: 1') or s:find('+CEREG: 5') or s:find('+CREG: 0,1') or s:find('+CREG: 0,5') then
+                cs.cereg_drop_ms = nil
+            end
         end
+
     elseif P.TIMEOUT:get() > 0 and now_ms - cs.last_data_ms > uint32_t(P.TIMEOUT:get() * 1000) then
-        gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: data timeout')
-        -- Backdate disconnect_ms to when data actually stopped
-        if not cs.disconnect_ms then cs.disconnect_ms = millis():tofloat() - (P.TIMEOUT:get() * 1000) end
-        reset_to_ATI(); return
+        if cs.direct_push then
+            -- Modem is registered and healthy; only the socket/return-path died.
+            -- Reopen the socket (~1-2s) instead of a full AT+CFUN=1,1 reboot
+            -- (~120s cold re-registration). Mirrors the CLOSED-URC reconnect path.
+            gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: data timeout - reopening socket')
+            if not cs.disconnect_ms then cs.disconnect_ms = millis():tofloat() - (P.TIMEOUT:get() * 1000) end
+            cs.last_data_ms = now_ms
+            cs.cipopen_sent = false
+            cs.tx_state = "idle"; cs.tx_pending = ""
+            cs.consec_stall = 0
+            buf.setup = ""
+            step = "CEREG_CHECK"; return
+        else
+            gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: data timeout')
+            if not cs.disconnect_ms then cs.disconnect_ms = millis():tofloat() - (P.TIMEOUT:get() * 1000) end
+            reset_to_ATI(); return
+        end
     end
 
     local grace_ms = P.GRACE:get() * 1000
     if cs.cereg_drop_ms and (now_ms - cs.cereg_drop_ms > grace_ms) then
         gcs:send_text(MAV_SEVERITY.WARNING, 'LTE: network lost — fast reconnect')
         if not cs.disconnect_ms then cs.disconnect_ms = cs.cereg_drop_ms:tofloat() end
-        cs.cereg_drop_ms = nil; cs.cipopen_sent = false
-        cs.hard_reset_strikes = 0 
+        cs.cereg_drop_ms = nil; cs.cipopen_sent = false; cs.hard_reset_strikes = 0
+        cs.tx_state = "idle"; cs.tx_pending = ""
         if modem.cipclose then AT_send(modem.cipclose) end
         step = "CREG"; return
     end
 
     s = ser_device:readstring(512)
     if s then buf.modem = buf.modem .. s end
-
     if #buf.modem > 10240 then buf.modem = "" end
     if #buf.fc > 10240 then buf.fc = "" end
 
-    local quota = 0
-    if P.TX_RATE:get() > 0 then quota = math.floor((now_ms - cs.last_send_data_ms):tofloat()*0.001 * P.TX_RATE:get()) end
-
-    local data_sent = 0
-    while #buf.modem > 0 do
-        local n = #buf.modem
-        if n > 100 then n = 100 end
-        if quota > 0 and quota - data_sent < n then n = quota - data_sent end
-        local data = buf.modem:sub(1, n)
-        data_sent = data_sent + #data; cs.last_send_data_ms = now_ms
-        if not data_send_connected(data) then break end
-        buf.modem = buf.modem:sub(n + 1)
-        if quota > 0 and data_sent >= quota then break end
+    -- Uplink (vehicle -> modem -> GCS)
+    if cs.direct_push then
+        local budget = 1024
+        if P.TX_RATE:get() > 0 then
+            budget = math.floor((now_ms - cs.last_send_data_ms):tofloat()*0.001 * P.TX_RATE:get())
+        end
+        dp.process_tx(now_ms, budget)
+    else
+        local quota = 0
+        if P.TX_RATE:get() > 0 then quota = math.floor((now_ms - cs.last_send_data_ms):tofloat()*0.001 * P.TX_RATE:get()) end
+        local data_sent = 0
+        while #buf.modem > 0 do
+            local n = #buf.modem
+            if n > 100 then n = 100 end
+            if quota > 0 and quota - data_sent < n then n = quota - data_sent end
+            local data = buf.modem:sub(1, n)
+            data_sent = data_sent + #data; cs.last_send_data_ms = now_ms
+            if not data_send_connected(data) then break end
+            buf.modem = buf.modem:sub(n + 1)
+            if quota > 0 and data_sent >= quota then break end
+        end
     end
+
+    -- Deliver downlink payload to flight controller
     if #buf.fc > 0 then
         local nwritten = ser_device:writestring(buf.fc)
         if nwritten > 0 then buf.fc = buf.fc:sub(nwritten + 1) end
     end
 
-    if cmux_enabled() and not option_enabled(OPT.NOSIGQUERY) then
-        if now_ms - cs.last_CSQ_ms > 500 then
-            cs.last_CSQ_ms = now_ms
-            if not modem.cpsi then AT_send("AT+CSQ\r\n")
-            else
-                if cs.csq_toggle then AT_send("AT+CSQ\r\n") else AT_send(modem.cpsi) end
-                cs.csq_toggle = not cs.csq_toggle
+    -- Signal acquisition
+    if not option_enabled(OPT.NOSIGQUERY) then
+        if cs.direct_push then
+            -- RSRP/RSRQ/RSSI arrive via +QCSQ URC. Poll QENG slowly for band/CID,
+            -- but only when the QISEND handshake is idle (never interleave a send).
+            if cs.tx_state == "idle" and modem.preflight and now_ms - cs.last_CSQ_ms > 5000 then
+                cs.last_CSQ_ms = now_ms; AT_send(modem.preflight)
+            end
+        elseif cmux_enabled() then
+            if now_ms - cs.last_CSQ_ms > 500 then
+                cs.last_CSQ_ms = now_ms
+                if not modem.cpsi then AT_send("AT+CSQ\r\n")
+                else
+                    if cs.csq_toggle then AT_send("AT+CSQ\r\n") else AT_send(modem.cpsi) end
+                    cs.csq_toggle = not cs.csq_toggle
+                end
+            end
+        else
+            if now_ms - cs.last_CSQ_ms > 1500 then
+                cs.last_CSQ_ms = now_ms; AT_send(modem.cpsi or "AT+CSQ\r\n")
             end
         end
 
-        if now_ms - cs.last_CSQ_reply_ms > 5000 then cs.last_CSQ_reply_ms = now_ms; gcs:send_named_float('LTE_RSSI', -1) end
+        -- RSSI heartbeat: skip in direct push (QCSQ supplies real RSSI).
+        if not cs.direct_push and now_ms - cs.last_CSQ_reply_ms > 5000 then
+            cs.last_CSQ_reply_ms = now_ms; gcs:send_named_float('LTE_RSSI', -1)
+        end
         if P.MCCMNC:get() ~= last_mccmnc and modem.mccmnc then
             set_MCCMNC(); gcs:send_text(MAV_SEVERITY.INFO, string.format("LTE_modem: set MCCMNC=%d", last_mccmnc)); step = "CREG"
         end
@@ -990,7 +2085,14 @@ local function step_CONNECTED()
     if supports_routing and now_ms - cs.last_route_ms > 1000 then
         cs.last_route_ms = now_ms
         local dest = uint32_t(P_ROUTE.IP0:get())<<24 | uint32_t(P_ROUTE.IP1:get())<<16 | uint32_t(P_ROUTE.IP2:get())<<8 | uint32_t(P_ROUTE.IP3:get())
-        if dest ~= uint32_t(0) then networking:add_route(0, 1, dest, math.floor(P_ROUTE.MASK:get())) end -- luacheck: ignore 143
+        if dest ~= uint32_t(0) then networking:add_route(0, 1, dest, math.floor(P_ROUTE.MASK:get())) end
+    end
+    if cs.direct_push and (not cs.last_tx_dbg_ms or now_ms - cs.last_tx_dbg_ms > 1000) then
+        cs.last_tx_dbg_ms = now_ms
+        local st_code = (cs.tx_state == "idle" and 0) or (cs.tx_state == "prompt" and 1) or 2  -- 2=sendok
+        logger:write("LTED", 'QIS,PRM,OK,STL,RCV,TXQ,ST', 'IIIIIIB',
+                     cs.dbg_qisend, cs.dbg_prompt, cs.dbg_sendok, cs.dbg_stall,
+                     cs.dbg_recv, #buf.modem, st_code)
     end
 end
 
@@ -1000,9 +2102,18 @@ local function run_step()
     local now_ms = millis()
 
     if step_changed then
-        gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE_modem: step %s', step))
-        if cs.last_step and cs.last_step ~= "ATI" then table.insert(cs.step_times, {name=cs.last_step, ms=math.floor(now_ms:tofloat()-cs.step_timer_ms)}) end
-        cs.step_timer_ms = now_ms:tofloat()
+    gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE_modem: step %s', step))
+    if cs.last_step and cs.last_step ~= "ATI" and not cs.reset_recorded then
+        table.insert(cs.step_times, {name=cs.last_step, ms=math.floor(now_ms:tofloat()-cs.step_timer_ms)})
+    end
+    cs.reset_recorded = false
+    cs.step_timer_ms = now_ms:tofloat()
+        -- Fresh entry into CIPMODE: cs.cipmode_sent gates step_CIPMODE's "OK
+        -- means transparent mode is set" check below, so a reply to some
+        -- earlier fire-and-forget command (e.g. HTTPTERM in step_HTTPAUTH)
+        -- that is still in flight can't be mistaken for the CIPMODE reply
+        -- before AT+CIPMODE=1 has actually been sent.
+        if step == "CIPMODE" then cs.cipmode_sent = false end
         
         -- Diagnostic Timing Dump
         if step == "CONNECTED" and #cs.step_times > 0 then
@@ -1032,17 +2143,31 @@ local function run_step()
     end
     cs.last_step = step
 
-    if step == "CONNECTED" then step_CONNECTED(); return 5 end
+    -- 20ms (not 5ms): matches the HAL UART buffer sizing assumption of a
+    -- ~40Hz reader (AP_HAL_ChibiOS/UARTDriver.cpp), and stops this script
+    -- from monopolizing the shared scripting VM at other scripts' expense.
+    if step == "CONNECTED" then step_CONNECTED(); return 20 end
 
     local time_in_step = (now_ms:tofloat() - cs.step_timer_ms) / 1000
-    if not step_changed and step ~= "ATI" and step ~= "CMUX" and step ~= "CPIN" and step ~= "CREG" and step ~= "HALT" then
+    -- DP fast-recovery steps talk to an already-up modem that answers in <1s.
+    -- If one goes silent past SOCK_T the AT channel is wedged; hard reset now
+    -- instead of waiting the full 15s STUCK_T (~11s saved per silent reboot).
+    if not step_changed and cs.direct_push
+       and (step == "CEREG_CHECK" or step == "SOCKET_STATE" or step == "CIPCLOSE") then
+        local sock_t = P.SOCK_T:get()
+        if sock_t > 0 and time_in_step > sock_t then
+            gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE: %s silent %ds - hard reset", step, math.floor(time_in_step)))
+            reset_to_ATI(); return 1000
+        end
+    end
+    if not step_changed and step ~= "ATI" and step ~= "CMUX" and step ~= "CPIN" and step ~= "CREG" and step ~= "HALT" and step ~= "HTTPAUTH" then
         if time_in_step > P.STUCK_T:get() then
             gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE: %s timeout after %ds", step, P.STUCK_T:get()))
             reset_to_ATI(); return 1000
         end
     end
 
-    if not step_changed and (step == "CPIN" or step == "CREG") then
+    if not step_changed and (step == "CPIN" or step == "CREG" or step == "CMUX") then
         local creg_patience = math.max(30, P.STUCK_T:get() * 3)
         if time_in_step > creg_patience then
             gcs:send_text(MAV_SEVERITY.CRITICAL, "LTE: " .. step .. " search failed, hard reset")
@@ -1053,14 +2178,17 @@ local function run_step()
     if step == "HALT" then
         local time_in_halt = (now_ms:tofloat() - cs.step_timer_ms) / 1000
         if math.floor(time_in_halt) % 15 == 0 then
-            gcs:send_text(MAV_SEVERITY.CRITICAL, "LTE HALTED: SIM unresponsive. Power cycle modem.")
+            gcs:send_text(MAV_SEVERITY.CRITICAL,
+                "LTE HALTED: " .. (cs.halt_reason or "unknown reason") .. ". Power cycle modem.")
         end
         return 5000
     end
     if step == "ATI" then step_ATI(); return 1100 end
     if step == "BAUD" then step_BAUD(); return 50 end
     if step == "CREG" then step_CREG(); return 150 end 
+    if step == "HTTPAUTH" then step_HTTPAUTH(); return 100 end
     if step == "SIGNAL_GATE" then step_SIGNAL_GATE(); return 50 end
+    if step == "CEREG_CHECK" then step_CEREG_CHECK(); return 100 end
     if step == "SOCKET_STATE" then step_SOCKET_STATE(); return 50 end
     if step == "CGACT" then step_CGACT(); return 500 end
     if step == "CIPMODE" then step_CIPMODE(); return 200 end

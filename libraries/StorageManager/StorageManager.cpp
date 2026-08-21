@@ -33,6 +33,11 @@
 
 extern const AP_HAL::HAL& hal;
 
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+// size of the StorageCustom area
+#define AP_CUSTOM_STORAGE_SIZE 128
+#endif
+
 bool StorageManager::last_io_failed;
 
 /*
@@ -96,7 +101,7 @@ const StorageManager::StorageArea StorageManager::layout[STORAGE_NUM_AREAS] = {
     // 128 byte gap at end of first 16k
 #endif
 #if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1  && (STORAGE_NUM_AREAS == 16 || STORAGE_NUM_AREAS == 19)
-    {StorageCustom, 16256, 128},
+    {StorageCustom, 16256, AP_CUSTOM_STORAGE_SIZE},
 #endif
 
 #if STORAGE_NUM_AREAS >= 18 || STORAGE_NUM_AREAS == 19
@@ -109,12 +114,28 @@ const StorageManager::StorageArea StorageManager::layout[STORAGE_NUM_AREAS] = {
 
 /*
   erase all storage
+  (other than the custom storage area)
  */
 void StorageManager::erase(void)
 {
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+    // store the custom storage block in a temporary buffer
+    const StorageAccess custom(StorageCustom);
+    uint8_t custom_data[AP_CUSTOM_STORAGE_SIZE] {};
+    const bool custom_saved = custom.size() >= AP_CUSTOM_STORAGE_SIZE &&
+                              custom.read_block(custom_data, 0, sizeof(custom_data));
+#endif
+
     if (!hal.storage->erase()) {
         ::printf("StorageManager: erase failed\n");
     }
+
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+    // write the data back
+    if (custom_saved) {
+        custom.write_block(0, custom_data, sizeof(custom_data));
+    }
+#endif
 }
 
 /*

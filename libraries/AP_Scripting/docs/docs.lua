@@ -2150,8 +2150,45 @@ function quadplane:in_vtol_land_descent() end
 ---@return boolean
 function quadplane:abort_landing() end
 
+-- true if vtol transition
+---@return boolean
+function quadplane:tailsitter_in_vtol_transition() end
 
 -- desc
+---@return number -- roll_cd
+---@return number -- pitch_cd
+---@return number -- yaw_cd
+function qp_att_desired() end
+
+-- desc
+---@return number -- roll_cd
+---@return number -- pitch_cd
+---@return number -- yaw_cd
+function qp_att_actual() end
+
+-- desc
+---@return number -- roll_dps
+---@return number -- pitch_dps
+---@return number -- yaw_dps
+function qp_angle_rate() end
+
+
+--desc
+---@param axis integer
+---| '0' # Roll axis
+---| '1' # Pitch axis
+---| '2' # Yaw axis
+---@return number -- P 
+---@return number -- I
+---@return number -- D
+---@return number -- FF
+---@return number -- target rad/s
+---@return number -- actual rad/s
+---@return number -- error rad/s
+function qp_rate_pid_info(axis) end
+
+-- desc
+---@class LED
 LED = {}
 
 -- desc
@@ -2964,6 +3001,37 @@ function gcs:last_seen() end
 ---@param params table -- parameters of p1, p2, p3, p4, x, y and z and frame. Any not specified taken as zero
 ---@return integer -- MAV_RESULT
 function gcs:run_command_int(command, params) end
+
+-- configure the MAVLink2 signing key and activate it immediately on all
+-- channels. Fails and returns false if armed, if the key is not exactly
+-- 32 bytes, or if the key could not be saved to storage
+---@param key string -- 32 byte secret key
+---@param initial_timestamp uint64_t_ud -- initial signing timestamp
+---@return boolean
+function gcs:set_signing_key(key, initial_timestamp) end
+
+-- update the live outgoing MAVLink system id. Unlike setting the
+-- SYSID_THISMAV parameter, this takes effect immediately. Fails and
+-- returns false if armed.
+---@param sysid integer
+---@return boolean
+function gcs:set_sysid(sysid) end
+
+-- Custom persistent storage for per-aircraft identity (UUID, password,
+-- craft ID, UIN). Only present when AP_ENABLE_CUSTOM_STORAGE is built in.
+custom_storage = {}
+
+-- returns the stored UUID string, or nil if unset/uninitialized
+---@return string|nil
+function custom_storage:get_uuid() end
+
+-- returns the stored password string, or nil if unset/uninitialized
+---@return string|nil
+function custom_storage:get_password() end
+
+-- returns the stored craft ID string (e.g. "AA-TRT-00659"), or nil if unset/uninitialized
+---@return string|nil
+function custom_storage:get_craft_id() end
 
 -- The relay library provides access to controlling relay outputs.
 relay = {}

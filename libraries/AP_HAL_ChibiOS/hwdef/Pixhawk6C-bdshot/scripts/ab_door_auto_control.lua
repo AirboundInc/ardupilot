@@ -1,5 +1,6 @@
 --[[
   Auto door opening and closing Lua Script
+  This script works only with Airbound 4.5.7.5 - hf5 or above
 ]]
 
 -- ###############################################################################
@@ -11,25 +12,7 @@ local CONFIG_UPDATE_INTERVAL_MS = 5000
 local RC_SWITCH_THRESHOLD = 1500
 local PWM_SAFE_MIN = 800
 local PWM_SAFE_MAX = 2200
-
--- Modes for landing
-local QMODES = {
-    [17] = true,  -- QSTABILIZE
-    [18] = true,  -- QHOVER
-    [19] = true,  -- QLOITER
-    [20] = true,  -- QLAND
-    [21] = true,  -- QRTL
-    [22] = true,  -- QAUTOTUNE
-    [23] = true,  -- QACRO
-}
-
--- Mission commands for landing phase
-local NAV_CMDS = {
-    [17] = true, -- MAV_CMD_NAV_LOITER_UNLIM
-    [19] = true, -- MAV_CMD_NAV_LOITER_TIME
-    [31] = true, -- MAV_CMD_NAV_LOITER_TO_ALT
-    [85] = true, -- MAV_CMD_NAV_VTOL_LAND
-}
+local backtransition_complete_time_ms = nil
 
 -- ###############################################################################
 -- # PARAMETER DEFINITIONS
@@ -40,8 +23,8 @@ local NUM_PARAMS = 19
 assert(param:add_table(PARAM_TABLE_KEY, PARAM_PREFIX, NUM_PARAMS), "Failed to create param table")
 
 local PARAM_IDX = {
-    -- Basic control parameters (1-5)
-    MAN_CMD_CH = 1, MAN_TIMEOUT = 2, ALT_TRIG_M = 3, VTOL_PITCH = 4, FW_PITCH = 5,
+    -- Basic control parameters (1-3)
+    MAN_CMD_CH = 1, MAN_TIMEOUT = 2, ALT_TRIG_M = 3,
     
     -- Servo 1 (6-8)
     S1_FUNC = 6, S1_OPEN = 7, S1_CLOSE = 8,
@@ -68,10 +51,6 @@ assert(param:add_param(PARAM_TABLE_KEY, PARAM_IDX.MAN_CMD_CH, "MAN_CMD_CH", 9))
 assert(param:add_param(PARAM_TABLE_KEY, PARAM_IDX.MAN_TIMEOUT, "MAN_TIMEOUT", 5))
 --[[ @Param: DOOR_ALT_TRIG_M, @DisplayName: Take-off Altitude Trigger, @Units: m, @Range: 1 100 --]]
 assert(param:add_param(PARAM_TABLE_KEY, PARAM_IDX.ALT_TRIG_M, "ALT_TRIG_M", 3))
---[[ @Param: DOOR_VTOL_PITCH, @DisplayName: VTOL Min Pitch Angle, @Description: Pitch angle above which a tailsitter is considered in VTOL flight, @Units: deg, @Range: 45 85, @User: Standard --]]
-assert(param:add_param(PARAM_TABLE_KEY, PARAM_IDX.VTOL_PITCH, "VTOL_PITCH", 75))
---[[ @Param: DOOR_FW_PITCH, @DisplayName: Fixed-Wing Max Pitch Angle, @Description: Pitch angle below which a tailsitter is considered in Fixed-Wing flight, @Units: deg, @Range: 5 40, @User: Standard --]]
-assert(param:add_param(PARAM_TABLE_KEY, PARAM_IDX.FW_PITCH, "FW_PITCH", 25))
 
 -- Servo function and PWM parameters
 local open_pwms = {1000, 1900, 1000, 1900}
@@ -103,11 +82,9 @@ local state = {
     last_rc_pwm = 0,
     doors_are_commanded_closed = false,
     takeoff_climbout_complete = false,
-    was_in_vtol_state = false,
-    was_in_fw_state = false,
     last_config_update = 0,
     was_armed = false,
-    landing_latch = false,
+    one_forward_transition_complete = false,
     -- State table for each servo's position
     servos = {}
 }
@@ -116,8 +93,6 @@ local config = {
     man_cmd_ch = Parameter(PARAM_PREFIX .. "MAN_CMD_CH"),
     man_timeout = Parameter(PARAM_PREFIX .. "MAN_TIMEOUT"),
     alt_trig_m = Parameter(PARAM_PREFIX .. "ALT_TRIG_M"),
-    vtol_pitch = Parameter(PARAM_PREFIX .. "VTOL_PITCH"),
-    fw_pitch = Parameter(PARAM_PREFIX .. "FW_PITCH"),
     slew_rate = Parameter(PARAM_PREFIX .. "SLEW_RATE"),
     man_override = Parameter(PARAM_PREFIX .. "OVERRIDE")
 }
@@ -148,19 +123,12 @@ function update_config_cache()
         man_cmd_ch = config.man_cmd_ch:get(),
         man_timeout = config.man_timeout:get(),
         alt_trig_m = config.alt_trig_m:get(),
-        vtol_pitch = config.vtol_pitch:get(),
-        fw_pitch = config.fw_pitch:get(),
         slew_rate = config.slew_rate:get(),
         man_override = config.man_override:get()
     }
 
     if config.cache.man_cmd_ch < 1 or config.cache.man_cmd_ch > 16 then
         log_message(MAV_SEVERITY.ERROR, "Invalid manual channel")
-        return false
-    end
-
-    if config.cache.vtol_pitch <= config.cache.fw_pitch then
-        log_message(MAV_SEVERITY.ERROR, "VTOL pitch must be > FW pitch")
         return false
     end
 
@@ -262,38 +230,15 @@ function get_current_altitude_agl()
     return nil
 end
 
-function get_tailsitter_flight_state()
-    local pitch_rad = ahrs:get_pitch()
-    if not pitch_rad then return nil end
-    local pitch_deg = math.abs(math.deg(pitch_rad))
-    if pitch_deg >= config.cache.vtol_pitch then return "VTOL"
-    elseif pitch_deg <= config.cache.fw_pitch then return "FIXED_WING"
-    else return "TRANSITIONING" end
-end
-
-function is_in_landing_phase(current_mode)
-    local MODES = { auto = 10 } -- other valid modes which need additional checks
-    if not current_mode then return false end
-
-    -- Return true for all q modes directly, regardless of pitch
-    if QMODES[current_mode] then
-        return true
-    end
-
-    -- Check for vertical mission commands for auto mode
-    if current_mode == MODES.auto then
-        local nav_cmd = mission:get_current_nav_id()
-        if NAV_CMDS[nav_cmd] then
-            -- valid command for landing phase
-            return true
+function in_vtol_flight()
+    local vtol_active = not quadplane:tailsitter_in_vtol_transition() and quadplane:in_vtol_mode()
+    if vtol_active then
+        if backtransition_complete_time_ms == nil then
+            backtransition_complete_time_ms = millis():tofloat()
         end
-    end
-
-    -- Check VTOL descent flag
-    if quadplane and quadplane:in_vtol_land_descent() then
         return true
     end
-
+    backtransition_complete_time_ms = nil
     return false
 end
 
@@ -302,17 +247,14 @@ function run_auto_mode()
 
     local current_mode = vehicle:get_mode()
     if not current_mode then return end
-    
-    local flight_state = get_tailsitter_flight_state()
-    if not flight_state then return end
 
-    local is_currently_in_vtol = (flight_state == "VTOL")
-    local is_currently_in_fw = (flight_state == "FIXED_WING")
+    local alt = get_current_altitude_agl()
+    
+    local is_vtol_flight = in_vtol_flight()
 
     -- Phase 1 - Check for takeoff
     if not state.takeoff_climbout_complete then
-        if is_currently_in_vtol then
-            local alt = get_current_altitude_agl()
+        if is_vtol_flight then
             if alt and alt >= config.cache.alt_trig_m then
                 log_message(MAV_SEVERITY.INFO, "Takeoff alt " .. string.format("%.1f", alt) .. "m reached - closing doors")
                 if close_all_doors() then
@@ -326,34 +268,22 @@ function run_auto_mode()
         return
     end
 
-    -- Phase 2 - Checks during flight and landing
-    -- DETECT TRANSITION (FW -> VTOL) to set the Landing Latch
-    if state.was_in_fw_state and is_currently_in_vtol then
-         state.landing_latch = true
-         log_message(MAV_SEVERITY.INFO, "Transition to VTOL detected. Doors OPEN.")
-    end
-
-    -- SAFETY: We DO NOT clear latch on (VTOL -> FW) transition anymore,
-    -- because instability can look like a FW transition
-    -- APPLY STATE BASED ON MODES
-    if is_in_landing_phase(current_mode) then
-        if state.landing_latch then
-            -- We are latched OPEN.
-            -- Stays TRUE even if pitch goes to 0 (Fix for instability safety).
+    -- Change Door state based on Flight Phase:FW, VTOL
+    if is_vtol_flight then
+        -- Only open doors in VTOL after first fixed wing transition is complete. Indicates VTOL takeoff is complete 
+        if state.one_forward_transition_complete then
             open_all_doors()
-        end -- latch checking
+        end
     else
         -- Non-VTOL Modes (FW, FBWA, MANUAL, etc.)
         -- Auto mode with mission commands other than Loiter/nav_vtol_land or other landing command ids
-        -- Force Latch Reset here and close doors
-        state.landing_latch = false
+        -- VTOL Takoff complete is indicated by completion of first fixedwing transition
+        if not state.one_forward_transition_complete then
+            state.one_forward_transition_complete = true
+        end
         close_all_doors()
     end -- landing phase checking
 
-    if flight_state ~= "TRANSITIONING" then
-        state.was_in_vtol_state = is_currently_in_vtol
-        state.was_in_fw_state = is_currently_in_fw
-    end
 end
 
 function check_manual_override()
@@ -417,17 +347,13 @@ function update()
     if is_armed_now and not state.was_armed then
         log_message(MAV_SEVERITY.INFO, "Armed! Ready for takeoff.")
         state.takeoff_climbout_complete = false
-        state.was_in_vtol_state = false
-        state.was_in_fw_state = false
-        state.landing_latch = false
+        state.one_forward_transition_complete = false
     elseif not is_armed_now and state.was_armed then
         log_message(MAV_SEVERITY.INFO, "Disarmed. Resetting state and opening doors.")
         open_all_doors()
         state.is_in_manual_override = false
         state.takeoff_climbout_complete = false
-        state.was_in_vtol_state = false
-        state.was_in_fw_state = false
-        state.landing_latch = false
+        state.one_forward_transition_complete = false
     end
     state.was_armed = is_armed_now
 
