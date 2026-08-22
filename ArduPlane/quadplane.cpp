@@ -1720,6 +1720,14 @@ void SLT_Transition::update()
             throttle_scaled = constrain_float(throttle_scaled * (1.0-ratio) + fw_throttle * ratio, 0.0, 1.0);
         }
         quadplane.assisted_flight = true;
+
+        // Disable roll and yaw during forward transition
+        plane.nav_roll_cd = 0;
+        quadplane.disable_yaw_rate_time_constant();
+        quadplane.attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
+                                                                      plane.nav_pitch_cd,
+                                                                      0);
+
         quadplane.hold_stabilize(throttle_scaled);
 
         // set desired yaw to current yaw in both desired angle and
