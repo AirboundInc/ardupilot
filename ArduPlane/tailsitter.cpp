@@ -234,6 +234,14 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("RPM_CO", 32, Tailsitter, rpm_to_pwm_conversion, 5.76f),
 
+    
+    // @Param: VHDGAIN
+    // @DisplayName: Tailsitter vector thrust derivative gain
+    // @Description: This controls the amount of vectored thrust control used in hover for a vectored tailsitter
+    // @Range: 0 1
+    // @Increment: 0.01
+    AP_GROUPINFO("VHDGN", 33, Tailsitter, vectored_hover_d_gain, 1),
+
     AP_GROUPEND
 };
 
@@ -527,7 +535,8 @@ void Tailsitter::output(void)
          */
         float des_pitch_cd = quadplane.attitude_control->get_att_target_euler_cd().y;
         int32_t pitch_error_cd = (des_pitch_cd - quadplane.ahrs_view->pitch_sensor) * vectored_hover_gain;
-        float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
+        float derivative = (degrees(quadplane.ahrs_view->get_gyro_latest().y))*100.0f*vectored_hover_d_gain;
+        float extra_pitch = constrain_float(pitch_error_cd - derivative, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
         float extra_sign = extra_pitch > 0?1:-1;
         if (!is_zero(extra_pitch) && quadplane.in_vtol_mode()) {
             extra_elevator = extra_sign * powf(fabsf(extra_pitch), vectored_hover_power) * SERVO_MAX;

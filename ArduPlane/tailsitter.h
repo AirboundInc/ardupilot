@@ -138,6 +138,7 @@ public:
     AP_Float hover_rpm_tilt_scale;
     AP_Float rpm_scale_low;
     AP_Float rpm_to_pwm_conversion;
+    AP_Float vectored_hover_d_gain;
 
     AP_MotorsTailsitter* tailsitter_motors;
 
