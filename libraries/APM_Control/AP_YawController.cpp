@@ -22,6 +22,7 @@
 #include <AP_AHRS/AP_AHRS.h>
 #include <GCS_MAVLink/GCS.h>
 #include <AP_Scheduler/AP_Scheduler.h>
+#include <AP_Math/AP_Math.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -171,6 +172,15 @@ const AP_Param::GroupInfo AP_YawController::var_info[] = {
     // @User: Advanced
 
     AP_SUBGROUPINFO(rate_pid, "_RATE_", 9, AP_YawController, AC_PID),
+    
+    // @Param: _HDGTC
+    // @DisplayName: Yaw heading hold time constant
+    // @Description: Time constant for the heading-hold outer loop (heading error / TCONST = demanded yaw rate), matching the RLL2SRV_TCONST/PTCH2SRV_TCONST convention. Used to hold heading via differential thrust when wings-level with no rudder input. 0 disables heading hold.
+    // @Range: 0 5
+    // @Units: s
+    // @Increment: 0.1
+    // @User: Advanced
+    AP_GROUPINFO("_HDGTC", 7, AP_YawController, _K_HDG, 0),
 
     AP_GROUPEND
 };
@@ -374,6 +384,29 @@ void AP_YawController::reset_I()
     rate_pid.reset_I();
     _integrator = 0;
 }
+
+float AP_YawController::get_heading_hold_rate(bool allow_lock, float max_rate)
+    {
+        if (!is_positive(_K_HDG) || !allow_lock) {
+            _heading_locked = false;
+            _heading_lock_timer_ms = 0;
+            return 0;
+        }
+        const AP_AHRS &_ahrs = AP::ahrs();
+        const uint32_t now = AP_HAL::millis();
+        if (_heading_lock_timer_ms == 0) {
+            _heading_lock_timer_ms = now;
+        } else if (!_heading_locked && now - _heading_lock_timer_ms > 500) {
+            _heading_locked = true;
+            _locked_heading_cd = _ahrs.yaw_sensor;
+        }
+        if (!_heading_locked) {
+            return 0;
+        }
+        const float heading_error_cd = wrap_180_cd(_locked_heading_cd - _ahrs.yaw_sensor);
+        const float tau = MAX(_K_HDG.get(), 0.1f);
+        return constrain_float((heading_error_cd * 0.01f) / tau, -max_rate, max_rate);
+    }
 
 void AP_YawController::reset_rate_PID()
 {

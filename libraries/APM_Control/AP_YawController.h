@@ -18,6 +18,19 @@ public:
     // return true if rate control is enabled
     bool rate_control_enabled(void) const { return _rate_enable != 0; }
 
+    // heading-hold outer loop: returns a demanded yaw rate (deg/s) to close
+    // heading error while wings-level with no rudder input. allow_lock should
+    // be false whenever banked/turning or the pilot has rudder input, in
+    // which case the lock releases and 0 is returned.
+    float get_heading_hold_rate(bool allow_lock, float max_rate);
+
+    // true if the heading-hold outer loop currently has a locked target heading
+    bool heading_locked() const { return _heading_locked; }
+
+    // the locked target heading in centidegrees, only meaningful when heading_locked() is true
+    int32_t locked_heading_cd() const { return _locked_heading_cd; }
+
+
     // get actuator output for sideslip and yaw damping control
     int32_t get_servo_out(float scaler, bool disable_integrator);
 
@@ -61,6 +74,10 @@ private:
     AP_Float _K_FF;
     AP_Int16 _imax;
     AP_Int8  _rate_enable;
+    AP_Float _K_HDG;
+    bool _heading_locked;
+    uint32_t _heading_lock_timer_ms;
+    int32_t _locked_heading_cd;
     AC_PID rate_pid{0.04, 0.15, 0, 0.15, 0.666, 3, 0, 12, 150, 1};
 
     uint32_t _last_t;
