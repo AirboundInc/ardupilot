@@ -234,13 +234,19 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("RPM_CO", 32, Tailsitter, rpm_to_pwm_conversion, 5.76f),
 
-    
     // @Param: VHDGAIN
     // @DisplayName: Tailsitter vector thrust derivative gain
     // @Description: This controls the amount of vectored thrust control used in hover for a vectored tailsitter
     // @Range: 0 1
     // @Increment: 0.01
     AP_GROUPINFO("VHDGN", 33, Tailsitter, vectored_hover_d_gain, 1),
+
+    // @Param: SIN_EN
+    // @DisplayName: Sin inverse control enable disbale flag
+    // @Values: 0:Disable, 1:Enable
+    // @Description: Enable sin inverse based control effort amplification
+    // @User: Standard
+    AP_GROUPINFO("SIN_EN", 34, Tailsitter, nl_sin_inverse_cntrl, 0),
 
     AP_GROUPEND
 };
@@ -579,6 +585,10 @@ void Tailsitter::output(void)
             weathervane_gain = (weathervane_gain) * control_effort_gain_slope;
         }
         quadplane.weathervane->set_gain(weathervane_gain);
+    }
+    if(nl_sin_inverse_cntrl){
+        tilt_left  = asinf(constrain_float(tilt_left  / SERVO_MAX, -1.0f, 1.0f)) * SERVO_MAX;
+        tilt_right = asinf(constrain_float(tilt_right / SERVO_MAX, -1.0f, 1.0f)) * SERVO_MAX;
     }
     quadplane.attitude_control->get_tilt_motor_angle((constrain_float(tilt_left, -4500.0f, 4500.0f) + constrain_float(tilt_right, -4500.0f, 4500.0f)) / 2.0f);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
