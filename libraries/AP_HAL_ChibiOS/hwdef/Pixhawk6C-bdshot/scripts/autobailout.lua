@@ -73,7 +73,7 @@ local autobresume_count = 0
 local max_autobresume_count = p_autobailout_resume_count:get()
 
 local WINDOW_SIZE     = 50
-local pitch_error_buf = {}
+local thrust_error_buf = {}
 local pitch_angle_buf = {}
 local buf_idx         = 1
 local post_bailout_sample_count = 0 --used to ensure sufficient samples have been collected to decide on resuming mode
@@ -326,7 +326,7 @@ function update()
         last_mode_idx = current_mode
         first_pitch_exceeded_t = nil
         if not autobailout_active then        -- ADD THIS GUARD
-            pitch_error_buf = {}
+            thrust_error_buf = {}
             pitch_angle_buf = {}
             buf_idx = 1
         end
@@ -336,7 +336,7 @@ function update()
     if win_n ~= WINDOW_SIZE then
         WINDOW_SIZE = win_n
         if not autobailout_active then
-            pitch_error_buf = {}
+            thrust_error_buf = {}
             pitch_angle_buf = {}
             buf_idx = 1
         end
@@ -347,7 +347,7 @@ function update()
     local ahrs_rate = ahrs:get_gyro()
     local actual_pitch_rate =  ahrs_rate and rad2deg(ahrs_rate:y() or 0) or 0
 
-    thrust_error_buf[buf_idx] = math.abs(ahrs:get_att_error_angle_deg())
+    thrust_error_buf[buf_idx] = math.abs(AC_AttitudeControl:get_att_error_angle_deg())
     pitch_angle_buf[buf_idx] = math.abs(actual_pitch)
     buf_idx = (buf_idx % WINDOW_SIZE) + 1
 
