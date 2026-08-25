@@ -4326,6 +4326,13 @@ bool QuadPlane::in_vtol_airbrake(void) const
     return false;
 }
 
+//Check if tailsitter is in vtol transition
+bool QuadPlane::tailsitter_in_vtol_transition()
+{
+    const uint32_t now = AP_HAL::millis();
+    return tailsitter.in_vtol_transition(now);
+}
+
 // return true if we should show VTOL view
 bool QuadPlane::show_vtol_view() const
 {

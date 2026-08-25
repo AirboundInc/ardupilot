@@ -201,6 +201,8 @@ public:
 
     void Log_Write_AttRate();
 
+     bool tailsitter_in_vtol_transition();
+
 private:
     AP_AHRS &ahrs;
 
