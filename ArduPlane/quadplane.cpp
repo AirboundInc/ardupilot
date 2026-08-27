@@ -1520,10 +1520,15 @@ float QuadPlane::desired_auto_yaw_rate_cds(void) const
 void SLT_Transition::update()
 {
     const uint32_t now = millis();
-    
+
     if (!plane.arming.is_armed_and_safety_off()) {
-        // reset the failure timer if we are disarmed
-        transition_start_ms = now;
+        // disarmed: don't let a stale transition_state (e.g. left at
+        // TRANSITION_AIRSPEED_WAIT from the last VTOL flight) force
+        // assisted_flight back to true every loop via the switch below --
+        // that blocks direct-stick ground checks of tiltrotor Axis 2
+        force_transition_complete();
+        quadplane.assisted_flight = false;
+        return;
     }
 
     float aspeed;
