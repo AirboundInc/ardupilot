@@ -571,23 +571,7 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Range: 0 30
     // @Increment: 1
     // @User: Standard
-
     AP_GROUPINFO("DARM_WDG_T", 41, QuadPlane, landing_detect.wdg_timeout_s, 10.0),
-    // @Param: YAW_TOL
-    // @DisplayName: Takeoff yaw tolerance
-    // @Description: Yaw error tolerance in degrees before fixed-wing transition after VTOL takeoff
-    // @Units: deg
-    // @Range: 5 60
-    // @User: Standard
-    AP_GROUPINFO("YAW_TOL", 42, QuadPlane, takeoff_yaw_tol, 20),
-
-    // @Param: YAW_ALGN_TO
-    // @DisplayName: Takeoff yaw alignment timeout
-    // @Description: Timeout in seconds for yaw alignment after VTOL takeoff altitude is reached. If heading not achieved within this time, vehicle switches to QLAND.
-    // @Units: s
-    // @Range: 1 30
-    // @User: Standard
-    AP_GROUPINFO("YAW_ALGN_TO", 43, QuadPlane, takeoff_yaw_align_timeout, 5.0f),
 
     // @Param: LND_DET_TIM
     // @DisplayName: Qmode Land detection timeout
@@ -597,8 +581,22 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Increment: 100
     // @User: Standard
     AP_GROUPINFO("LND_DET_TIM", 42, QuadPlane, landing_detect.timeout_ms, 200),
-
     
+    // @Param: YAW_TOL
+    // @DisplayName: Takeoff yaw tolerance
+    // @Description: Yaw error tolerance in degrees before fixed-wing transition after VTOL takeoff
+    // @Units: deg
+    // @Range: 5 60
+    // @User: Standard
+    AP_GROUPINFO("YAW_TOL", 43, QuadPlane, takeoff_yaw_tol, 20),
+
+    // @Param: YAW_ALGN_TO
+    // @DisplayName: Takeoff yaw alignment timeout
+    // @Description: Timeout in seconds for yaw alignment after VTOL takeoff altitude is reached. If heading not achieved within this time, vehicle switches to QLAND.
+    // @Units: s
+    // @Range: 1 30
+    // @User: Standard
+    AP_GROUPINFO("YAW_ALGN_TO", 44, QuadPlane, takeoff_yaw_align_timeout, 5.0f),
 
     AP_GROUPEND
 };
