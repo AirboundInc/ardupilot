@@ -641,6 +641,12 @@ private:
     uint32_t takeoff_last_run_ms;
     float takeoff_start_alt;
 
+    // takeoff yaw handling
+    uint32_t takeoff_alt_hold_start_ms;   // nonzero once takeoff altitude is reached
+    float takeoff_wp_bearing_cd;          // bearing to next WP in centidegrees, -1 if unknown
+    AP_Float takeoff_yaw_tol;
+    AP_Float takeoff_yaw_align_timeout;
+
     // oneshot with duration ARMING_DELAY_MS used by quadplane to delay spoolup after arming:
     // ignored unless OPTION_DELAY_ARMING or OPTION_TILT_DISARMED is set
     bool delay_arming;
