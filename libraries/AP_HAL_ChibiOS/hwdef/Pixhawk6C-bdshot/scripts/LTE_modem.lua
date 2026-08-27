@@ -69,7 +69,7 @@ local P = {
                                                         -- shared by EVERY link (USB included) --
                                                         -- changing it mid-session disconnects any
                                                         -- other GCS already attached under the old id.
-    AUTHKEY     = bind_add_param('AUTHKEY', 28, 1)     -- 1 = self-apply the mavlinkSigningKey from the
+    AUTHKEY     = bind_add_param('AUTHKEY', 28, 0)     -- 1 = self-apply the mavlinkSigningKey from the
                                                         -- HTTPAUTH response via gcs:set_signing_key().
                                                         -- 0 (default) = ignore it entirely. The key is
                                                         -- deliberately never printed/logged (it would
@@ -442,9 +442,8 @@ local modem_revision = ""
 -- ~25 second broken-CMUX recovery cycle on every boot).
 -- Add more patterns here as Quectel ships new broken revisions.
 local BROKEN_CMUX_REVISIONS = {
-    "EC25EFAR08A07M4G",   -- confirmed broken; SABM frames silently ignored
-    "EC25EFAR02A08M4G",  -- confirmed broken; SABM frames silently ignored
-    -- "EC25EFAR08A08M4G", -- add future broken revisions here
+    --"EC25EFAR02A08M4G",  -- confirmed broken; SABM frames silently ignored
+    -- add future broken revisions here
 }
 
 local function is_known_broken_revision(rev)
@@ -459,7 +458,7 @@ end
 -- Anything that is EC25 but neither known-good nor known-broken is treated as
 -- CMUX-capable but flagged with a one-time warning so an unverified revision
 -- that turns out to hang is diagnosable instead of silently wrong.
-local KNOWN_GOOD_EC25_PREFIXES = { "EC25EFAR06", "EC25EFAR08A06" }
+local KNOWN_GOOD_EC25_PREFIXES = { "EC25EFAR06", "EC25EFAR08" }
 local function is_known_good_ec25(rev)
     if not rev then return false end
     for _, p in ipairs(KNOWN_GOOD_EC25_PREFIXES) do
@@ -859,6 +858,41 @@ local function hex_decode(hexstr, expected_len)
     return table.concat(out)
 end
 
+-- Parse a decimal digit string into an exact uint64_t. Needed because tonumber()
+-- on this build's Lua number (a 32-bit float, see coerce_to_uint64_t() in
+-- lua_boxed_numerics.cpp) silently loses precision well before a 13-digit ms
+-- epoch value like "1787565514495" reaches its decimal point.
+local function str_to_uint64(str)
+    local result = uint64_t(0)
+    for i = 1, #str do
+        local d = str:byte(i) - 48
+        if d < 0 or d > 9 then return nil end
+        result = result * uint64_t(10) + uint64_t(d)
+    end
+    return result
+end
+
+-- 1970-01-01 -> 2015-01-01, matching the epoch_offset used in
+-- GCS_MAVLINK::update_signing_timestamp() (GCS_Signing.cpp).
+local SIGNING_EPOCH_OFFSET_S = uint64_t(1420070400)
+
+-- Convert the auth server's millisecond Unix-epoch "timestamp" field into
+-- MAVLink2 signing format: 10us ticks since 2015-01-01. This is the same
+-- conversion GCS_MAVLINK::update_signing_timestamp() applies to GPS-derived
+-- UTC time -- using it here lets set_signing_key() seed a real "now" instead
+-- of uint64_t(0), so the receiving GCS doesn't reject the first packets as
+-- stale, and so we never overwrite the persisted signing timestamp with a
+-- value further back in time than it already holds.
+local function signing_timestamp_from_epoch_ms(ms_str)
+    local ms = str_to_uint64(ms_str)
+    if not ms then return nil end
+    local secs = ms / uint64_t(1000)
+    if secs > SIGNING_EPOCH_OFFSET_S then
+        secs = secs - SIGNING_EPOCH_OFFSET_S
+    end
+    return secs * uint64_t(100000)
+end
+
 -- Pulls sysId/mavlinkSigningKey out of the same JSON body used for ip/port
 -- and applies them: sysId becomes the vehicle's live outgoing MAVLink
 -- system id (and SYSID_THISMAV, so incoming commands addressed to it are
@@ -887,7 +921,18 @@ local function apply_auth_identity(s)
     if P.AUTHKEY:get() == 1 then
         local key_bytes = hex_decode(key_hex, 32)
         if key_bytes then
-            if gcs:set_signing_key(key_bytes, uint64_t(0)) then
+            local ts_ms = s:match('"timestamp"%s*:%s*(%d+)')
+            local initial_ts = ts_ms and signing_timestamp_from_epoch_ms(ts_ms)
+            if not initial_ts then
+                -- No usable server timestamp: do NOT fall back to uint64_t(0) --
+                -- set_signing_key() unconditionally overwrites the persisted
+                -- signing timestamp (GCS_Signing.cpp:set_signing_key), and seeding
+                -- it near the 2015 epoch would wind it backwards, reopening a
+                -- replay window for anything captured under this key since. Skip
+                -- applying the key this round instead; it'll be retried on the
+                -- next HTTPAUTH pass.
+                gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: no server timestamp, signing key not applied')
+            elseif gcs:set_signing_key(key_bytes, initial_ts) then
                 gcs:send_text(MAV_SEVERITY.INFO, 'LTE HTTPAUTH: signing key applied')
             else
                 gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: signing key apply failed (armed?)')
