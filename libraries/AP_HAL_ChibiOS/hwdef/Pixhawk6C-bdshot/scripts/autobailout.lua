@@ -8,12 +8,12 @@ local KEY = 110
 assert(param:add_table(KEY, "AUTOB_", 16), "AUTOB table failed")
 
 -- 2. ADD PARAMETERS
-assert(param:add_param(KEY, 1, "PIT_LIM",  50),  'could not add AUTOB_PIT_LIM')   -- ATT pitch(VTOL frame) threshold to enter bailout (deg)
+assert(param:add_param(KEY, 1, "PIT_LIM",  45),  'could not add AUTOB_PIT_LIM')   -- ATT pitch(VTOL frame) threshold to enter bailout (deg)
 assert(param:add_param(KEY, 2, "ENABLE", 1),'could not add AUTOB_ENABLE')    -- 1 = Enabled
 assert(param:add_param(KEY, 3, "BTRN_DLY", 2500), 'could not add AUTOB_BTRN_DLY') -- Delay (ms) before checking pitch
 assert(param:add_param(KEY, 4, "PIT_TOUT", 100), 'could not add AUTOB_PIT_TOUT')  -- Sustained duration to enter bailout (ms)
 assert(param:add_param(KEY, 5, "PARA_EN", 1),'could not add AUTOB_PARA_EN')    -- 1 = Enabled
-assert(param:add_param(KEY, 6,"PARA_ANG", -70),'could not add AUTOB_PARA_ANG') -- AHRS Pitch(FW frame) threshold to trigger parachute(deg)
+assert(param:add_param(KEY, 6,"PARA_ANG", 70),'could not add AUTOB_PARA_ANG') -- AHRS Pitch(FW frame) threshold to trigger parachute(deg)
 assert(param:add_param(KEY, 7,"PARA_TOUT", 100),'could not add AUTOB_PARA_TOUT') -- Parachute pitch threshold timeout in ms
 assert(param:add_param(KEY, 8,  "LOOP_MS", 50), 'could not add AUTOB_LOOP_MS')  -- Loop rate (ms)
 assert(param:add_param(KEY, 9,  "WIN_TIM",   5),   'could not add AUTOB_WIN_TIM')    -- Rolling window duration (s)
@@ -22,8 +22,8 @@ assert(param:add_param(KEY, 11,  "AVG_LIM", 20),'could not add AUTOB_AVG_LIM')  
 assert(param:add_param(KEY, 12,"PEAK_LIM", 30),'could not add AUTOB_PEAK_LIM')
 assert(param:add_param(KEY, 13, "DBG_EN", 1), 'could not add AUTOB_DBG_EN')  -- 1 = enable dataflash logging
 assert(param:add_param(KEY, 14, "PRED_INT", 1000), 'could not add AUTOB_PRED_INT')  -- Rate based VTOL pitch prediction interval
-assert(param:add_param(KEY, 15, "PRED_ANG", 105), 'could not add AUTOB_PRED_ANG') -- VTOL frame absolute rate based predicted angle threshold for autobailout
-assert(param:add_param(KEY, 16, "RES_CNT", 5), 'could not add AUTOB_RES_CNT') -- VTOL frame absolute rate based predicted angle threshold for autobailout
+assert(param:add_param(KEY, 15, "PRED_ANG", 70), 'could not add AUTOB_PRED_ANG') -- VTOL frame absolute rate based predicted angle threshold for autobailout
+assert(param:add_param(KEY, 16, "RES_CNT", 0), 'could not add AUTOB_RES_CNT') -- VTOL frame absolute rate based predicted angle threshold for autobailout
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
@@ -98,19 +98,43 @@ local first_para_pitch_exceeded_t = nil
 local PARA_CHAN_HIGH = 1850
 local last_para_warn_t = 0 
 local backtransition_complete_time_ms = nil
+local vtol_mode_enter_time_ms = nil
 
 -- Helper: Radians to Degrees
 local function rad2deg(r) return r * 57.2958 end
 
+local function tiltrotor_in_transition()
+    --Ensure this function is called at script loop rate
+    local tilt_backtransition_delay = param:get("Q_TILT_BTDLY_MS")
+    local tilt_fw_throttle_hold_ms = param:get("Q_TILT_FWHLD_MS")
+    local total_backtransition_time = tilt_backtransition_delay+tilt_fw_throttle_hold_ms
+    --Flight not in qmode
+    if not quadplane:in_vtol_mode() then
+        vtol_mode_enter_time_ms = nil    
+        return false
+    end
+
+    if quadplane:in_vtol_mode() and vtol_mode_enter_time_ms == nil then 
+        vtol_mode_enter_time_ms = millis():tofloat()
+    end
+    
+    if quadplane:in_vtol_mode() and vtol_mode_enter_time_ms > 0 then
+        now = millis():tofloat()
+        if (now - vtol_mode_enter_time_ms)<total_backtransition_time then 
+            return true
+        end
+    end
+    return false
+end
+
 function in_vtol_flight()
-    local vtol_active = not quadplane:tailsitter_in_vtol_transition() and quadplane:in_vtol_mode()
+    local vtol_active = not tiltrotor_in_transition() and quadplane:in_vtol_mode()
     if vtol_active then
         if backtransition_complete_time_ms == nil then
             backtransition_complete_time_ms = millis():tofloat()
         end
         return true
     end
-    gcs:send_text(4,"AUTOB:VTOL not Active")
     backtransition_complete_time_ms = nil
     return false
 end
@@ -355,12 +379,12 @@ function update()
     local avg_err  = buf_avg(thrust_error_buf)
     local peak_ang = buf_max(pitch_angle_buf)
     local pitch_deg = rad2deg(actual_pitch or 0)
-
-    if p_dbg_en:get() == 1 then
-        logger:write('AUTB', 'AvgThrVecErr,PeakAng,PitchDeg,QPit,QRateP', 'fffff', avg_err, peak_ang, pitch_deg, actual_pitch, actual_pitch_rate)
-    end
     
     is_vtol_flight = in_vtol_flight()
+
+    if p_dbg_en:get() == 1 then
+        logger:write('AUTB', 'AvgThrVecErr,PeakAng,PitchDeg,QPit,QRateP', 'fffffb', avg_err, peak_ang, pitch_deg, actual_pitch, actual_pitch_rate)
+    end
 
     update_autoresume_count()
     -- -- ==========================================================
