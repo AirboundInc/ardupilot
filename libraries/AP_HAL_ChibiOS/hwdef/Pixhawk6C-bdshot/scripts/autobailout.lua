@@ -1,7 +1,7 @@
 -- Tailsitter Recovery Loop Script
--- Logic: Bad Pitch -> Save Mode -> QLoiter
-local para_ahrs_pitch_threshold_max = -10
-local para_ahrs_pitch_threshold_min = -50
+
+local para_ahrs_pitch_threshold_min = 30
+local para_ahrs_pitch_threshold_max = 90
 
 -- 1. SETUP PARAMETER TABLE
 local KEY = 110
@@ -110,6 +110,7 @@ function in_vtol_flight()
         end
         return true
     end
+    gcs:send_text(4,"AUTOB:VTOL not Active")
     backtransition_complete_time_ms = nil
     return false
 end
@@ -175,7 +176,7 @@ function para_deploy()
     local now = millis():tofloat()
     ahrs_pitch = rad2deg(ahrs:get_pitch() or 0)
     para_ang_timeout = p_para_timeout:get() or 200
-    check_pitch = ahrs_pitch < para_threshold and (trigger_para_script == false) and quadplane:in_vtol_mode() and arming:is_armed()
+    check_pitch = math.abs(ahrs_pitch)>math.abs(para_threshold) and (trigger_para_script == false) and quadplane:in_vtol_mode() and arming:is_armed()
     if check_pitch then
         if first_para_pitch_exceeded_t == nil then
             first_para_pitch_exceeded_t = millis():tofloat()
@@ -231,7 +232,7 @@ function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode)
         return false
     end
     
-    --Dont monitor vtol pitch if AUTOB_PIT_LIM is negative.
+    --Dont monitor vtol pitch if AUTOB_PIT_TIM is negative.
     if pitch_timeout < 0 then
         return false
     end
@@ -242,8 +243,8 @@ function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode)
     if backtransition_complete_time_ms and (current_time - backtransition_complete_time_ms) < delay_ms then
         return false
     end
-
-    if math.abs(vtolpitch) > threshold then
+    --TRT_Mod: The vtol pitch should be within a threshold angle limit. 
+    if math.abs(vtolpitch) > math.abs(threshold) then
         if first_pitch_exceeded_t == nil then
             first_pitch_exceeded_t = millis():tofloat()
         else
@@ -277,7 +278,7 @@ function is_predicted_vtol_pitch_exceeding_threshold(current_vtol_pitch_deg, cur
         return false
     end
 
-    local predicted_angle_threshold = p_pred_angle_threshold:get() or 105
+    local predicted_angle_threshold = p_pred_angle_threshold:get() or 60
 
     if not is_vtol_flight or not arming:is_armed() then
         -- Wait for Delay (settle time)
@@ -293,7 +294,7 @@ function is_predicted_vtol_pitch_exceeding_threshold(current_vtol_pitch_deg, cur
     
     local predicted_next_instance_vtol_pitch = current_vtol_pitch_deg + current_vtol_pitch_rate * (pitch_prediction_interval/1000)
 
-    if math.abs(predicted_next_instance_vtol_pitch) > predicted_angle_threshold then
+    if math.abs(predicted_next_instance_vtol_pitch) > math.abs(predicted_angle_threshold) then
         gcs:send_text(6, "AUTOB: PredPitch exceeds thresh: " .. tostring(predicted_next_instance_vtol_pitch))
         return true
     end
@@ -356,7 +357,7 @@ function update()
     local pitch_deg = rad2deg(actual_pitch or 0)
 
     if p_dbg_en:get() == 1 then
-        logger:write('AUTB', 'AvgErr,PeakAng,PitchDeg,QPit,QRateP', 'fffff', avg_err, peak_ang, pitch_deg, actual_pitch, actual_pitch_rate)
+        logger:write('AUTB', 'AvgThrVecErr,PeakAng,PitchDeg,QPit,QRateP', 'fffff', avg_err, peak_ang, pitch_deg, actual_pitch, actual_pitch_rate)
     end
     
     is_vtol_flight = in_vtol_flight()
