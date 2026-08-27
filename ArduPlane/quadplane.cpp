@@ -3228,37 +3228,8 @@ void QuadPlane::takeoff_controller(void)
 
     run_xy_controller();
 
-    // commented out below on 02-June-2026 *Stefard* 
-    //set_pilot_yaw_rate_time_constant();
-    //attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
-    //                                                              plane.nav_pitch_cd,
-    //                                                              get_pilot_input_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
-
-    //float vel_z = wp_nav->get_default_speed_up();
-    // if (plane.control_mode == &plane.mode_guided && guided_takeoff) {
-        // for guided takeoff we aim for a specific height with zero
-        // velocity at that height
-    //    Location origin;
-    //    if (ahrs.get_origin(origin)) {
-            // a small margin to ensure we do move to the next takeoff
-            // stage
-    //        const int32_t margin_cm = 5;
-    //        float pos_z = margin_cm + plane.next_WP_loc.alt - origin.alt;
-    //        vel_z = 0;
-    //        pos_control->input_pos_vel_accel_z(pos_z, vel_z, 0);
-    //    } else {
-    //        set_climb_rate_cms(vel_z);
-    //    }
-    //} else {
-    //    set_climb_rate_cms(vel_z);
-    //}
-    //run_z_controller();
-    // End of commented out block *Stefard*
-
-    // takeoff yaw handling added on 02-June-2026 *Stefard*
     if (takeoff_alt_hold_start_ms != 0) {
         // hold altitude and actively yaw to face next waypoint
-    
         pos_control->relax_z_controller(motors->get_throttle_hover());
 
         if (takeoff_wp_bearing_cd >= 0.0f) {
@@ -3272,15 +3243,18 @@ void QuadPlane::takeoff_controller(void)
                                                                           plane.nav_pitch_cd,
                                                                           get_pilot_input_yaw_rate_cds());
         }
-          
     } else {
         attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
                                                                       plane.nav_pitch_cd,
                                                                       get_pilot_input_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
         float vel_z = wp_nav->get_default_speed_up();
         if (plane.control_mode == &plane.mode_guided && guided_takeoff) {
+            // for guided takeoff we aim for a specific height with zero
+            // velocity at that height
             Location origin;
             if (ahrs.get_origin(origin)) {
+                // a small margin to ensure we do move to the next takeoff
+                // stage
                 const int32_t margin_cm = 5;
                 float pos_z = margin_cm + plane.next_WP_loc.alt - origin.alt;
                 vel_z = 0;
@@ -3293,8 +3267,6 @@ void QuadPlane::takeoff_controller(void)
         }
     }
     run_z_controller();
-
-// End of Change *Stefard*
 }
 
 /*
@@ -3462,14 +3434,12 @@ bool QuadPlane::do_vtol_takeoff(const AP_Mission::Mission_Command& cmd)
     const float travel_time = MAX(t_accel, 0) + MAX(t_constant, 0);
 
     // setup the takeoff failure handling code
-    
     takeoff_start_time_ms = millis();
     takeoff_time_limit_ms = MAX(travel_time * takeoff_failure_scalar * 1000, 5000); // minimum time 5 seconds
 
-    // takeoff yaw handling added on 02-June-2026 *Stefard*
+    // no takeoff altitude hold in progress, next waypoint bearing not yet known
     takeoff_alt_hold_start_ms = 0;
     takeoff_wp_bearing_cd = -1.0f;
-    // End of Change *Stefard*
 
     return true;
 }
@@ -3528,7 +3498,7 @@ bool QuadPlane::verify_vtol_takeoff(const AP_Mission::Mission_Command &cmd)
         !option_is_set(QuadPlane::OPTION::DISABLE_GROUND_EFFECT_COMP)) {
         ahrs.set_takeoff_expected(true);
     }
-    
+
     // check for failure conditions
     if (is_positive(takeoff_failure_scalar) && ((now - takeoff_start_time_ms) > takeoff_time_limit_ms)) {
         gcs().send_text(MAV_SEVERITY_CRITICAL, "Failed to complete takeoff within time limit");
@@ -3547,7 +3517,6 @@ bool QuadPlane::verify_vtol_takeoff(const AP_Mission::Mission_Command &cmd)
     if (plane.current_loc.alt < plane.next_WP_loc.alt) {
         return false;
     }
-// takeoff yaw handling added on 02-June-2026 *Stefard*
     // Hold altitude until heading aligns with next waypoint, then transition
     if (takeoff_alt_hold_start_ms == 0) {
         takeoff_alt_hold_start_ms = now;
@@ -3565,7 +3534,6 @@ bool QuadPlane::verify_vtol_takeoff(const AP_Mission::Mission_Command &cmd)
     }
 
     if (takeoff_wp_bearing_cd >= 0.0f) {
-
         float yaw_error_cd = fabsf(wrap_180_cd((float)ahrs_view->yaw_sensor - takeoff_wp_bearing_cd));
         if (yaw_error_cd > takeoff_yaw_tol * 100.0f) {
             static uint32_t last_print_ms = 0;
@@ -3582,7 +3550,6 @@ bool QuadPlane::verify_vtol_takeoff(const AP_Mission::Mission_Command &cmd)
         }
         gcs().send_text(MAV_SEVERITY_INFO, "Takeoff: heading aligned, transitioning");
     }
-// End of Change *Stefard*
 
     transition->restart();
     plane.TECS_controller.set_pitch_max(transition_pitch_max);

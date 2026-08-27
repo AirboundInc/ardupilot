@@ -646,30 +646,13 @@ void Tailsitter::output(void)
  */
 bool Tailsitter::transition_fw_complete(void)
 {
-    // Get the difference in the pitch initial value to the current pitch setpoint to track the discontinuity
-    
-    // dead code need to decide if we want to keep it
-    //float fw_initial_pitch_diff = (transition->prev_fw_initial_pitch - transition->fw_transition_initial_pitch)*0.01f;
-    //end of dead code.
-
     if (!plane.arming.is_armed_and_safety_off()) {
         // instant transition when disarmed, no message
         return true;
     }
-    // Stock Code commented out on 2026-06-11: to investigate inverted FW transitions
-
-    // if (labs(quadplane.ahrs_view->pitch_sensor) > transition_angle_fw*100) {
-    //   gcs().send_text(MAV_SEVERITY_INFO, "Transition FW done");
-    //    return true;
-    // }
-    // if (labs(quadplane.ahrs_view->roll_sensor) > MAX(4500, plane.roll_limit_cd + 500)) {
-    //    gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW done, roll error");
-    //    return true;
-    // }
-    // End of comment out
 
     if (labs(quadplane.ahrs_view->roll_sensor) > MAX(4500, plane.roll_limit_cd + 500)) {
-    return false;  // inverted - do not enter FW mode, keep waiting
+        return false;  // inverted - do not enter FW mode, keep waiting
     }
 
     if (quadplane.ahrs_view->pitch_sensor > 0) {
@@ -678,25 +661,15 @@ bool Tailsitter::transition_fw_complete(void)
             transition->fw_transition_initial_pitch = 0;
             // fw_transition_start_ms intentionally NOT reset — accumulated dt drives corrective force
         }
-    return false;
+        return false;
     }
 
-
     if ((quadplane.ahrs_view->pitch_sensor) < -(transition_angle_fw*100)) {
-    gcs().send_text(MAV_SEVERITY_INFO, "Transition FW done");
-    return true;
+        gcs().send_text(MAV_SEVERITY_INFO, "Transition FW done");
+        return true;
     }
 
     uint32_t now = AP_HAL::millis();
-    // dead code need to decide if we want to keep it
-    // Guard for large initial pitch value, if there need to reset the initial pitch again
-    //if(fabsf(fw_initial_pitch_diff)>10.0f){
-    //    gcs().send_text(MAV_SEVERITY_WARNING, "Transition FW, angle reset discontinuity");
-    //    transition->restart();
-    //    return false;
-    //}
-    // end of dead code.
-
     float timeout_ms = MAX(((transition_angle_fw + (transition->fw_transition_initial_pitch*0.01f)) / transition_rate_fw) * 1500, 2000.0f);
     if (now - transition->fw_transition_start_ms > timeout_ms) {
         if (quadplane.ahrs_view->pitch_sensor > -(transition_angle_fw * 50)) {
@@ -706,7 +679,6 @@ bool Tailsitter::transition_fw_complete(void)
         gcs().send_text(MAV_SEVERITY_WARNING, "FW transition_initial_pitch: %f",(float)transition->fw_transition_initial_pitch*0.01f);
         gcs().send_text(MAV_SEVERITY_WARNING, "FW current_time: %f, transition_start_ms: %f",(float)now,(float)transition->fw_transition_start_ms);
         gcs().send_text(MAV_SEVERITY_WARNING, "Time delta: %f",(float)(now - transition->fw_transition_start_ms));
-
         return true;
     }
     // still waiting
