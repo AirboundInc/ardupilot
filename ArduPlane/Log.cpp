@@ -8,7 +8,6 @@ void Plane::Log_Write_Attitude(void)
     Vector3f targets {       // Package up the targets into a vector for commonality with Copter usage of Log_Wrote_Attitude
         nav_roll_cd * 0.01f,
         nav_pitch_cd * 0.01f,
-        // 0 //Plane does not have the concept of navyaw. This is a placeholder.
         yawController.heading_locked() ? yawController.locked_heading_cd() * 0.01f : 0
     };
 
