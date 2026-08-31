@@ -19,6 +19,7 @@
 #include <AP_Motors/AP_MotorsTailsitter.h>
 #include <AP_Logger/LogStructure.h>
 #include <AP_ESC_Telem/AP_ESC_Telem.h>
+#include <AP_DangerZone/AP_DangerZone_config.h>
 // #define SITL_DEBUG
 
 class QuadPlane;
@@ -133,7 +134,6 @@ public:
     AP_Float wvane_pitch_low;
     AP_Float wvane_pitch_hi;
     AP_Float wvane_pitch_mid;
-    AP_Float pitch_rate_effort_hi, pitch_rate_effort_low;
     AP_Int8 rpm_based_tilt_scaling;
     AP_Float hover_rpm_tilt_scale;
     AP_Float rpm_scale_low;
@@ -182,6 +182,14 @@ private:
 #if HAL_WITH_ESC_TELEM
     // ESC Telemetry
     AP_ESC_Telem* _esc_telem;
+#endif
+
+#if AP_DANGERZONE_ENABLED
+    // Linear interpolation state for the weathervane gain scale for Danger Zone 2
+    float    _wv_gain_scale{1.0f};
+    float    _wv_gain_scale_start{1.0f};
+    uint32_t _wv_gain_scale_start_ms{0};
+    float    _wv_gain_scale_target{1.0f};
 #endif
 
 };

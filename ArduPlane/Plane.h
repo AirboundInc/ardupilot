@@ -96,6 +96,7 @@
 #include "GCS_Mavlink.h"
 #include "GCS_Plane.h"
 #include "quadplane.h"
+#include <AP_DangerZone/AP_DangerZone.h>
 #include <AP_Tuning/AP_Tuning_config.h>
 #if AP_TUNING_ENABLED
 #include "tuning.h"
@@ -144,6 +145,7 @@ public:
     friend class Tiltrotor;
     friend class SLT_Transition;
     friend class Tailsitter_Transition;
+    friend class DZ_Metrics;
 
     friend class Mode;
     friend class ModeCircle;
@@ -810,6 +812,14 @@ private:
     QuadPlane quadplane{ahrs};
 #endif
 
+#if HAL_QUADPLANE_ENABLED && AP_DANGERZONE_ENABLED
+    // Danger Zone failsafe framework.
+    AP_DangerZone danger_zone;
+    void danger_zone_init();
+    void danger_zone_update();
+    uint8_t danger_zone_last_level{0};
+#endif
+
 #if AP_TUNING_ENABLED
     // support for transmitter tuning
     AP_Tuning_Plane tuning;
@@ -1140,6 +1150,7 @@ private:
     void do_parachute(const AP_Mission::Mission_Command& cmd);
     void parachute_release();
     bool parachute_manual_release();
+    bool parachute_release_with_disarm();
 #endif
 
     // soaring.cpp
