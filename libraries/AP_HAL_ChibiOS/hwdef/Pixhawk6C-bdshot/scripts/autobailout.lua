@@ -378,7 +378,7 @@ function update()
 
     local avg_err  = buf_avg(thrust_error_buf)
     local peak_ang = buf_max(pitch_angle_buf)
-    local pitch_deg = rad2deg(actual_pitch or 0)
+    local pitch_deg = actual_pitch or 0
     
     is_vtol_flight = in_vtol_flight()
 
