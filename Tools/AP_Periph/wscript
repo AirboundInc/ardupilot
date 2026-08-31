@@ -88,6 +88,7 @@ def build(bld):
                      'AP_MultiHeap',
                      'AP_DAC',
                      'AP_Servo_Telem',
+                     'AP_TTLServo',
                      ]
 
     bld.ap_stlib(

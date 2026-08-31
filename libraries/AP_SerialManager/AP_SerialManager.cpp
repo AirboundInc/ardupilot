@@ -583,7 +583,7 @@ void AP_SerialManager::init()
                 case SerialProtocol_IOMCU:
                     // nothing to do, AP_IOMCU handles this
                     break;
-                    
+
                 case SerialProtocol_TTLServo:
                     uart->begin(map_baudrate(state[i].baud),
                                 AP_SERIALMANAGER_TTLSERVO_BUFSIZE_RX,
@@ -591,7 +591,6 @@ void AP_SerialManager::init()
                     uart->set_unbuffered_writes(true);
                     uart->set_flow_control(AP_HAL::UARTDriver::FLOW_CONTROL_DISABLE);
                     break;
-                    
                 default:
                     uart->begin(state[i].baudrate());
             }

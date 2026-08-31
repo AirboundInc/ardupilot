@@ -656,7 +656,9 @@ private:
     AP_RobotisServo robotis;
 #endif
 
+#if AP_FEETECHSERVO_ENABLED
     AP_TTLServo feetechservo;
+#endif
 
 #if HAL_SUPPORT_RCOUT_SERIAL
     // support for BLHeli protocol

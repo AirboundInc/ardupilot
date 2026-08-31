@@ -20,6 +20,11 @@
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Param/AP_Param.h>
 
+#ifndef AP_FEETECHSERVO_ENABLED
+#define AP_FEETECHSERVO_ENABLED 1
+#endif
+
+#if AP_FEETECHSERVO_ENABLED
 class AP_TTLServo {
   public:
 
@@ -86,3 +91,5 @@ class AP_TTLServo {
     AP_Int8 servo_goal_pos_reg;
 
 };
+
+#endif //AP_FEETECHSERVO_ENABLED

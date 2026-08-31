@@ -31,6 +31,8 @@
 
 #include "AP_TTLServo.h"
 
+#if AP_FEETECHSERVO_ENABLED
+
 #if NUM_SERVO_CHANNELS
 
 extern const AP_HAL::HAL& hal;
@@ -421,3 +423,5 @@ void AP_TTLServo::update()
 }
 
 #endif //NUM_SERVO_CHANNELS
+
+#endif //AP_FEETECHSERVO_ENABLED

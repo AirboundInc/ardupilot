@@ -16,7 +16,7 @@ PA5 ACT2_CURRENT_SENS ADC1 SCALE(1) # Current Sampling on PWM(2)
 PA6 ACT3_CURRENT_SENS ADC1 SCALE(1) # Current Sampling on PWM(3)
 PA7 ACT4_CURRENT_SENS ADC1 SCALE(1) # Current Sampling on PWM(4)
 
-define AP_PERIPH_RC_OUT_ENABLED 0
+define AP_PERIPH_RC_OUT_ENABLED 1
 
 # --------------------- PWM -----------------------
 PA15  TIM2_CH1  TIM2 PWM(1) GPIO(50)
