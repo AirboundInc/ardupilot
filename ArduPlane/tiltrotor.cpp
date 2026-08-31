@@ -982,11 +982,10 @@ void Tiltrotor::dual_axis_output(void)
     const float scaler = (plane.control_mode == &plane.mode_manual) ? 1.0f :
                          (quadplane.FW_vector_throttle_scaling() / plane.get_speed_scaler());
     const float gain   = vectoring_gain_fw * scaler;
-    const float elevator = SRV_Channels::get_output_scaled(SRV_Channel::k_elevator) * (1.0f / 4500.0f);
     const float aileron  = SRV_Channels::get_output_scaled(SRV_Channel::k_aileron)  * (1.0f / 4500.0f);
 
-    float tilt_left = constrain_float((elevator + aileron) * gain, -1.0f, 1.0f) * SERVO_MAX;
-    float tilt_right = constrain_float((elevator - aileron) * gain, -1.0f, 1.0f) * SERVO_MAX;
+    float tilt_left = constrain_float(aileron * gain, -1.0f, 1.0f) * SERVO_MAX;
+    float tilt_right = constrain_float(-aileron * gain, -1.0f, 1.0f) * SERVO_MAX;
 
 #if HAL_LOGGING_ENABLED
         // Add logging for desired thrust vectoring angles
