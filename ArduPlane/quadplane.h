@@ -201,6 +201,7 @@ public:
 
     void Log_Write_AttRate();
 
+
 private:
     AP_AHRS &ahrs;
 
