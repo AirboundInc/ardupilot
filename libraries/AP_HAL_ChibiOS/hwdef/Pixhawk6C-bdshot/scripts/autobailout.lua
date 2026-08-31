@@ -383,7 +383,7 @@ function update()
     is_vtol_flight = in_vtol_flight()
 
     if p_dbg_en:get() == 1 then
-        logger:write('AUTB', 'AvgThrVecErr,PeakAng,PitchDeg,QPit,QRateP', 'fffffb', avg_err, peak_ang, pitch_deg, actual_pitch, actual_pitch_rate)
+        logger:write('AUTB', 'AvgThrVecErr,PeakAng,PitchDeg,QPit,QRateP', 'fffff', avg_err, peak_ang, pitch_deg, actual_pitch, actual_pitch_rate)
     end
 
     update_autoresume_count()
