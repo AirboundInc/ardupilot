@@ -569,7 +569,7 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Description: Selects the condition used to decide when the forward transition from VTOL to fixed wing flight is complete and control is handed to the fixed wing controllers. Airspeed waits for airspeed to exceed AIRSPEED_MIN. Time hands off after Q_FTRANS_TIME seconds regardless of airspeed. Tilt Angle (tiltrotors only) hands off once the tilt servos reach Q_FTRANS_ANG degrees regardless of airspeed.
     // @Values: 0:Airspeed,1:Time,2:Tilt Angle
     // @User: Advanced
-    AP_GROUPINFO("FTRANS_MODE", 41, QuadPlane, fwd_trans_method, uint8_t(FwdTransCompletion::AIRSPEED)),
+    AP_GROUPINFO("FTRANS_MODE", 43, QuadPlane, fwd_trans_method, uint8_t(FwdTransCompletion::AIRSPEED)),
 
     // @Param: FTRANS_TIME
     // @DisplayName: Forward transition time based completion
@@ -578,7 +578,7 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Range: 0.5 30
     // @Increment: 0.5
     // @User: Advanced
-    AP_GROUPINFO("FTRANS_TIME", 42, QuadPlane, fwd_trans_time, 5.0),
+    AP_GROUPINFO("FTRANS_TIME", 44, QuadPlane, fwd_trans_time, 5.0),
 
     // @Param: FTRANS_ANG
     // @DisplayName: Forward transition tilt angle based completion
@@ -587,7 +587,7 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Range: 0 90
     // @Increment: 1
     // @User: Advanced
-    AP_GROUPINFO("FTRANS_ANG", 43, QuadPlane, fwd_trans_angle_deg, 45.0),
+    AP_GROUPINFO("FTRANS_ANG", 45, QuadPlane, fwd_trans_angle_deg, 45.0),
 
     // @Param: FWREC_ANG_MAX
     // @DisplayName: VTOL assist forced recovery angle
@@ -596,7 +596,7 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Range: 1000 18000
     // @Increment: 10
     // @User: Advanced
-    AP_GROUPINFO("FWREC_ANG_MAX", 44, QuadPlane, assist.fw_recovery_angle_max, 7000),
+    AP_GROUPINFO("FWREC_ANG_MAX", 46, QuadPlane, assist.fw_recovery_angle_max, 7000),
 
     AP_GROUPEND
 };
