@@ -97,6 +97,10 @@ public:
     // Fixed wing controller hold enabled for back transition
     bool is_hold_fw_ctrl_enabled() const { return fw_control_hold_en > 0; }
 
+    // set via RCx_OPTION TILT_VECTOR_FULL_AUTHORITY: true mixes elevator+aileron
+    // into forward-flight vectoring (pitch+roll authority), false mixes aileron only (roll authority)
+    bool vectoring_full_authority = false;
+
     AP_Int8 enable;
     AP_Int16 tilt_mask;
     AP_Int16 max_rate_up_dps;

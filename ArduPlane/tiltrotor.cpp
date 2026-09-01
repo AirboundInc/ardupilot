@@ -984,8 +984,17 @@ void Tiltrotor::dual_axis_output(void)
     const float gain   = vectoring_gain_fw * scaler;
     const float aileron  = SRV_Channels::get_output_scaled(SRV_Channel::k_aileron)  * (1.0f / 4500.0f);
 
-    float tilt_left = constrain_float(aileron * gain, -1.0f, 1.0f) * SERVO_MAX;
-    float tilt_right = constrain_float(-aileron * gain, -1.0f, 1.0f) * SERVO_MAX;
+    // RCx_OPTION = Tiltrotor Vectoring Full Authority: switch high mixes in
+    // elevator for pitch authority as well as roll; switch low is roll-only
+    float tilt_left, tilt_right;
+    if (vectoring_full_authority) {
+        const float elevator = SRV_Channels::get_output_scaled(SRV_Channel::k_elevator) * (1.0f / 4500.0f);
+        tilt_left  = constrain_float((elevator + aileron) * gain, -1.0f, 1.0f) * SERVO_MAX;
+        tilt_right = constrain_float((elevator - aileron) * gain, -1.0f, 1.0f) * SERVO_MAX;
+    } else {
+        tilt_left  = constrain_float(aileron * gain, -1.0f, 1.0f) * SERVO_MAX;
+        tilt_right = constrain_float(-aileron * gain, -1.0f, 1.0f) * SERVO_MAX;
+    }
 
 #if HAL_LOGGING_ENABLED
         // Add logging for desired thrust vectoring angles

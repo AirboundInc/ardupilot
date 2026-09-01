@@ -191,6 +191,7 @@ void RC_Channel_Plane::init_aux_function(const RC_Channel::AUX_FUNC ch_option,
     case AUX_FUNC::Q_ASSIST:
     case AUX_FUNC::AIRMODE:
     case AUX_FUNC::WEATHER_VANE_ENABLE:
+    case AUX_FUNC::TILT_VECTOR_FULL_AUTHORITY:
 #endif
 #if AP_AIRSPEED_AUTOCAL_ENABLE
     case AUX_FUNC::ARSPD_CALIBRATE:
@@ -413,6 +414,20 @@ bool RC_Channel_Plane::do_aux_function(const AUX_FUNC ch_option, const AuxSwitch
         }
         break;
     }
+
+    case AUX_FUNC::TILT_VECTOR_FULL_AUTHORITY:
+        switch (ch_flag) {
+            case AuxSwitchPos::HIGH:
+                plane.quadplane.tiltrotor.vectoring_full_authority = true;
+                break;
+            case AuxSwitchPos::MIDDLE:
+                // nothing
+                break;
+            case AuxSwitchPos::LOW:
+                plane.quadplane.tiltrotor.vectoring_full_authority = false;
+                break;
+        }
+        break;
 #endif
 
     case AUX_FUNC::PLANE_AUTO_LANDING_ABORT:
