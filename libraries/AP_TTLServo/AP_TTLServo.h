@@ -53,6 +53,10 @@ class AP_TTLServo {
     void send_command(uint8_t id, uint8_t reg, uint16_t value, uint8_t len);
     void send_packet(const uint8_t *packet, uint8_t len);
 
+    struct gcs_announce{
+      bool empty_servo_bus = false;
+    }_gcs_announce;
+
     bool initialised;
 
     // Used for the auto-detection of the servo IDs connected

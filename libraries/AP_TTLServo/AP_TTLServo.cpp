@@ -76,10 +76,10 @@ extern const AP_HAL::HAL& hal;
 #define RUNNING_SPEED 2500
 
 // How many times to broadcast messages to configure the servos
-#define CONFIGURE_SERVO_COUNT 4
+#define CONFIGURE_SERVO_COUNT 1
 
 // How many times should ping messages be sent to detect servos
-#define DETECT_SERVO_COUNT 4
+#define DETECT_SERVO_COUNT 1
 
 const AP_Param::GroupInfo AP_TTLServo::var_info[] = {
 
@@ -174,7 +174,7 @@ void AP_TTLServo::detect_servos(void)
 
     send_packet((const uint8_t *) &tx_packet, tx_packet.length);
 
-    GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "TTLServo: Detecting servos on the bus");
+    // GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "TTLServo: Detecting servos on the bus");
     // Give plenty of time to receive replies from all servos
     last_send_us = AP_HAL::micros();
     delay_time_us += 1000 * us_per_byte;
@@ -208,6 +208,7 @@ void AP_TTLServo::process_packet(const uint8_t *packet, uint8_t length)
     uint32_t id_mask = (1U<<(id));
     if (!(id_mask & servo_id_mask)) {
         GCS_SEND_TEXT(MAV_SEVERITY_INFO, "TTLServo: ID %u identified\n",id);
+        servo_id_mask.set_and_save_ifchanged(servo_id_mask+id_mask);
     }
 }
 
@@ -215,33 +216,36 @@ void AP_TTLServo::process_packet(const uint8_t *packet, uint8_t length)
 void AP_TTLServo::read_bytes(void)
 {
     uint32_t n = port->available();
+
     // If no bytes received or received less than the required to decode an
     // instruction, return in order to wait for the required number of bytes
     if (n == 0 && pktbuf_ofs < PKT_INSTRUCTION) {
         return;
     }
 
-    // Read from serial the maximum number of bytes that would fill the buffer
+    // // Read from serial the maximum number of bytes that would fill the buffer
     if (n > sizeof(pktbuf) - pktbuf_ofs) {
         n = sizeof(pktbuf) - pktbuf_ofs;
     }
     for (uint8_t i = 0; i < n; i++) {
-        pktbuf[pktbuf_ofs++] = port->read();
+        uint8_t byte = port->read();
+        pktbuf[pktbuf_ofs++] = byte;
+        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "TTLServo:Received->%x",byte);
     }
 
-    // Discard bad leading data. This should be rare
+    // // Discard bad leading data. This should be rare
     while (pktbuf_ofs >= 2 && (pktbuf[0] != 0xFF || pktbuf[1] != 0xFF)) {
         memmove(pktbuf, &pktbuf[1], pktbuf_ofs-1);
         pktbuf_ofs--;
     }
 
-    // If enough data hasn't been received, return
+    // // If enough data hasn't been received, return
     if (pktbuf_ofs < 5) {
         return;
     }
 
-    // Check if enough data has been received according to the Packet.
-    // If it hasn't been received, return and wait for the rest of the Packet
+    // // Check if enough data has been received according to the Packet.
+    // // If it hasn't been received, return and wait for the rest of the Packet
     const uint8_t total_packet_length = pktbuf[PKT_LENGTH] + PKT_INSTRUCTION;
     if (total_packet_length > sizeof(pktbuf)) {
         pktbuf_ofs = 0;
@@ -251,9 +255,9 @@ void AP_TTLServo::read_bytes(void)
         return;
     }
 
-    // Compare the Packet's CRC with the received Packet data. If it is equal,
-    // the Packet has been received without data errors. Otherwise, just discard
-    // the received Packet (had errors)
+    // // Compare the Packet's CRC with the received Packet data. If it is equal,
+    // // the Packet has been received without data errors. Otherwise, just discard
+    // // the received Packet (had errors)
     const uint8_t crc = pktbuf[total_packet_length - 1];
     const uint8_t calc_crc = calculate_crc(pktbuf, total_packet_length - 1);
     if (calc_crc == crc) {
@@ -261,7 +265,7 @@ void AP_TTLServo::read_bytes(void)
       process_packet(pktbuf, total_packet_length);
     }
 
-    // Removed the processed Packet data from the buffer
+    // // Removed the processed Packet data from the buffer
     memmove(pktbuf, &pktbuf[total_packet_length], pktbuf_ofs - total_packet_length);
     pktbuf_ofs -= total_packet_length;
 }
@@ -363,11 +367,16 @@ void AP_TTLServo::update()
         if (detection_count < DETECT_SERVO_COUNT) {
             detection_count++;
             detect_servos();
+            return;
         }
 
         // If any servo wasn't detected, return
-        if (servo_id_mask == 0) {
-            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"Empyty Servo bitmask");
+        if (servo_id_mask == 0 ) {
+            if (!_gcs_announce.empty_servo_bus)
+            {    
+                GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"Empty Servo bus");
+                _gcs_announce.empty_servo_bus = true;
+            }
             return;
         }
     }
@@ -408,15 +417,15 @@ void AP_TTLServo::update()
         float v = float(pwm - min) / (max - min);
         uint16_t goalPosition = (uint16_t)(pos_min) + (uint16_t)(v * (pos_max - pos_min));
 
-        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Set goal position: %d",goalPosition);
-        
+        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: i: %d,PWM: %d",i,pwm);
+
         // Don't send goal position if it is equal to previous
         if (servo_position[i] == goalPosition) {
             continue;
         } else {
             servo_position[i] = goalPosition;
         }
-        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Commanding goal position");
+
         // Send the goal position to the servo
         send_command(i, servo_goal_pos_reg, goalPosition, 2);
     }
