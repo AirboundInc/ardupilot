@@ -238,6 +238,8 @@ public:
 
     bool use_multirotor_control_in_fwd_transition() const override;
 
+    void set_FW_roll_pitch(int32_t& nav_pitch_cd, int32_t& nav_roll_cd) override;
+
 private:
 
     // time when we entered VTOL mode from FW (for Q_BTDELAY_MS)
