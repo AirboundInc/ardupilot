@@ -876,7 +876,6 @@ const RC_Channel::LookupTable RC_Channel::lookuptable[] = {
 #endif
     { AUX_FUNC::EMERGENCY_LANDING_EN, "Emergency Landing"},
     { AUX_FUNC::WEATHER_VANE_ENABLE, "Weathervane"},
-    { AUX_FUNC::TILT_VECTOR_FULL_AUTHORITY, "Tiltrotor Vectoring Full Authority"},
     { AUX_FUNC::TURBINE_START, "Turbine Start"},
     { AUX_FUNC::FFT_NOTCH_TUNE, "FFT Notch Tuning"},
 #if HAL_MOUNT_ENABLED
