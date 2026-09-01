@@ -35,6 +35,10 @@ actually calls for.
 
 Requires pymavlink (either `pip install pymavlink`, or run from the
 ardupilot repo root so modules/mavlink/pymavlink is importable).
+
+For an interactive human-facing look at a signal (pan/zoom, FFT, time vs
+frequency domain), see the companion script log_fft_view.py in this same
+directory.
 """
 import argparse
 import csv
