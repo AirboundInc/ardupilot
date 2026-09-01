@@ -101,6 +101,10 @@ public:
     // into forward-flight vectoring (pitch+roll authority), false mixes aileron only (roll authority)
     bool vectoring_full_authority = false;
 
+    // last vectoring_full_authority value announced to the GCS, so the
+    // message is only sent again when the switch actually changes state
+    bool last_vectoring_full_authority = vectoring_full_authority;
+
     AP_Int8 enable;
     AP_Int16 tilt_mask;
     AP_Int16 max_rate_up_dps;

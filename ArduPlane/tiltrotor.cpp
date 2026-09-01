@@ -986,6 +986,13 @@ void Tiltrotor::dual_axis_output(void)
 
     // RCx_OPTION = Tiltrotor Vectoring Full Authority: switch high mixes in
     // elevator for pitch authority as well as roll; switch low is roll-only
+    if (vectoring_full_authority != last_vectoring_full_authority) {
+        last_vectoring_full_authority = vectoring_full_authority;
+        gcs().send_text(MAV_SEVERITY_INFO, vectoring_full_authority ?
+                         "Tiltrotor: full pitch+roll authority" :
+                         "Tiltrotor: roll authority only");
+    }
+
     float tilt_left, tilt_right;
     if (vectoring_full_authority) {
         const float elevator = SRV_Channels::get_output_scaled(SRV_Channel::k_elevator) * (1.0f / 4500.0f);
