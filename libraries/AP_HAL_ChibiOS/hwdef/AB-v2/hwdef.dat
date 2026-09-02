@@ -1,0 +1,4 @@
+# hw definition file for processing by chibios_hwdef.py
+# for the Airbound v2
+
+include ../Pixhawk6C-bdshot/hwdef.dat

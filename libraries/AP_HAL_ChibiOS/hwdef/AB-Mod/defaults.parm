@@ -1,0 +1,4 @@
+# Airbound TRT-Mod default parameters.
+
+@include ../Pixhawk6C-bdshot/defaults.parm
+@include ../AB-base/defaults.parm
