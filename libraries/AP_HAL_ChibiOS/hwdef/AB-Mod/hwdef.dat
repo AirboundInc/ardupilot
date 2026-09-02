@@ -2,3 +2,5 @@
 # for the Airbound TRT-Mod
 
 include ../Pixhawk6C-bdshot/hwdef.dat
+
+USE_BOOTLOADER_FROM_BOARD Pixhawk6C-bdshot
