@@ -49,15 +49,13 @@ void ModeQStabilize::run()
 
     float pilot_throttle_scaled = quadplane.get_pilot_throttle();
 
-    if (quadplane.tiltrotor.in_vtol_transition(now)) {
-        if (quadplane.tiltrotor.is_hold_fw_ctrl_enabled() && quadplane.tiltrotor.in_fw_throttle_hold(now)) {
-            Mode::run();
-            return;
-        }
-        // hold the backtrans throttle steady, then linearly blend
-        // to the pilot's vertical throttle demand, over the backtransition
-        // hold/delay windows
-        pilot_throttle_scaled = quadplane.tiltrotor.get_backtrans_throttle(now, pilot_throttle_scaled);
+    // backtransition throttle hold/blend is now applied generically for
+    // every VTOL mode in Tiltrotor::dual_axis_output()
+    if (quadplane.tiltrotor.in_vtol_transition(now) &&
+        quadplane.tiltrotor.is_hold_fw_ctrl_enabled() &&
+        quadplane.tiltrotor.in_fw_throttle_hold(now)) {
+        Mode::run();
+        return;
     }
 
     plane.quadplane.assign_tilt_to_fwd_thr();

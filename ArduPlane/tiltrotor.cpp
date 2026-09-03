@@ -98,14 +98,14 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
 
     // @Param: BTDLY_MS
     // @DisplayName: Back transition delay for running fixed wing controller
-    // @Description: How long, after the Q_TILT_FWHLD_MS throttle hold period ends, to blend from the held fixed wing throttle to the pilot's vertical throttle demand following a backtransition into a VTOL mode
+    // @Description: How long, after the Q_TILT_FWHLD_MS throttle hold period ends, to blend from the held fixed wing throttle to the active VTOL controller's commanded throttle following a backtransition into any VTOL mode
     // @Range: 0 10000
     // @User: Standard
     AP_GROUPINFO("BTDLY_MS", 13, Tiltrotor, back_trans_delay_ms, 1000),
 
     // @Param: FWHLD_MS
     // @DisplayName: Fixed wing throttle hold time after back transition
-    // @Description: How long to hold the last fixed wing throttle steady after a backtransition into a VTOL mode, before blending to the pilot's vertical throttle demand over Q_TILT_BTDLY_MS
+    // @Description: How long to hold the last fixed wing throttle steady after a backtransition into any VTOL mode, before blending to the active VTOL controller's commanded throttle over Q_TILT_BTDLY_MS
     // @Range: 0 10000
     // @User: Standard
     AP_GROUPINFO("FWHLD_MS", 14, Tiltrotor, fw_throttle_hold_ms, 500),
@@ -829,8 +829,15 @@ void Tiltrotor::dual_axis_output(void)
             transition->backtrans_start_ms = now;
         }
 
-        const float throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
-        if (quadplane.assisted_flight) {
+        // force an open-loop throttle hold/blend for Q_TILT_FWHLD_MS +
+        // Q_TILT_BTDLY_MS after a backtransition, in every VTOL mode & suspends vertical controller
+        const bool force_backtrans_hold = in_vtol_transition(now);
+
+        const float raw_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
+        const float throttle = force_backtrans_hold
+            ? get_backtrans_throttle(now, raw_throttle * 0.01f) * 100.0f
+            : raw_throttle;
+        if (quadplane.assisted_flight || force_backtrans_hold) {
             quadplane.hold_stabilize(throttle * 0.01f);
             quadplane.motors_output(true);
         } else {
