@@ -2,6 +2,12 @@
 
 #if HAL_LOGGING_ENABLED
 
+struct PACKED log_YAWO {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    float    yout;
+};
+
 // Write an attitude packet
 void Plane::Log_Write_Attitude(void)
 {
@@ -60,7 +66,15 @@ void Plane::Log_Write_Attitude(void)
     logger.Write_PID(LOG_PIDP_MSG, pitchController.get_pid_info());
 
     if (yawController.enabled()) {
-        logger.Write_PID(LOG_PIDY_MSG, yawController.get_pid_info());
+        const AP_PIDInfo &yaw_pid_info = yawController.get_pid_info();
+        logger.Write_PID(LOG_PIDY_MSG, yaw_pid_info);
+
+        const struct log_YAWO pkt{
+            LOG_PACKET_HEADER_INIT(LOG_YAWO_MSG),
+            time_us : AP_HAL::micros64(),
+            yout    : yaw_pid_info.P + yaw_pid_info.I + yaw_pid_info.D + yaw_pid_info.FF,
+        };
+        logger.WriteBlock(&pkt, sizeof(pkt));
     }
 
     if (steerController.active()) {
@@ -527,6 +541,13 @@ const struct LogStructure Plane::log_structure[] = {
 // @FieldBitmaskEnum: Flags: log_PID_Flags
     { LOG_PIDG_MSG, sizeof(log_PID),
       "PIDG", PID_FMT,  PID_LABELS, PID_UNITS, PID_MULTS , true },
+
+// @LoggerMessage: YAWO
+// @Description: Sum of yaw controller PID terms (P+I+D+FF), for correlation with PIDY by TimeUS
+// @Field: TimeUS: Time since system startup
+// @Field: Yout: yaw controller total output (P+I+D+FF)
+    { LOG_YAWO_MSG, sizeof(log_YAWO),
+      "YAWO", "Qf", "TimeUS,Yout", "s-", "F-" , true },
 
 // @LoggerMessage: AETR
 // @Description: Normalised pre-mixer control surface outputs
