@@ -391,8 +391,7 @@ void Tiltrotor::continuous_update(void)
                 plane.control_mode == &plane.mode_qloiter ||
                 plane.control_mode == &plane.mode_qland ||
                 plane.control_mode == &plane.mode_qrtl ||
-                plane.control_mode == &plane.mode_auto ||
-                plane.control_mode == &plane.mode_qautotune
+                plane.control_mode == &plane.mode_auto
             ))
     {
         //set tilt angle to 0
