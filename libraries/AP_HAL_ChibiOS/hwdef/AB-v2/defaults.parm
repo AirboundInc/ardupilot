@@ -1,6 +1,6 @@
 # Airbound v2 default parameters.
 
-@include ../Pixhawk6C-bdshot/defaults.parm
+@include ../Pixhawk6C/defaults.parm
 @include ../AB-base/defaults.parm
 
 ACRO_YAW_RATE 30
