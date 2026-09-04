@@ -604,7 +604,11 @@ void Plane::Log_Write_Vehicle_Startup_Messages()
 #if HAL_QUADPLANE_ENABLED
     if (quadplane.initialised) {
         char frame_and_type_string[30];
-        quadplane.motors->get_frame_and_type_string(frame_and_type_string, ARRAY_SIZE(frame_and_type_string));
+        if (quadplane.tiltrotor.type == Tiltrotor::TILT_TYPE_DUAL_AXIS) {
+            hal.util->snprintf(frame_and_type_string, ARRAY_SIZE(frame_and_type_string), "Frame: Dual Axis");
+        } else {
+            quadplane.motors->get_frame_and_type_string(frame_and_type_string, ARRAY_SIZE(frame_and_type_string));
+        }
         logger.Write_MessageF("QuadPlane %s", frame_and_type_string);
     }
 #endif

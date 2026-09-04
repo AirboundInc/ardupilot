@@ -895,9 +895,12 @@ bool QuadPlane::setup(void)
 
     // param count will have changed
     AP_Param::invalidate_count();
-
-    char frame_and_type_string[30];
-    motors->get_frame_and_type_string(frame_and_type_string, ARRAY_SIZE(frame_and_type_string));
+        char frame_and_type_string[30];
+        if (tiltrotor.type == Tiltrotor::TILT_TYPE_DUAL_AXIS) {
+            hal.util->snprintf(frame_and_type_string, ARRAY_SIZE(frame_and_type_string), "Frame: Dual Axis");
+        } else {
+        motors->get_frame_and_type_string(frame_and_type_string, ARRAY_SIZE(frame_and_type_string));
+        }
     gcs().send_text(MAV_SEVERITY_INFO, "QuadPlane initialised, %s", frame_and_type_string);
     initialised = true;
     return true;
