@@ -481,6 +481,10 @@ public:
     // To check the transition state
     void set_tailsitter_transition(bool in_transition) { _ts_in_transition = in_transition; }
 
+    // set true while a tiltrotor is within its backtransition hold/blend
+    // window (Q_TILT_FWHLD_MS + Q_TILT_BTDLY_MS), to disable roll rate control
+    void set_tiltrotor_backtransition(bool in_backtrans) { _tilt_in_backtrans = in_backtrans; }
+
 protected:
 
     // Update rate_target_ang_vel using attitude_error_rot_vec_rad
@@ -663,6 +667,7 @@ protected:
     bool _inverted_flight;
     bool _ts_enabled = false;  // tailsitter enabled flag
     bool _ts_in_transition = false;  // tailsitter transition flag
+    bool _tilt_in_backtrans = false;  // tiltrotor backtransition flag, disables roll rate control
 
 public:
     // log a CTRL message

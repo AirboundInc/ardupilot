@@ -468,6 +468,15 @@ void Tiltrotor::update(void)
         return;
     }
 
+    // disable roll rate control for the duration of the backtransition
+    // hold/blend window (Q_TILT_FWHLD_MS + Q_TILT_BTDLY_MS)
+    const bool in_backtrans = in_vtol_transition(AP_HAL::millis());
+    quadplane.attitude_control->set_tiltrotor_backtransition(in_backtrans);
+    if (backtrans_active && !in_backtrans) {
+        gcs().send_text(MAV_SEVERITY_INFO, "Back Transition Done!");
+    }
+    backtrans_active = in_backtrans;
+
     if (type == TILT_TYPE_BINARY) {
         binary_update();
     } else {

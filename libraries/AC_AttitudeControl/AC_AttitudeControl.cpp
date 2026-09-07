@@ -973,6 +973,13 @@ void AC_AttitudeControl::attitude_controller_run_quat()
         ang_vel_body += ang_vel_body_feedforward;
     }
 
+    if (_tilt_in_backtrans) {
+        // disable roll rate control during a tiltrotor backtransition by
+        // commanding the target roll rate to match the measured roll rate
+        ang_vel_body.x = gyro.x;
+        get_rate_roll_pid().reset_I();
+    }
+
     // Record error to handle EKF resets
     _attitude_ang_error = attitude_body.inverse() * _attitude_target;
     _attitude_body = attitude_body;

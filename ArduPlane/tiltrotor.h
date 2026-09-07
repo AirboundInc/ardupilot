@@ -220,6 +220,10 @@ private:
     // back to the fixed-wing forward-throttle value; for QTHR debug log
     float dual_axis_mixout_throttle = 0;
 
+    // true while in_vtol_transition() was true on the previous update(),
+    // used to detect the falling edge and report "Back Transition Done!"
+    bool backtrans_active = false;
+
     Tiltrotor_Transition* transition;
 
 };
