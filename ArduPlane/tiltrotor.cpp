@@ -838,7 +838,10 @@ void Tiltrotor::bicopter_output(void)
  */
 void Tiltrotor::dual_axis_output(void)
 {
-    if (type != TILT_TYPE_DUAL_AXIS || quadplane.motor_test.running) {
+    // dual_axis_transition is allocated by setup() at boot, so it is null if
+    // Q_TILT_TYPE was changed to DualAxis since; the dual axis outputs stay
+    // off until the reboot that Q_TILT_TYPE requires
+    if (type != TILT_TYPE_DUAL_AXIS || dual_axis_transition == nullptr || quadplane.motor_test.running) {
         return;
     }
 
@@ -938,8 +941,9 @@ void Tiltrotor::dual_axis_output(void)
         return;
     }
 
-    // Stage::FW: dual_axis_transition->update() already reset the forward/
-    // back transition timers for us
+    // Stage::FW. Mark that fixed wing outputs are being driven, so that a
+    // following VTOL mode is treated as a back transition
+    dual_axis_transition->note_fw_output();
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
@@ -1157,10 +1161,19 @@ void Tiltrotor_Transition_DualAxis::VTOL_update()
     const uint32_t now = AP_HAL::millis();
 
     if (stage == Stage::FW || stage == Stage::FWD_HOLD || stage == Stage::FWD_BLEND) {
-        // first tick since leaving FW mode: start a fresh back transition
-        back_trans_start_ms = now;
-        fwd_trans_start_ms = 0;
-        set_stage(Stage::BACK_HOLD);
+        if (last_fw_output_ms != 0 && (now - last_fw_output_ms) < FW_OUTPUT_TIMEOUT_MS) {
+            // first tick since leaving FW mode: start a fresh back transition
+            back_trans_start_ms = now;
+            fwd_trans_start_ms = 0;
+            set_stage(Stage::BACK_HOLD);
+        } else {
+            // we were never driving fixed wing outputs, so this is a boot or
+            // a forced stage reset rather than a back transition
+            stage = Stage::VTOL;
+            back_trans_start_ms = 0;
+            fwd_trans_start_ms = 0;
+            return;
+        }
     }
 
     const uint32_t hold_ms = uint32_t(tiltrotor.fw_throttle_hold_ms);

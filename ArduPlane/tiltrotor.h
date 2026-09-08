@@ -309,6 +309,11 @@ public:
     void set_FW_roll_pitch(int32_t& nav_pitch_cd, int32_t& nav_roll_cd) override;
     void set_last_fw_pitch(void) override;
 
+    // Called from Tiltrotor::dual_axis_output() on every loop that drives
+    // fixed wing outputs, so that a following VTOL mode is recognised as a
+    // real back transition rather than a boot-time stage reset
+    void note_fw_output() { last_fw_output_ms = AP_HAL::millis(); }
+
     // Called once per loop from Tiltrotor::dual_axis_output(), after the
     // active Q-mode has already run and set plane.nav_roll_cd/nav_pitch_cd
     // and (for VTOL modes) its own attitude/throttle targets for this
@@ -346,6 +351,13 @@ private:
     // (back) is what derives HOLD vs BLEND vs done.
     uint32_t fwd_trans_start_ms = 0;
     uint32_t back_trans_start_ms = 0;
+
+    // last time fixed wing outputs were driven, zero if never. A back
+    // transition only starts if this is recent, so that arriving in a VTOL
+    // mode from the Stage::FW that force_transition_complete() leaves
+    // behind at boot does not run a phantom back transition
+    uint32_t last_fw_output_ms = 0;
+    static const uint32_t FW_OUTPUT_TIMEOUT_MS = 2000;
 
     // pitch envelope bookkeeping for set_VTOL_roll_pitch_limit(), ported
     // from SLT_Transition
