@@ -339,7 +339,9 @@ local cs = {
     http_sub = nil, http_cfg_i = 0, http_buf = "", http_deadline = 0,
     http_retry_count = 0,
     auth_done = false,
-    creg_search_ms = nil
+    creg_search_ms = nil,
+    siminfo_sent = false,
+    siminfo_printed = false
 }
 
 local function uart_read()
@@ -437,18 +439,18 @@ local cmux_was_set = false
 -- Stores the firmware revision string (e.g. "EC25EFAR08A07M4G") once detected.
 -- Used for diagnostics and firmware-based CMUX auto-disable.
 local modem_revision = ""
-
--- Known-broken firmware revision patterns. If the modem reports a revision
--- matching any of these substrings, we skip CMUX entirely (saves the
--- ~25 second broken-CMUX recovery cycle on every boot).
--- Add more patterns here as Quectel ships new broken revisions.
-local BROKEN_CMUX_REVISIONS = {
-    --"EC25EFAR02A08M4G",  -- confirmed broken; SABM frames silently ignored
-    -- add future broken revisions here
-}
-
 local function is_known_broken_revision(rev)
     if not rev or #rev == 0 then return false end
+    -- Known-broken firmware revision patterns. If the modem reports a revision
+    -- matching any of these substrings, we skip CMUX entirely (saves the
+    -- ~25 second broken-CMUX recovery cycle on every boot).
+    -- Add more patterns here as Quectel ships new broken revisions.
+    -- Kept inside this function rather than at file scope: the main chunk sits
+    -- on Lua's 100-local limit, and this is only read once per boot.
+    local BROKEN_CMUX_REVISIONS = {
+        --"EC25EFAR02A08M4G",  -- confirmed broken; SABM frames silently ignored
+        -- add future broken revisions here
+    }
     for _, pattern in ipairs(BROKEN_CMUX_REVISIONS) do
         if rev:find(pattern, 1, true) then return true end
     end
@@ -459,9 +461,9 @@ end
 -- Anything that is EC25 but neither known-good nor known-broken is treated as
 -- CMUX-capable but flagged with a one-time warning so an unverified revision
 -- that turns out to hang is diagnosable instead of silently wrong.
-local KNOWN_GOOD_EC25_PREFIXES = { "EC25EFAR06", "EC25EFAR08" }
 local function is_known_good_ec25(rev)
     if not rev then return false end
+    local KNOWN_GOOD_EC25_PREFIXES = { "EC25EFAR06", "EC25EFAR08" }  -- see note above re: local limit
     for _, p in ipairs(KNOWN_GOOD_EC25_PREFIXES) do
         if rev:find(p, 1, true) == 1 then return true end
     end
@@ -658,6 +660,14 @@ local function check_modem_revision(s)
     end
     if rev and #rev > 0 then
         modem_revision = rev
+        -- Short form for the identity block and the LTEI log. Quectel buries the
+        -- useful part in a longer string as R<nn>A<nn> ("EC25EFAR08A07M4G" ->
+        -- "R08A07", "EC200UCNAAR03A09M08" -> "R03A09"); SimCom puts it after an
+        -- underscore ("SIM7600G_V2.0.2" -> "V2.0.2"). Anything matching neither
+        -- keeps the full string, so an unknown vendor still reports something.
+        -- Computed here, not at print time, because ATI is the only place the
+        -- raw revision exists and the main chunk has no room for another local.
+        modem.fw_short = rev:match("(R%d%d[Aa]%d%d)") or rev:match("(V%d+%.[%d%.]*%d)") or rev
         gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: firmware " .. rev)
 
         -- CMUX auto-disable / direct-push is EC25-specific. Other families
@@ -682,6 +692,7 @@ local function check_modem_banner(s)
     for model in pairs(modem_list) do
         if s:find(modem_list[model].banner) then
             modem = modem_list[model]
+            modem.model = model
             gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: found modem: " .. model)
             -- Try to extract firmware revision from the same response
             check_modem_revision(s)
@@ -1635,11 +1646,10 @@ local function step_CREG()
             else
                 gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CREG OK')
             end
-            if P.HTTPAUTH:get() == 1 and modem.http and (AUTH_EVERY_RECONNECT or not cs.auth_done) then
-                step = "HTTPAUTH"
-            else
-                step = next_after_registration()
-            end
+            -- Registered. SIMINFO prints the identity block and then makes
+            -- this same HTTPAUTH-or-not decision, so the routing lives in one
+            -- place rather than both.
+            step = "SIMINFO"; cs.siminfo_sent = false
             return
             
         elseif reg == "0" or reg == "3" then
@@ -1680,6 +1690,61 @@ local function step_CREG()
     
     -- Unconditionally poll the modem (the 200ms delay in run_step prevents spamming)
     AT_send(modem.fast_connect and 'AT+CEREG?\r\n' or 'AT+CREG?\r\n')
+end
+
+-- Registered but not connected yet: name the modem, its firmware and the
+-- network the SIM is on, in one block, then hand over to HTTPAUTH. Sits here
+-- because AT+COPS? can only return an operator name once registration has
+-- actually succeeded, and this is the last quiet moment before the socket
+-- work starts.
+--
+-- AT+COPS=3,0 pins the read format to long alphanumeric first: <mode>=3 sets
+-- only <format> and does not touch registration, which matters because
+-- set_MCCMNC may have left the modem in numeric format via AT+COPS=4,2 -- in
+-- which case AT+COPS? answers "40410" instead of "airtel".
+--
+-- Capped at 1.5s and no call to handle_error: a silent modem, or one that
+-- rejects either command, still gets the block printed (operator "unknown")
+-- and moves straight on, so this can never hold up or reset the connect.
+local function step_SIMINFO()
+    if not cs.siminfo_printed then
+        local raw = uart_read()
+        if raw and #raw > 0 then buf.setup = buf.setup .. raw end
+        if #buf.setup > 2048 then buf.setup = "" end
+
+        if not cs.siminfo_sent then
+            AT_send('AT+COPS=3,0\r\n'); AT_send('AT+COPS?\r\n')
+            cs.siminfo_sent = true
+            return
+        end
+
+        -- +COPS: <mode>[,<format>,"<oper>"[,<Act>]]. With <format>=0/1 <oper>
+        -- is the network name ("airtel"); with 2 it is the numeric MCC+MNC,
+        -- which is still worth printing, so take it either way. An
+        -- unregistered modem answers a bare "+COPS: 0" and matches nothing.
+        local oper = buf.setup:match('%+COPS:%s*%d+,%d+,"([^"]*)"')
+        if oper == "" then oper = nil end
+        local waited = (millis():tofloat() - cs.step_timer_ms) / 1000
+        if not oper and waited < 1.5 and not buf.setup:find('ERROR') then return end
+
+        -- Stashed on the modem_list entry, not in cs: reset_state() wipes cs on
+        -- every modem reset, and these three are static for the whole boot, so
+        -- the LTEI heartbeat in check_CSQ keeps reporting them afterwards.
+        modem.sim_oper = oper or 'unknown'
+        local fw = (modem.fw_short and #modem.fw_short > 0) and modem.fw_short or
+                   (#modem_revision > 0 and modem_revision or 'unknown')
+        gcs:send_text(MAV_SEVERITY.INFO, 'Module name: ' .. (modem.model or 'unknown'))
+        gcs:send_text(MAV_SEVERITY.INFO, 'Firmware version: ' .. fw)
+        gcs:send_text(MAV_SEVERITY.INFO, 'Simcard: ' .. modem.sim_oper)
+        cs.siminfo_printed = true
+    end
+
+    buf.setup = ""
+    if P.HTTPAUTH:get() == 1 and modem.http and (AUTH_EVERY_RECONNECT or not cs.auth_done) then
+        step = "HTTPAUTH"
+    else
+        step = next_after_registration()
+    end
 end
 
 -- Recovery router. After the stall counter declares the socket dead we don't
@@ -2255,6 +2320,7 @@ local function run_step()
     if step == "ATI" then step_ATI(); return 1100 end
     if step == "BAUD" then step_BAUD(); return 50 end
     if step == "CREG" then step_CREG(); return 150 end 
+    if step == "SIMINFO" then step_SIMINFO(); return 50 end
     if step == "HTTPAUTH" then step_HTTPAUTH(); return 100 end
     if step == "SIGNAL_GATE" then step_SIGNAL_GATE(); return 50 end
     if step == "CEREG_CHECK" then step_CEREG_CHECK(); return 100 end
@@ -2276,6 +2342,28 @@ end
 
 local function update()
     if P.ENABLE:get() == 0 then return 500 end
+
+    -- Modem/SIM identity into the dataflash log, once per arm, next to the
+    -- other LTE* messages. Written here and not where the block is printed to
+    -- the GCS: LOG_DISARMED is 0 on this airframe, so no log file exists until
+    -- arming and a write at print time would simply be dropped. Latched on the
+    -- arm transition rather than once per boot because each arm opens a fresh
+    -- log, and each one should carry the identity.
+    --
+    -- All three fields are char[16] and logger:write() raises a Lua error on
+    -- anything longer ("arg N too long for N format", lua_bindings.cpp), so
+    -- each is truncated: a long operator name must not be able to kill the
+    -- script mid-flight.
+    if not arming:is_armed() then
+        cs.ltei_logged = false
+    elseif not cs.ltei_logged and modem.sim_oper then
+        cs.ltei_logged = true
+        logger:write('LTEI', 'Mdl,FW,Sim', 'NNN',
+                     (modem.model or 'unknown'):sub(1, 16),
+                     (modem.fw_short or (#modem_revision > 0 and modem_revision) or 'unknown'):sub(1, 16),
+                     modem.sim_oper:sub(1, 16))
+    end
+
     local delay = run_step()
     uart_write_pending()
     return delay
