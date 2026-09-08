@@ -241,15 +241,27 @@ private:
   need to cooperate with it).
 
   Fixed-wing roll/pitch control (stabilize_roll()/stabilize_pitch()) is
-  deliberately NOT invoked from here: every Q-mode already calls those
-  unconditionally every tick (reading whatever populated plane.nav_roll_cd
-  / nav_pitch_cd that tick -- pilot sticks in QSTABILIZE/QHOVER, or the
-  position/loiter controller's output in QLOITER/QRTL/AUTO), so calling
-  them again here would re-run the roll/pitch PID loops twice in the same
-  tick. A future transition stage that needs to *command* roll/pitch
-  itself (e.g. commanding pitch-up to bleed airspeed) should write
-  plane.nav_roll_cd/nav_pitch_cd from here instead, ahead of whichever
-  Q-mode's own stabilize_roll()/stabilize_pitch() call consumes it.
+  deliberately NOT invoked from update_controllers()/dual_axis_output():
+  every Q-mode already calls those unconditionally every tick (reading
+  whatever populated plane.nav_roll_cd/nav_pitch_cd that tick -- pilot
+  sticks in QSTABILIZE/QHOVER, or the position/loiter controller's output
+  in QLOITER/QRTL/AUTO/GUIDED), and dual_axis_output() runs too late in
+  the tick (from servos.cpp, after the active mode's run()) to influence
+  that. Calling stabilize_roll()/pitch() again from there would just
+  re-run the roll/pitch PID loops a second time in the same tick.
+
+  A future stage that needs to *command* pitch/roll itself (e.g.
+  commanding pitch-up to bleed airspeed while tilted at 45deg, still in a
+  VTOL mode) should instead do it from set_VTOL_roll_pitch_limit()
+  below -- already overridden here, and already called generically from
+  QLOITER/QRTL/QLAND/AUTO/GUIDED after their position controller computes
+  nav_roll_cd/nav_pitch_cd but before stabilize_roll()/pitch() consumes
+  them, so overriding (not just clamping) pitch_cd there reaches those
+  modes for free. The equivalent FW-side hook is set_FW_roll_pitch(),
+  called from Plane::stabilize() before every mode's run(), FW or VTOL --
+  it currently only acts while !in_vtol_mode(), matching FWD_HOLD/
+  FWD_BLEND; a stage that needs to command pitch while still in a FW-ish
+  mode ahead of a back transition would extend that guard.
  */
 class Tiltrotor_Transition_DualAxis : public Transition
 {
