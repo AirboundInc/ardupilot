@@ -110,7 +110,6 @@ public:
     AP_Float vectoring_gain_hvr;
     AP_Float vectored_hover_power;
     AP_Float vectoring_gain_fw;
-    AP_Float back_trans_angle;  // TODO: Implement this
 
     // Time to blend from held FW throttle to pilot throttle after the
     // fw_throttle_hold_ms hold period, following a backtransition into
