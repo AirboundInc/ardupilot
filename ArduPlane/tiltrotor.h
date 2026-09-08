@@ -297,7 +297,7 @@ public:
     void restart() override;
     uint8_t get_log_transition_state() const override { return static_cast<uint8_t>(stage); }
     bool active_frwd() const override { return stage == Stage::FWD_HOLD || stage == Stage::FWD_BLEND; }
-    bool show_vtol_view() const override { return quadplane.in_vtol_mode(); }
+    bool show_vtol_view() const override;
     MAV_VTOL_STATE get_mav_vtol_state() const override;
     bool set_VTOL_roll_pitch_limit(int32_t& roll_cd, int32_t& pitch_cd) override;
     void set_FW_roll_pitch(int32_t& nav_pitch_cd, int32_t& nav_roll_cd) override;

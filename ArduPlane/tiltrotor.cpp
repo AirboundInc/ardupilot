@@ -1179,6 +1179,13 @@ void Tiltrotor_Transition_DualAxis::force_transition_complete()
     quadplane.assist.reset();
 }
 
+// a dual axis tiltrotor uses fixed wing controls as soon as it leaves a
+// VTOL mode, so the VTOL view follows the flight mode directly
+bool Tiltrotor_Transition_DualAxis::show_vtol_view() const
+{
+    return quadplane.in_vtol_mode();
+}
+
 MAV_VTOL_STATE Tiltrotor_Transition_DualAxis::get_mav_vtol_state() const
 {
     switch (stage) {
