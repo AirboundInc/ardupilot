@@ -1761,6 +1761,121 @@ class AutoTestQuadPlane(vehicle_test_suite.TestSuite):
 
         self.wait_disarmed(timeout=60)
 
+    def VTOLTakeoffTransitionRTL(self):
+        '''Fly a VTOL takeoff, forward transition, and RTL back transition'''
+        self.set_message_rate_hz(mavutil.mavlink.MAVLINK_MSG_ID_EXTENDED_SYS_STATE, 10)
+
+        wps = self.create_simple_relhome_mission([
+            (mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, 0, 0, 40),
+            (mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, 1000, 0, 60),
+            (mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH, 0, 0, 0),
+        ])
+        self.check_mission_upload_download(wps)
+        self.set_parameter('Q_RTL_MODE', 1)
+
+        self.change_mode('AUTO')
+        self.wait_ready_to_arm()
+        self.arm_vehicle()
+
+        self.progress("Climbing on the VTOL motors")
+        self.wait_altitude(35, 45, relative=True, timeout=120)
+        self.assert_extended_sys_state(mavutil.mavlink.MAV_VTOL_STATE_MC,
+                                       mavutil.mavlink.MAV_LANDED_STATE_IN_AIR)
+
+        self.progress("Transitioning to fixed wing on the way to waypoint 2")
+        self.wait_current_waypoint(2, timeout=120)
+        self.wait_extended_sys_state(mavutil.mavlink.MAV_VTOL_STATE_TRANSITION_TO_FW,
+                                     mavutil.mavlink.MAV_LANDED_STATE_IN_AIR,
+                                     timeout=60)
+        self.wait_extended_sys_state(mavutil.mavlink.MAV_VTOL_STATE_FW,
+                                     mavutil.mavlink.MAV_LANDED_STATE_IN_AIR,
+                                     timeout=120)
+
+        self.progress("Back transitioning for the VTOL RTL")
+        self.wait_extended_sys_state(mavutil.mavlink.MAV_VTOL_STATE_MC,
+                                     mavutil.mavlink.MAV_LANDED_STATE_IN_AIR,
+                                     timeout=300)
+        self.wait_disarmed(timeout=180)
+
+    def DualAxisTiltrotorTransitionStages(self):
+        '''Check dual axis tiltrotor forward and back transition stage sequencing'''
+        # Q_TILT_TYPE=DualAxis has no SITL flight model, so this exercises the
+        # stage machine on the ground, where it is driven only by VTOL<->FW
+        # mode edges and the Q_TILT_*_MS stage timers.
+        self.set_parameters({
+            "Q_ENABLE": 1,
+            "Q_FRAME_CLASS": 10,   # tailsitter class, as dual axis uses
+            "Q_TAILSIT_ENABLE": 0,  # enabling both is a config error
+            "Q_TILT_ENABLE": 1,
+            "Q_TILT_TYPE": 4,      # DualAxis
+            "Q_TILT_MASK": 0,
+            "Q_TILT_FTHLD_MS": 500,
+            "Q_TILT_FTBLD_MS": 1000,
+            "Q_TILT_FWHLD_MS": 500,
+            "Q_TILT_BTDLY_MS": 1000,
+            "Q_TILT_THR_FT": 30,
+            "Q_TILT_THR_BT": 30,
+            "Q_TILT_FWHLD_EN": 0,
+        })
+        self.reboot_sitl()
+        self.set_message_rate_hz(mavutil.mavlink.MAVLINK_MSG_ID_EXTENDED_SYS_STATE, 10)
+
+        # settle in a VTOL mode first: the vehicle boots in a fixed wing mode,
+        # so arriving here is itself a back transition
+        self.change_mode('QHOVER')
+        self.delay_sim_time(3)
+
+        self.start_subtest("VTOL to VTOL mode changes do not run a transition")
+        self.context_collect('STATUSTEXT')
+        self.change_mode('QLOITER')
+        self.delay_sim_time(3)
+        self.change_mode('QHOVER')
+        self.delay_sim_time(3)
+        if self.statustext_in_collections("trans"):
+            raise NotAchievedException("Ran a transition across a VTOL to VTOL mode change")
+        self.assert_extended_sys_state(mavutil.mavlink.MAV_VTOL_STATE_MC,
+                                       mavutil.mavlink.MAV_LANDED_STATE_ON_GROUND)
+        self.context_clear_collection('STATUSTEXT')
+
+        self.start_subtest("Forward transition stages on a VTOL to FW mode edge")
+        self.context_collect('STATUSTEXT')
+        self.change_mode('FBWA')
+        self.wait_statustext("Fwd trans: throttle hold", check_context=True, timeout=10)
+        self.wait_statustext("Fwd trans: throttle blend", check_context=True, timeout=10)
+        self.wait_statustext("Fwd trans done", check_context=True, timeout=10)
+        self.assert_extended_sys_state(mavutil.mavlink.MAV_VTOL_STATE_FW,
+                                       mavutil.mavlink.MAV_LANDED_STATE_ON_GROUND)
+        self.context_clear_collection('STATUSTEXT')
+
+        self.start_subtest("Back transition stages on a FW to VTOL mode edge")
+        self.change_mode('QHOVER')
+        self.wait_statustext("Back trans: throttle hold", check_context=True, timeout=10)
+        self.wait_statustext("Back trans: throttle blend", check_context=True, timeout=10)
+        self.wait_statustext("Back trans done", check_context=True, timeout=10)
+        self.assert_extended_sys_state(mavutil.mavlink.MAV_VTOL_STATE_MC,
+                                       mavutil.mavlink.MAV_LANDED_STATE_ON_GROUND)
+        self.context_clear_collection('STATUSTEXT')
+
+        self.start_subtest("Q_TILT_FWHLD_EN gives the FW yaw controller the hold window")
+        self.set_parameter("Q_TILT_FWHLD_EN", 1)
+        self.change_mode('FBWA')
+        self.wait_statustext("Fwd trans done", check_context=True, timeout=10)
+        self.context_clear_collection('STATUSTEXT')
+        self.change_mode('QHOVER')
+        self.wait_statustext("(FW yaw ctrl)", check_context=True, timeout=10)
+        self.wait_statustext("Back trans done", check_context=True, timeout=10)
+
+        self.start_subtest("Zeroed stage timers complete the transition immediately")
+        self.set_parameters({
+            "Q_TILT_FTHLD_MS": 0,
+            "Q_TILT_FTBLD_MS": 0,
+        })
+        self.context_clear_collection('STATUSTEXT')
+        self.change_mode('FBWA')
+        self.wait_statustext("Fwd trans done", check_context=True, timeout=10)
+        self.assert_extended_sys_state(mavutil.mavlink.MAV_VTOL_STATE_FW,
+                                       mavutil.mavlink.MAV_LANDED_STATE_ON_GROUND)
+
     def MAV_CMD_NAV_TAKEOFF(self):
         '''test issuing takeoff command via mavlink'''
         self.change_mode('GUIDED')
@@ -2917,6 +3032,8 @@ class AutoTestQuadPlane(vehicle_test_suite.TestSuite):
             self.mavlink_MAV_CMD_DO_VTOL_TRANSITION,
             self.TransitionMinThrottle,
             self.BackTransitionMinThrottle,
+            self.VTOLTakeoffTransitionRTL,
+            self.DualAxisTiltrotorTransitionStages,
             self.MAV_CMD_NAV_TAKEOFF,
             self.Q_GUIDED_MODE,
             self.DCMClimbRate,
