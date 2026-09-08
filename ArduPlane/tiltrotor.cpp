@@ -226,14 +226,14 @@ void Tiltrotor::setup()
 
     if (type == TILT_TYPE_DUAL_AXIS) {
         dual_axis_transition = NEW_NOTHROW Tiltrotor_Transition_DualAxis(quadplane, motors, *this);
-        transition = dual_axis_transition;
+        quadplane.transition = dual_axis_transition;
     } else {
-        transition = NEW_NOTHROW Tiltrotor_Transition(quadplane, motors, *this);
+        slt_transition = NEW_NOTHROW Tiltrotor_Transition(quadplane, motors, *this);
+        quadplane.transition = slt_transition;
     }
-    if (!transition) {
+    if (quadplane.transition == nullptr) {
         AP_BoardConfig::allocation_error("tiltrotor transition");
     }
-    quadplane.transition = transition;
 
     setup_complete = true;
 }
@@ -291,6 +291,24 @@ float Tiltrotor::get_fully_forward_tilt() const
 float Tiltrotor::get_forward_flight_tilt() const
 {
     return 1.0 - ((flap_angle_deg * (1/90.0)) * SRV_Channels::get_slew_limited_output_scaled(SRV_Channel::k_flap_auto) * 0.01);
+}
+
+/*
+  true if the forward transition has progressed far enough that the tilt
+  should go all the way forward, rather than staying limited to Q_TILT_MAX.
+
+  A dual axis tiltrotor normally never reaches this test: continuous_update()
+  returns early for it whenever we are not in a VTOL mode, which is the only
+  time a forward transition stage is active. It is still reachable while
+  assisting during a QPOS_AIRBRAKE landing phase, where no forward transition
+  is running and the tilt stays limited, matching the previous behaviour.
+ */
+bool Tiltrotor::transition_tilt_fully_fwd() const
+{
+    if (dual_axis_transition != nullptr) {
+        return dual_axis_transition->active_frwd();
+    }
+    return slt_transition->transition_state >= Tiltrotor_Transition::TRANSITION_TIMER;
 }
 
 /*
@@ -404,8 +422,7 @@ void Tiltrotor::continuous_update(void)
         return;
     }
 
-    if (quadplane.assisted_flight &&
-        transition->transition_state >= Tiltrotor_Transition::TRANSITION_TIMER) {
+    if (quadplane.assisted_flight && transition_tilt_fully_fwd()) {
         // we are transitioning to fixed wing - tilt the motors all
         // the way forward
         slew(get_forward_flight_tilt());

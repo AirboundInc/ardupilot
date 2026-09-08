@@ -186,14 +186,20 @@ private:
     // back to the fixed-wing forward-throttle value; for QTHR debug log
     float dual_axis_mixout_throttle = 0;
 
-    // owned by QuadPlane's virtual Transition interface; the concrete type
-    // is Tiltrotor_Transition for every type except TILT_TYPE_DUAL_AXIS
-    Transition* transition;
+    // true if the forward transition has progressed far enough that the
+    // tilt should go all the way forward rather than being limited to
+    // Q_TILT_MAX
+    bool transition_tilt_fully_fwd() const;
 
-    // set instead of (and pointing to the same object as) transition when
-    // type == TILT_TYPE_DUAL_AXIS, so dual_axis_output() can reach the
-    // dual-axis-specific stage/throttle/controller-selection API without
-    // downcasting. Null for every other tilt type.
+    /*
+      exactly one of these is allocated by setup(), depending on type, and
+      handed to QuadPlane as its generic Transition. They are kept as
+      concrete types (rather than one Transition*) so that the tilt code
+      can ask each transition machine its own questions without
+      downcasting: slt_transition's TRANSITION_* state for every other
+      tilt type, dual_axis_transition's Stage for TILT_TYPE_DUAL_AXIS.
+     */
+    Tiltrotor_Transition* slt_transition = nullptr;
     Tiltrotor_Transition_DualAxis* dual_axis_transition = nullptr;
 
 };
