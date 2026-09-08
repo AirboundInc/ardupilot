@@ -192,12 +192,11 @@ private:
     bool transition_tilt_fully_fwd() const;
 
     /*
-      exactly one of these is allocated by setup(), depending on type, and
-      handed to QuadPlane as its generic Transition. They are kept as
-      concrete types (rather than one Transition*) so that the tilt code
-      can ask each transition machine its own questions without
-      downcasting: slt_transition's TRANSITION_* state for every other
-      tilt type, dual_axis_transition's Stage for TILT_TYPE_DUAL_AXIS.
+      setup() allocates exactly one of these according to type and hands it
+      to QuadPlane as its Transition: dual_axis_transition for
+      TILT_TYPE_DUAL_AXIS, slt_transition for every other tilt type. Both
+      are held as concrete types so the tilt code can read each machine's
+      own state, Stage and TRANSITION_* respectively.
      */
     Tiltrotor_Transition* slt_transition = nullptr;
     Tiltrotor_Transition_DualAxis* dual_axis_transition = nullptr;
@@ -228,46 +227,30 @@ private:
 };
 
 /*
-  Transition controller for dual-axis tiltrotors (Q_TILT_TYPE=DualAxis).
+  Transition controller for dual axis tiltrotors (Q_TILT_TYPE=DualAxis).
 
-  Fully self-contained: unlike Tiltrotor_Transition above, this does not
-  reuse SLT_Transition's airspeed-wait state machine (TRANSITION_AIRSPEED_WAIT
-  / TRANSITION_TIMER), since a dual-axis tiltrotor's forward/back transition
-  is judged by tilt angle and elapsed time, not by waiting on airspeed to
-  build while hovering.
+  Runs its own stage machine rather than SLT_Transition's airspeed wait:
+  each transition is a sequence of timed stages started by a VTOL<->FW mode
+  edge, with the stage durations coming from Q_TILT_FTHLD_MS/FTBLD_MS
+  forwards and Q_TILT_FWHLD_MS/BTDLY_MS back.
 
-  This class is also the single place that decides which controller(s)
-  actually drive the vehicle at each stage of the transition -- the
-  multicopter attitude/rate controller (motors_output()), the fixed-wing
-  yaw controller (stabilize_yaw(), which no Q-mode calls on its own), and
-  what throttle each one uses. Tiltrotor::dual_axis_output() calls into
-  this once per loop and applies the result; no Q-mode file needs to know
-  about tiltrotor transition state (Q_TILT_FWHLD_EN works the same way in
-  QSTABILIZE, QHOVER, QLOITER, QRTL, etc. as a result, since none of them
-  need to cooperate with it).
+  It also selects, per stage, which controllers drive the vehicle and what
+  throttle they use: the multicopter attitude/rate controller through
+  hold_stabilize()/motors_output(), and the fixed wing yaw controller
+  through stabilize_yaw(). Tiltrotor::dual_axis_output() calls
+  update_controllers() once per loop and applies the throttle it returns,
+  so the stage behaviour is the same in every Q-mode.
 
-  Fixed-wing roll/pitch control (stabilize_roll()/stabilize_pitch()) is
-  deliberately NOT invoked from update_controllers()/dual_axis_output():
-  every Q-mode already calls those unconditionally every tick (reading
-  whatever populated plane.nav_roll_cd/nav_pitch_cd that tick -- pilot
-  sticks in QSTABILIZE/QHOVER, or the position/loiter controller's output
-  in QLOITER/QRTL/AUTO/GUIDED), and dual_axis_output() runs too late in
-  the tick (from servos.cpp, after the active mode's run()) to influence
-  that. Calling stabilize_roll()/pitch() again from there would just
-  re-run the roll/pitch PID loops a second time in the same tick.
-
-  A future stage that needs to *command* pitch/roll itself (e.g.
-  commanding pitch-up to bleed airspeed while tilted at 45deg, still in a
-  VTOL mode) should instead do it from set_VTOL_roll_pitch_limit()
-  below -- already overridden here, and already called generically from
-  QLOITER/QRTL/QLAND/AUTO/GUIDED after their position controller computes
-  nav_roll_cd/nav_pitch_cd but before stabilize_roll()/pitch() consumes
-  them, so overriding (not just clamping) pitch_cd there reaches those
-  modes for free. The equivalent FW-side hook is set_FW_roll_pitch(),
-  called from Plane::stabilize() before every mode's run(), FW or VTOL --
-  it currently only acts while !in_vtol_mode(), matching FWD_HOLD/
-  FWD_BLEND; a stage that needs to command pitch while still in a FW-ish
-  mode ahead of a back transition would extend that guard.
+  Fixed wing roll and pitch are not driven from here. Every Q-mode already
+  calls stabilize_roll()/stabilize_pitch() each tick against whatever set
+  plane.nav_roll_cd/nav_pitch_cd that tick, pilot sticks in QSTABILIZE and
+  QHOVER or the position controller in QLOITER/QRTL/AUTO/GUIDED, and
+  dual_axis_output() runs after that from servos.cpp. A stage that needs to
+  command roll or pitch does so from set_VTOL_roll_pitch_limit(), which
+  those modes call after computing nav_roll_cd/nav_pitch_cd and before
+  stabilize_roll()/stabilize_pitch() consumes them, or from
+  set_FW_roll_pitch(), which Plane::stabilize() calls ahead of every mode's
+  run() and which acts here only while not in a VTOL mode.
  */
 class Tiltrotor_Transition_DualAxis : public Transition
 {
@@ -277,14 +260,10 @@ public:
     Tiltrotor_Transition_DualAxis(QuadPlane& _quadplane, AP_MotorsMulticopter*& _motors, Tiltrotor& _tiltrotor):
         Transition(_quadplane, _motors), tiltrotor(_tiltrotor) {}
 
-    // stages of the dual-axis forward/back transition. Each pair (*_HOLD,
-    // *_BLEND) is a named sub-window of a single elapsed-time timer, so
-    // adding a new stage/profile is a matter of adding a new named window
-    // plus its own entry in update()/VTOL_update() and
-    // update_controllers() -- the Stage names below (and get_stage()) are
-    // what let a future stage (e.g. holding tilt at 45deg and building/
-    // bleeding airspeed before finishing the tilt) reuse the same driver
-    // loop and controller-selection/logging plumbing.
+    // stages of the dual axis forward and back transition. Each *_HOLD and
+    // *_BLEND pair is a sub-window of one elapsed-time timer, sequenced by
+    // update()/VTOL_update() and given its controllers and throttle by
+    // update_controllers()
     enum class Stage : uint8_t {
         VTOL,        // steady hover, no transition active
         BACK_HOLD,   // just left FW: hold throttle for Q_TILT_FWHLD_MS, optional FW yaw authority
@@ -309,18 +288,15 @@ public:
     void set_FW_roll_pitch(int32_t& nav_pitch_cd, int32_t& nav_roll_cd) override;
     void set_last_fw_pitch(void) override;
 
-    // Called from Tiltrotor::dual_axis_output() on every loop that drives
-    // fixed wing outputs, so that a following VTOL mode is recognised as a
-    // real back transition rather than a boot-time stage reset
+    // records that fixed wing outputs are being driven this loop, which is
+    // what qualifies a following VTOL mode as a back transition
     void note_fw_output() { last_fw_output_ms = AP_HAL::millis(); }
 
-    // Called once per loop from Tiltrotor::dual_axis_output(), after the
-    // active Q-mode has already run and set plane.nav_roll_cd/nav_pitch_cd
-    // and (for VTOL modes) its own attitude/throttle targets for this
-    // tick. Advances the stage timers, decides whether to give the FW yaw
-    // controller authority over the rudder this tick, and returns the ESC
-    // throttle percentage (0-100) dual_axis_output() should command.
-    // pilot_vtol_throttle_pct and commanded_fw_throttle_pct are both 0-100.
+    // Runs the controllers the current stage calls for and returns the ESC
+    // throttle percentage to command. Called once per loop from
+    // Tiltrotor::dual_axis_output(), after the active Q-mode has set
+    // plane.nav_roll_cd/nav_pitch_cd and its own attitude and throttle
+    // targets. Both throttles are 0-100 percent.
     float update_controllers(float pilot_vtol_throttle_pct, float commanded_fw_throttle_pct);
 
 private:
@@ -337,36 +313,31 @@ private:
     // Q_TILT_FTBLD_MS
     float get_fwd_trans_throttle(uint32_t now, float commanded_throttle_pct);
 
-    // give the FW yaw controller (stabilize_yaw(), which no Q-mode calls
-    // on its own) authority over the rudder during the BACK_HOLD window
-    // when Q_TILT_FWHLD_EN is set; otherwise leaves the rudder as
-    // whichever Q-mode already centered it this tick
+    // runs the FW yaw controller during the BACK_HOLD window when
+    // Q_TILT_FWHLD_EN is set, otherwise leaves the rudder as the active
+    // Q-mode set it
     void update_yaw_authority() const;
 
     Stage stage = Stage::VTOL;
 
-    // zero when not running; set to now() on entering the forward/back
-    // transition sequence. Elapsed time against these plus
-    // Q_TILT_FTHLD_MS/FTBLD_MS (forward) and Q_TILT_FWHLD_MS/BTDLY_MS
-    // (back) is what derives HOLD vs BLEND vs done.
+    // start of each transition sequence, zero when that sequence is not
+    // running. Elapsed time against these and Q_TILT_FTHLD_MS/FTBLD_MS
+    // forwards, Q_TILT_FWHLD_MS/BTDLY_MS back, gives HOLD, BLEND or done
     uint32_t fwd_trans_start_ms = 0;
     uint32_t back_trans_start_ms = 0;
 
     // last time fixed wing outputs were driven, zero if never. A back
-    // transition only starts if this is recent, so that arriving in a VTOL
-    // mode from the Stage::FW that force_transition_complete() leaves
-    // behind at boot does not run a phantom back transition
+    // transition starts only while this is within FW_OUTPUT_TIMEOUT_MS, so
+    // entering a VTOL mode having never flown forward is not a transition
     uint32_t last_fw_output_ms = 0;
     static const uint32_t FW_OUTPUT_TIMEOUT_MS = 2000;
 
-    // pitch envelope bookkeeping for set_VTOL_roll_pitch_limit(), ported
-    // from SLT_Transition
+    // pitch envelope state for set_VTOL_roll_pitch_limit()
     uint32_t last_fw_mode_ms = 0;
     int32_t last_fw_nav_pitch_cd = 0;
 
-    // debug state from the last get_back_trans_throttle()/
-    // get_fwd_trans_throttle() call, read by Tiltrotor::write_log() (a
-    // friend) for the TILT log
+    // state from the last throttle blend, read by Tiltrotor::write_log()
+    // for the TILT log
     uint32_t backtrans_elapsed_ms = 0;
     float backtrans_pilot_throttle = 0;
     float backtrans_blend_throttle = 0;
