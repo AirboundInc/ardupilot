@@ -272,7 +272,11 @@ Tailsitter::Tailsitter(QuadPlane& _quadplane, AP_MotorsMulticopter*& _motors):qu
 void Tailsitter::setup()
 {
     // Set tailsitter enable flag based on old heuristics
-    if (!enable.configured() && (((quadplane.frame_class == AP_Motors::MOTOR_FRAME_TAILSITTER) || (motor_mask != 0)) && (quadplane.tiltrotor.type != Tiltrotor::TILT_TYPE_BICOPTER))) {
+    // bicopter and dual axis tiltrotors also use the tailsitter frame class,
+    // and enabling both here is rejected as a config error
+    if (!enable.configured() && (((quadplane.frame_class == AP_Motors::MOTOR_FRAME_TAILSITTER) || (motor_mask != 0)) &&
+                                 (quadplane.tiltrotor.type != Tiltrotor::TILT_TYPE_BICOPTER) &&
+                                 (quadplane.tiltrotor.type != Tiltrotor::TILT_TYPE_DUAL_AXIS))) {
         enable.set_and_save(1);
     }
 
