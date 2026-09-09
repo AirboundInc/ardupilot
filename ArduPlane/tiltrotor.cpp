@@ -909,9 +909,11 @@ void Tiltrotor::dual_axis_output(void)
         float extra_elevator = 0;
         bool is_vtol = quadplane.in_vtol_mode();
 
+        
         if (!is_zero(extra_pitch) && is_vtol && !is_negative(vectored_hover_power)) {
             extra_elevator = extra_sign * powf(fabsf(extra_pitch), vectored_hover_power) * SERVO_MAX;
         }
+        
 
         tilt_left_adjusted  += extra_elevator;
         tilt_right_adjusted += extra_elevator;

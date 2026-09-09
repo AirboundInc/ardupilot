@@ -598,6 +598,13 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Standard
     AP_GROUPINFO("YAW_ALGN_TO", 44, QuadPlane, takeoff_yaw_align_timeout, 5.0f),
 
+    // @Param: YAW_ALGN_EN
+    // @DisplayName: Takeoff yaw alignment enable
+    // @Description: Enables holding altitude after VTOL takeoff until heading aligns with the next waypoint (within Q_YAW_TOL) before transitioning to fixed wing flight. If disabled, the vehicle transitions immediately once takeoff altitude is reached, regardless of heading.
+    // @Values: 0:Disabled,1:Enabled
+    // @User: Standard
+    AP_GROUPINFO("YAW_ALGN_EN", 49, QuadPlane, takeoff_yaw_align_enable, 1),
+
     // @Param: FTRANS_MODE
     // @DisplayName: Forward transition completion method
     // @Description: Selects the condition used to decide when the forward transition from VTOL to fixed wing flight is complete and control is handed to the fixed wing controllers. Airspeed waits for airspeed to exceed AIRSPEED_MIN. Time hands off after Q_FTRANS_TIME seconds regardless of airspeed. Tilt Angle (tiltrotors only) hands off once the tilt servos reach Q_FTRANS_ANG degrees regardless of airspeed.
@@ -3599,37 +3606,39 @@ bool QuadPlane::verify_vtol_takeoff(const AP_Mission::Mission_Command &cmd)
         return false;
     }
     // Hold altitude until heading aligns with next waypoint, then transition
-    if (takeoff_alt_hold_start_ms == 0) {
-        takeoff_alt_hold_start_ms = now;
-        takeoff_start_time_ms = now;  // reset failure timeout for hold phase
-        AP_Mission::Mission_Command next_cmd;
-        if (plane.mission.get_next_nav_cmd(plane.mission.get_current_nav_index() + 1, next_cmd)
-            && next_cmd.content.location.lat != 0
-            && next_cmd.content.location.lng != 0) {
-            takeoff_wp_bearing_cd = (float)plane.current_loc.get_bearing_to(next_cmd.content.location);
-            gcs().send_text(MAV_SEVERITY_INFO, "Takeoff: holding, target heading %.0f deg",
-                            (double)(takeoff_wp_bearing_cd * 0.01f));
-        }
+    if (takeoff_yaw_align_enable) {
+        if (takeoff_alt_hold_start_ms == 0) {
+            takeoff_alt_hold_start_ms = now;
+            takeoff_start_time_ms = now;  // reset failure timeout for hold phase
+            AP_Mission::Mission_Command next_cmd;
+            if (plane.mission.get_next_nav_cmd(plane.mission.get_current_nav_index() + 1, next_cmd)
+                && next_cmd.content.location.lat != 0
+                && next_cmd.content.location.lng != 0) {
+                takeoff_wp_bearing_cd = (float)plane.current_loc.get_bearing_to(next_cmd.content.location);
+                gcs().send_text(MAV_SEVERITY_INFO, "Takeoff: holding, target heading %.0f deg",
+                                (double)(takeoff_wp_bearing_cd * 0.01f));
+            }
 
         // if no next waypoint, takeoff_wp_bearing_cd stays -1 and we transition immediately
     }
 
-    if (takeoff_wp_bearing_cd >= 0.0f) {
-        float yaw_error_cd = fabsf(wrap_180_cd((float)ahrs_view->yaw_sensor - takeoff_wp_bearing_cd));
-        if (yaw_error_cd > takeoff_yaw_tol * 100.0f) {
-            static uint32_t last_print_ms = 0;
-            if (now - last_print_ms >= 1000) {
-                last_print_ms = now;
-                gcs().send_text(MAV_SEVERITY_INFO, "Takeoff: waiting for heading, error %.0f deg",
-                                (double)(yaw_error_cd * 0.01f));
+        if (takeoff_wp_bearing_cd >= 0.0f) {
+            float yaw_error_cd = fabsf(wrap_180_cd((float)ahrs_view->yaw_sensor - takeoff_wp_bearing_cd));
+            if (yaw_error_cd > takeoff_yaw_tol * 100.0f) {
+                static uint32_t last_print_ms = 0;
+                if (now - last_print_ms >= 1000) {
+                    last_print_ms = now;
+                    gcs().send_text(MAV_SEVERITY_INFO, "Takeoff: waiting for heading, error %.0f deg",
+                                    (double)(yaw_error_cd * 0.01f));
+                }
+                if (now - takeoff_alt_hold_start_ms > (uint32_t)(takeoff_yaw_align_timeout * 1000)) {
+                     gcs().send_text(MAV_SEVERITY_CRITICAL, "Takeoff: yaw alignment failed, switching to QLAND");
+                     plane.set_mode(plane.mode_qland, ModeReason::VTOL_FAILED_TAKEOFF);
+                }
+                return false;
             }
-            if (now - takeoff_alt_hold_start_ms > (uint32_t)(takeoff_yaw_align_timeout * 1000)) {
-                 gcs().send_text(MAV_SEVERITY_CRITICAL, "Takeoff: yaw alignment failed, switching to QLAND");
-                 plane.set_mode(plane.mode_qland, ModeReason::VTOL_FAILED_TAKEOFF);
-            }
-            return false;
+            gcs().send_text(MAV_SEVERITY_INFO, "Takeoff: heading aligned, transitioning");
         }
-        gcs().send_text(MAV_SEVERITY_INFO, "Takeoff: heading aligned, transitioning");
     }
 
     transition->restart();
