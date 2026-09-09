@@ -917,6 +917,39 @@ void Tiltrotor::dual_axis_output(void)
 
         tilt_left_adjusted  += extra_elevator;
         tilt_right_adjusted += extra_elevator;
+        if(force_backtrans_hold){
+            plane.stabilize_pitch();
+            plane.stabilize_roll();
+            plane.stabilize_yaw();
+            float alpha =  constrain_float(-axis1_pos / SERVO_MAX, 0.0f, 1.0f);
+            // FW rudder command
+            const float rud_gain_fw  = float(plane.g2.rudd_dt_gain) * 0.01f;
+            const float rudder_dt_fw = rud_gain_fw * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
+            const float rudder_left = constrain_float(throttle + 50.0f * rudder_dt_fw, 0, 100);
+            const float rudder_right = constrain_float(throttle - 50.0f * rudder_dt_fw, 0, 100);
+            gcs().send_text(MAV_SEVERITY_INFO, "Backtrans: alpha=%.2f, rudder_dt =%.2f,throttle=%.2f, rudder_left=%.2f, rudder_right=%.2f", alpha, rudder_dt_fw, throttle, rudder_left, rudder_right);
+
+            // FW tilt command
+            const float scaler_fw = (plane.control_mode == &plane.mode_manual) ? 1.0f :
+                         (quadplane.FW_vector_throttle_scaling() / plane.get_speed_scaler());
+            const float gain   = vectoring_gain_fw * scaler_fw;
+            const float elevator_fw = SRV_Channels::get_output_scaled(SRV_Channel::k_elevator) * (1.0f / 4500.0f);
+            const float aileron_fw  = SRV_Channels::get_output_scaled(SRV_Channel::k_aileron)  * (1.0f / 4500.0f);
+
+            float tilt_left_fw = constrain_float((elevator_fw + aileron_fw) * gain, -1.0f, 1.0f) * SERVO_MAX;
+            float tilt_right_fw = constrain_float((elevator_fw - aileron_fw) * gain, -1.0f, 1.0f) * SERVO_MAX;
+
+            // Blend the tilt commands based on the axis1_pos
+            tilt_left_adjusted  = (1.0f - alpha) * tilt_left_adjusted + alpha * tilt_left_fw;
+            tilt_right_adjusted = (1.0f - alpha) * tilt_right_adjusted + alpha * tilt_right_fw;
+            // Blend the throttle commands based on the axis1_pos
+            float throttle_left = SRV_Channels::get_output_scaled(SRV_Channel::k_throttleLeft);
+            float throttle_right = SRV_Channels::get_output_scaled(SRV_Channel::k_throttleRight);
+            float blended_throttle_left = (1.0f - alpha) * throttle_left + alpha * rudder_left;
+            float blended_throttle_right = (1.0f - alpha) * throttle_right + alpha * rudder_right;
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(blended_throttle_left, 0, 100));
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(blended_throttle_right, 0, 100));
+        }
 
 #if HAL_LOGGING_ENABLED
         // Add logging for desired thrust vectoring angles
@@ -979,6 +1012,7 @@ void Tiltrotor::dual_axis_output(void)
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle + 50.0f * rudder_dt, 0, 100));
     SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle - 50.0f * rudder_dt, 0, 100));
+    gcs().send_text(MAV_SEVERITY_DEBUG, "DualAxis:, rudder_dt=%.2f, throttleLeft=%.2f, throttleRight=%.2f", rudder_dt, SRV_Channels::get_output_scaled(SRV_Channel::k_throttleLeft), SRV_Channels::get_output_scaled(SRV_Channel::k_throttleRight));
 
 
     // forward flight: Axis 1 is at 90deg (motors fully forward)
