@@ -64,14 +64,20 @@ local P = {
                                                         -- LTE_modem_TLS_CERT_SETUP.md for the full log.
                                                         -- EC25/EC20/BG95/EG800Q untested on this flow.
     AUTHSYS     = bind_add_param('AUTHSYS', 27, 1),    -- 1 = apply sysId from the HTTPAUTH response
-                                                        -- (also updates SYSID_THISMAV live). NOTE:
+                                                        -- (saves it to SYSID_THISMAV too, so the next
+                                                        -- boot starts on it rather than on the stored
+                                                        -- default). NOTE:
                                                         -- mavlink_system.sysid is a single global
                                                         -- shared by EVERY link (USB included) --
                                                         -- changing it mid-session disconnects any
                                                         -- other GCS already attached under the old id.
-    AUTHKEY     = bind_add_param('AUTHKEY', 28, 1)     -- 1 = self-apply the mavlinkSigningKey from the
+    AUTHKEY     = bind_add_param('AUTHKEY', 28, 0)     -- 1 = self-apply the mavlinkSigningKey from the
                                                         -- HTTPAUTH response via gcs:set_signing_key().
-                                                        -- 0 (default) = ignore it entirely. The key is
+                                                        -- 0 = signing OFF: the stored key is actively
+                                                        -- erased (see update(), bottom of file), not
+                                                        -- merely left unapplied. The key lives in FRAM,
+                                                        -- not in a parameter, so nothing short of erasing
+                                                        -- it stops the vehicle signing. The key is
                                                         -- deliberately never printed/logged (it would
                                                         -- defeat MAVLink signing to broadcast the secret
                                                         -- in plaintext over the same link signing is meant
@@ -156,14 +162,14 @@ end
 local OPT = { LOGALL=(1<<0), SIGNALS=(1<<1), NOMUX=(1<<2), NOSIGQUERY=(1<<3), TCP=(1<<4), DPUSH=(1<<5) }
 
 local modem_list = {
-    ["SimCom"] = { banner = 'SIMCOM', cmux = 'AT+CMUX=0\r\n', setbaud = 'AT+IPR=%u\r\n', pppopen = 'ATD*99#\r', cpin = 'AT+CPIN?\r\n', cpsi = 'AT+CPSI?\r\n', reset = 'AT+CFUN=1,1\r\n', cipmode = 'AT+CIPMODE=1\r\n', cipopen_udp = 'AT+CIPOPEN=0,"UDP","%d.%d.%d.%d",%d,6001\r\n', cipopen_tcp = 'AT+CIPOPEN=0,"TCP","%d.%d.%d.%d",%d\r\n', cipclose = 'AT+CIPCLOSE=0\r\n', cgerep = 'AT+CGEREP=1,1\r\n', netopen = 'AT+NETOPEN\r\n', mccmnc = 'AT+COPS=1,2,"%u"\r\n', setband_mask = 'AT+CNBP=,0x%x\r\n', setband_all = 'AT+CNBP=,0x480000000000000000000000000000000000000000000042000007FFFFDF3FFF\r\n', config_extra = 'ATH\r\n', fast_connect = true, sim_probe = 'AT+CICCID\r\n', csq_gate = 'AT+CPSI?\r\n', socket_state = 'AT+CIPOPEN?\r\n' },
-    ["SimCom2"] = { banner = 'R1951', cmux = 'AT+CMUX=0\r\n', setbaud = 'AT+IPR=%u\r\n', pppopen = 'ATD*99#\r', cpin = 'AT+CPIN?\r\n', cpsi = 'AT+CPSI?\r\n', cipmode = 'AT+CACID=0\r\n', cipopen_tcp = 'AT+CAOPEN=0,0,"TCP","%d.%d.%d.%d",%d\r\n', cipopen_udp = 'AT+CAOPEN=0,0,"UDP","%d.%d.%d.%d",%d\r\n', cgact = 'AT+CGACT?\r\n', cgerep = 'AT+CGEREP=1,1\r\n', reset = 'AT+CFUN=1,1\r\n', netopen = "AT+CNACT=0,1\r\n", netclose = "AT+CNACT=0,0\r\n", cfun = 'AT+CFUN=1\r\n', reset_not_baudrate = true, mccmnc = 'AT+COPS=4,2,"%u"\r\n', caswitch = 'AT+CASWITCH=0,1\r\n', setband = 'AT+CBANDCFG="CAT-M",%d\r\n', setband_all = 'AT+CBANDCFG="CAT-M",1,2,3,4,5,8,12,13,14,18,19,20,25,26,27,28,66,85\r\n' },
+    ["SimCom"] = { spn = 'AT+CSPN?\r\n', banner = 'SIMCOM', cmux = 'AT+CMUX=0\r\n', setbaud = 'AT+IPR=%u\r\n', pppopen = 'ATD*99#\r', cpin = 'AT+CPIN?\r\n', cpsi = 'AT+CPSI?\r\n', reset = 'AT+CFUN=1,1\r\n', cipmode = 'AT+CIPMODE=1\r\n', cipopen_udp = 'AT+CIPOPEN=0,"UDP","%d.%d.%d.%d",%d,6001\r\n', cipopen_tcp = 'AT+CIPOPEN=0,"TCP","%d.%d.%d.%d",%d\r\n', cipclose = 'AT+CIPCLOSE=0\r\n', cgerep = 'AT+CGEREP=1,1\r\n', netopen = 'AT+NETOPEN\r\n', mccmnc = 'AT+COPS=1,2,"%u"\r\n', setband_mask = 'AT+CNBP=,0x%x\r\n', setband_all = 'AT+CNBP=,0x480000000000000000000000000000000000000000000042000007FFFFDF3FFF\r\n', config_extra = 'ATH\r\n', fast_connect = true, sim_probe = 'AT+CICCID\r\n', csq_gate = 'AT+CPSI?\r\n', socket_state = 'AT+CIPOPEN?\r\n' },
+    ["SimCom2"] = { spn = 'AT+CSPN?\r\n', banner = 'R1951', cmux = 'AT+CMUX=0\r\n', setbaud = 'AT+IPR=%u\r\n', pppopen = 'ATD*99#\r', cpin = 'AT+CPIN?\r\n', cpsi = 'AT+CPSI?\r\n', cipmode = 'AT+CACID=0\r\n', cipopen_tcp = 'AT+CAOPEN=0,0,"TCP","%d.%d.%d.%d",%d\r\n', cipopen_udp = 'AT+CAOPEN=0,0,"UDP","%d.%d.%d.%d",%d\r\n', cgact = 'AT+CGACT?\r\n', cgerep = 'AT+CGEREP=1,1\r\n', reset = 'AT+CFUN=1,1\r\n', netopen = "AT+CNACT=0,1\r\n", netclose = "AT+CNACT=0,0\r\n", cfun = 'AT+CFUN=1\r\n', reset_not_baudrate = true, mccmnc = 'AT+COPS=4,2,"%u"\r\n', caswitch = 'AT+CASWITCH=0,1\r\n', setband = 'AT+CBANDCFG="CAT-M",%d\r\n', setband_all = 'AT+CBANDCFG="CAT-M",1,2,3,4,5,8,12,13,14,18,19,20,25,26,27,28,66,85\r\n' },
     ["Air780"] = { banner = 'AirM2M_780E', cmux = nil, setbaud = 'AT+IPR=%u\r\n', cgact = 'AT+CGACT=1,1\r\n', pppopen = 'ATD*99#\r', cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipmode = 'AT+CIPMODE=1\r\n' },
-    ["EC200"] = { banner = 'EC200', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,0x%x\r\n', setband_all = 'AT+QCFG="band",0,0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' },
-    ["BG95"] = { banner = 'BG95', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,0x%x\r\n', setband_all = 'AT+QCFG="band",0,0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' },
-    ["EG800Q"] = { banner = 'EG800Q', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,0x%x\r\n', setband_all = 'AT+QCFG="band",0,0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' },
-    ["EC20"] = { banner = 'EC20C', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,%x,0\r\n', setband_all  = 'AT+QCFG="band",0,7FFFFFFFFFFFFFFF,0\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' },
-    ["EC25"] = { banner = 'EC25', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', preflight = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,%x,0\r\n', setband_all = 'AT+QCFG="band",bff,00b0e18df,0\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' , cipopen_udp_dp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,1\r\n',cipopen_tcp_dp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,1\r\n',qisend = 'AT+QISEND=0,%d\r\n', qcsq_enable = 'AT+QCSQ=1\r\n', }
+    ["EC200"] = { spn = 'AT+QSPN\r\n', banner = 'EC200', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,0x%x\r\n', setband_all = 'AT+QCFG="band",0,0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' },
+    ["BG95"] = { spn = 'AT+QSPN\r\n', banner = 'BG95', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,0x%x\r\n', setband_all = 'AT+QCFG="band",0,0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' },
+    ["EG800Q"] = { spn = 'AT+QSPN\r\n', banner = 'EG800Q', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,0x%x\r\n', setband_all = 'AT+QCFG="band",0,0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' },
+    ["EC20"] = { spn = 'AT+QSPN\r\n', banner = 'EC20C', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,%x,0\r\n', setband_all  = 'AT+QCFG="band",0,7FFFFFFFFFFFFFFF,0\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' },
+    ["EC25"] = { spn = 'AT+QSPN\r\n', banner = 'EC25', cmux = 'AT+CMUX=0\r\n', pppopen = 'ATD*99#\r', cpsi = 'AT+QENG="servingcell"\r\n', preflight = 'AT+QENG="servingcell"\r\n', cipmode = nil, cpin = 'AT+CPIN?\r\n', reset = 'AT+CFUN=1,1\r\n', cipopen_tcp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,2\r\n', cipopen_udp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,2\r\n', cipclose = 'AT+QICLOSE=0\r\n', mccmnc = 'AT+COPS=4,2,"%u"\r\n', setband_mask = 'AT+QCFG="band",0,%x,0\r\n', setband_all = 'AT+QCFG="band",bff,00b0e18df,0\r\n', fast_connect = true, sim_probe = 'AT+QCCID\r\n', csq_gate = 'AT+QCSQ\r\n', socket_state = 'AT+QISTATE?\r\n' , cipopen_udp_dp = 'AT+QIOPEN=1,0,"UDP","%d.%d.%d.%d",%d,6001,1\r\n',cipopen_tcp_dp = 'AT+QIOPEN=1,0,"TCP","%d.%d.%d.%d",%d,0,1\r\n',qisend = 'AT+QISEND=0,%d\r\n', qcsq_enable = 'AT+QCSQ=1\r\n', }
 }
 
 local quectel_http = {
@@ -341,7 +347,11 @@ local cs = {
     auth_done = false,
     creg_search_ms = nil,
     siminfo_sent = false,
-    siminfo_printed = false
+    siminfo_printed = false,
+    -- Last AUTHKEY value acted on, so the signing-disable write in update() is
+    -- edge-triggered instead of firing every tick. Deliberately NOT reset by
+    -- reset_state(): a modem reset must not re-run the erase.
+    authkey_seen = nil
 }
 
 local function uart_read()
@@ -917,7 +927,26 @@ local function apply_auth_identity(s)
         if sysid then
             sysid = tonumber(sysid)
             if sysid > 0 then   -- 0 is a reserved/broadcast MAVLink system id, never a real vehicle id
-                Parameter('SYSID_THISMAV'):set(sysid)
+                -- set_and_save, not set: the next boot then starts on the
+                -- id this server granted rather than reverting to whatever is
+                -- in storage and only switching once HTTPAUTH lands ~15-20s
+                -- later. The server has been handing back the same id per
+                -- craft, so the saved value is normally already correct and
+                -- the boot-time window disappears.
+                --
+                -- Cheap to call every session: AP_Param::save() compares
+                -- against the stored value and skips the write when it has not
+                -- changed, so a steady id costs no EEPROM wear -- only an
+                -- actually-reassigned id writes.
+                --
+                -- The tradeoff, deliberately accepted: a stale saved id
+                -- survives a reboot, so if the server ever reassigns this
+                -- craft's id to a different aircraft, both boot up claiming
+                -- the same sysid until each one re-authenticates. gcs:set_sysid
+                -- below still drives the live value either way.
+                if not Parameter('SYSID_THISMAV'):set_and_save(sysid) then
+                    gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: sysid save failed')
+                end
                 if gcs:set_sysid(sysid) then
                     gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE HTTPAUTH: sysid set to %d', sysid))
                 else
@@ -1707,35 +1736,70 @@ end
 -- rejects either command, still gets the block printed (operator "unknown")
 -- and moves straight on, so this can never hold up or reset the connect.
 local function step_SIMINFO()
-    if not cs.siminfo_printed then
-        local raw = uart_read()
-        if raw and #raw > 0 then buf.setup = buf.setup .. raw end
-        if #buf.setup > 2048 then buf.setup = "" end
+    local raw = uart_read()
+    if raw and #raw > 0 then buf.setup = buf.setup .. raw end
+    if #buf.setup > 2048 then buf.setup = "" end
 
-        if not cs.siminfo_sent then
-            AT_send('AT+COPS=3,0\r\n'); AT_send('AT+COPS?\r\n')
-            cs.siminfo_sent = true
-            return
-        end
+    if not cs.siminfo_sent then
+        AT_send('AT+COPS=3,0\r\n'); AT_send('AT+COPS?\r\n')
+        if modem.spn then AT_send(modem.spn) end
+        cs.siminfo_sent = true
+        return
+    end
 
-        -- +COPS: <mode>[,<format>,"<oper>"[,<Act>]]. With <format>=0/1 <oper>
-        -- is the network name ("airtel"); with 2 it is the numeric MCC+MNC,
-        -- which is still worth printing, so take it either way. An
-        -- unregistered modem answers a bare "+COPS: 0" and matches nothing.
-        local oper = buf.setup:match('%+COPS:%s*%d+,%d+,"([^"]*)"')
-        if oper == "" then oper = nil end
-        local waited = (millis():tofloat() - cs.step_timer_ms) / 1000
-        if not oper and waited < 1.5 and not buf.setup:find('ERROR') then return end
+    -- +COPS: <mode>[,<format>,"<oper>"[,<Act>]] -- the network we registered on.
+    local oper = buf.setup:match('%+COPS:%s*%d+,%d+,"([^"]*)"')
+    if oper == "" then oper = nil end
 
-        -- Stashed on the modem_list entry, not in cs: reset_state() wipes cs on
-        -- every modem reset, and these three are static for the whole boot, so
-        -- the LTEI heartbeat in check_CSQ keeps reporting them afterwards.
-        modem.sim_oper = oper or 'unknown'
+    -- The SIM's own service provider name, read off EF-SPN by the modem:
+    --   +QSPN: "<FNN>","<SNN>","<SPN>",<alphabet>,"<RPLMN>"   (Quectel)
+    --   +CSPN: "<SPN>",<display_mode>                         (SimCom)
+    -- Only the SPN is taken -- QSPN's FNN/SNN name the registered network,
+    -- which AT+COPS? already gives. The SPN identifies the card itself and
+    -- does not change under roaming. Plenty of operators ship cards with
+    -- EF-SPN blank, so an empty value here is normal, not a failure.
+    local spn = buf.setup:match('%+QSPN:%s*"[^"]*","[^"]*","([^"]*)"')
+                or buf.setup:match('%+CSPN:%s*"([^"]*)"')
+    if spn == "" then spn = nil end
+
+    -- Both answers are in once +COPS: carries a name and the SPN query has
+    -- replied at all -- keyed on the response prefix, not on a non-empty SPN,
+    -- or a blank-EF-SPN card would burn the whole budget every single time.
+    -- ERROR counts as replied: not every firmware supports the query, and on
+    -- SIM7600 AT+CSPN? has been seen not to answer at all, which the budget
+    -- below covers.
+    local spn_done = (not modem.spn) or buf.setup:find('%+[QC]SPN:')
+                     or buf.setup:find('ERROR')
+    -- Re-queried on every registration, so a reconnect or a network change is
+    -- reflected rather than reporting whatever answered first at boot.
+    -- Revisits are on the reconnect path and get a shorter budget: getting the
+    -- link back outranks naming the operator.
+    local waited = (millis():tofloat() - cs.step_timer_ms) / 1000
+    if not (oper and spn_done) and waited < (cs.siminfo_printed and 0.8 or 1.5) then return end
+
+    -- "Simcard" prefers the SPN and falls back to the registered network name
+    -- for cards with no SPN. A refresh that timed out or was rejected keeps
+    -- the last known values; only a never-answered first lookup is 'unknown'.
+    local prev = modem.sim_name
+    if spn or oper or not prev then
+        modem.sim_oper = oper
+        modem.sim_name = spn or oper or 'unknown'
+    end
+
+    -- Force an LTEI row now: this is a fresh registration, which is exactly
+    -- the event worth logging, and it is also how a value that changed across
+    -- a network reset reaches the log promptly.
+    cs.ltei_ms = nil
+
+    -- Printed once per boot, and again only when the name actually changes --
+    -- a reconnect onto the same card says nothing new and would otherwise
+    -- repeat three GCS lines every time the link drops.
+    if not cs.siminfo_printed or modem.sim_name ~= prev then
         local fw = (modem.fw_short and #modem.fw_short > 0) and modem.fw_short or
                    (#modem_revision > 0 and modem_revision or 'unknown')
         gcs:send_text(MAV_SEVERITY.INFO, 'Module name: ' .. (modem.model or 'unknown'))
         gcs:send_text(MAV_SEVERITY.INFO, 'Firmware version: ' .. fw)
-        gcs:send_text(MAV_SEVERITY.INFO, 'Simcard: ' .. modem.sim_oper)
+        gcs:send_text(MAV_SEVERITY.INFO, 'Simcard: ' .. modem.sim_name)
         cs.siminfo_printed = true
     end
 
@@ -2341,6 +2405,33 @@ local function run_step()
 end
 
 local function update()
+    -- AUTHKEY == 0 means "signing off", not just "don't apply a key". The key
+    -- gcs:set_signing_key() installs is written to FRAM (StorageManager::
+    -- StorageKeys), NOT to a parameter, so load_signing_key() re-arms
+    -- MAVLINK_SIGNING_FLAG_SIGN_OUTGOING on every channel at every boot until
+    -- that block is erased -- clearing the param alone left the vehicle signing
+    -- forever, with no way back short of a SETUP_SIGNING from a GCS.
+    --
+    -- Both the key and the timestamp must go to zero: that pair is what trips
+    -- the all_zero branch in load_signing_key() (GCS_Signing.cpp) and detaches
+    -- signing from every channel. Zeroing only one would leave the vehicle
+    -- signing with an all-zero key rather than not signing at all.
+    --
+    -- Runs ahead of the ENABLE check on purpose -- signing stuck on with the
+    -- script disabled is exactly the state there'd be no other way out of.
+    -- Edge-triggered on the observed value (authkey_seen starts nil, so a boot
+    -- with AUTHKEY=0 still erases once), and latched only on success, because
+    -- set_signing_key() refuses while armed and has to be retried on disarm.
+    local authkey = P.AUTHKEY:get()
+    if authkey ~= cs.authkey_seen then
+        if authkey ~= 0 then
+            cs.authkey_seen = authkey
+        elseif gcs:set_signing_key(string.rep(string.char(0), 32), uint64_t(0)) then
+            cs.authkey_seen = authkey
+            gcs:send_text(MAV_SEVERITY.INFO, 'LTE: LTE_AUTHKEY=0, MAVLink signing key erased')
+        end
+    end
+
     if P.ENABLE:get() == 0 then return 500 end
 
     -- Modem/SIM identity into the dataflash log, once per arm, next to the
@@ -2354,14 +2445,36 @@ local function update()
     -- anything longer ("arg N too long for N format", lua_bindings.cpp), so
     -- each is truncated: a long operator name must not be able to kill the
     -- script mid-flight.
-    if not arming:is_armed() then
-        cs.ltei_logged = false
-    elseif not cs.ltei_logged and modem.sim_oper then
-        cs.ltei_logged = true
-        logger:write('LTEI', 'Mdl,FW,Sim', 'NNN',
-                     (modem.model or 'unknown'):sub(1, 16),
-                     (modem.fw_short or (#modem_revision > 0 and modem_revision) or 'unknown'):sub(1, 16),
-                     modem.sim_oper:sub(1, 16))
+    -- Modem/SIM identity into the dataflash log beside the other LTE*
+    -- messages: Mdl/FW name the module, Sim is the card (EF-SPN) and Net the
+    -- network it registered on -- the last two differ under roaming.
+    --
+    -- No arming condition: SIMINFO clears cs.ltei_ms on every registration, so
+    -- a row goes out at each connect and reconnect, and the 0.1Hz repeat below
+    -- covers the rest. That repeat is not belt-and-braces -- AP_Logger drops
+    -- blocks silently when its buffer is full ("bufferspace_available() <
+    -- msg_len -> return false" in AP_Logger_Backend::Write) and the Lua binding
+    -- ignores that return, so a lost row is indistinguishable from a written
+    -- one. Registration lands a few seconds into the log, while ArduPilot is
+    -- still dumping every FMT plus the whole parameter set, which is precisely
+    -- when the buffer is most likely saturated: log 00000013 lost its only row
+    -- exactly that way. Repeating costs ~9 bytes/s and keeps working while the
+    -- script sits in HALT, where a failed HTTPAUTH leaves it.
+    --
+    -- All four fields are char[16]; logger:write() raises a Lua error on
+    -- anything longer ("arg N too long for N format", lua_bindings.cpp), so
+    -- each is truncated -- a long operator name must not kill the script.
+    if modem.sim_name then
+        local now = millis():tofloat()
+        if not cs.ltei_ms or now - cs.ltei_ms > 10000 then
+            cs.ltei_ms = now
+            logger:write('LTEI', 'Mdl,FW,Sim,Net', 'NNNN',
+                         (modem.model or 'unknown'):sub(1, 16),
+                         ((modem.fw_short and #modem.fw_short > 0) and modem.fw_short or
+                          (#modem_revision > 0 and modem_revision or 'unknown')):sub(1, 16),
+                         modem.sim_name:sub(1, 16),
+                         (modem.sim_oper or 'unknown'):sub(1, 16))
+        end
     end
 
     local delay = run_step()
