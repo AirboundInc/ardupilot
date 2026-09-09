@@ -974,7 +974,7 @@ void Tiltrotor::dual_axis_output(void)
     // blended with the pilot's vertical throttle after a backtransition
     last_fw_throttle = throttle * 0.01f;
 
-    const float rud_gain  = in_vtol_transition(now)? 0.0f : float(plane.g2.rudd_dt_gain) * 0.01f;
+    const float rud_gain  = in_vtol_transition(now)? 0.1f : float(plane.g2.rudd_dt_gain) * 0.01f;
     const float rudder_dt = rud_gain * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle + 50.0f * rudder_dt, 0, 100));
