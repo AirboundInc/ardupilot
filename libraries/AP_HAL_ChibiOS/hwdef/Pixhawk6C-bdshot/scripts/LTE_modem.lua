@@ -69,7 +69,7 @@ local P = {
                                                         -- shared by EVERY link (USB included) --
                                                         -- changing it mid-session disconnects any
                                                         -- other GCS already attached under the old id.
-    AUTHKEY     = bind_add_param('AUTHKEY', 28, 0)     -- 1 = self-apply the mavlinkSigningKey from the
+    AUTHKEY     = bind_add_param('AUTHKEY', 28, 1)     -- 1 = self-apply the mavlinkSigningKey from the
                                                         -- HTTPAUTH response via gcs:set_signing_key().
                                                         -- 0 (default) = ignore it entirely. The key is
                                                         -- deliberately never printed/logged (it would
@@ -337,6 +337,7 @@ local cs = {
     last_tx_dbg_ms = nil,
     auth_ip = nil, auth_port = nil,
     http_sub = nil, http_cfg_i = 0, http_buf = "", http_deadline = 0,
+    http_retry_count = 0,
     auth_done = false,
     creg_search_ms = nil
 }
@@ -634,6 +635,7 @@ local function reset_state()
     -- clearing so a half-finished HTTPAUTH attempt restarts cleanly if a
     -- reset happens to interrupt one.
     cs.http_sub = nil
+    cs.http_retry_count = 0
 end
 
 local function reset_to_ATI()
@@ -1111,16 +1113,38 @@ local CERT_UPLOAD_EXTRA_TIMEOUT = 25000  -- extra ms granted only when a real ce
                                           -- way completes fine -- it's a budget problem, not a stall.
 local next_after_registration
 
-local function http_fail(reason)
-    gcs:send_text(MAV_SEVERITY.CRITICAL, 'LTE HTTPAUTH: ' .. reason .. ' — no static fallback, halting')
+-- HTTPAUTH runs once per flight (cached until a hard reset, see
+-- AUTH_EVERY_RECONNECT above), so a few retries cost nothing against the
+-- flight but absorb a flaky cert upload/handshake/POST instead of halting
+-- the link on the first hiccup. Not a named local: the main chunk is
+-- already at ArduPilot Lua's 100-local cap, so this is inlined below.
+-- HTTPAUTH_MAX_RETRIES = 3
+
+-- reason: what failed, for logging/halt_reason.
+-- no_retry: true for failures no retry can fix (e.g. nothing provisioned to
+-- send) -- these skip straight to HALT rather than burning the retry budget.
+local function http_fail(reason, no_retry)
     -- SimCom's HTTP(S) app needs an explicit AT+HTTPTERM to close its session;
     -- unlike the success path (READ, further down) this failure path never
     -- called it, so a failed attempt left the session open and the next
-    -- AT+HTTPINIT piled on top of it. Best-effort, response not awaited --
-    -- we're already halting either way. No-op for Quectel (no modem.http.term).
+    -- AT+HTTPINIT piled on top of it. Best-effort, response not awaited.
+    -- No-op for Quectel (no modem.http.term).
     if modem.http and modem.http.term then
         AT_send(modem.http.term)
     end
+
+    if not no_retry and cs.http_retry_count < 3 then
+        cs.http_retry_count = cs.http_retry_count + 1
+        gcs:send_text(MAV_SEVERITY.WARNING, string.format(
+            'LTE HTTPAUTH: %s — retry %d/%d', reason, cs.http_retry_count, 3))
+        -- http_sub == nil is step_HTTPAUTH's own "start a fresh attempt" signal
+        -- (see the top of that function): this restarts the whole flow, cert
+        -- presence check through the craft-id/password POST, next time it runs.
+        cs.http_sub = nil
+        return
+    end
+
+    gcs:send_text(MAV_SEVERITY.CRITICAL, 'LTE HTTPAUTH: ' .. reason .. ' — no static fallback, halting')
     cs.auth_ip = nil; cs.auth_port = nil
     cs.auth_done = true
     cs.http_sub = nil
@@ -1134,7 +1158,7 @@ local function step_HTTPAUTH()
                                            -- in QHTTPPOST and the bytes sent afterward
                                            -- must match exactly
         if not cs.auth_body then
-            http_fail('no craft ID/password provisioned in custom storage')
+            http_fail('no craft ID/password provisioned in custom storage', true)  -- retrying can't fix missing provisioning
             return
         end
         -- Cert presence check always runs first, for both dialects. The cert
