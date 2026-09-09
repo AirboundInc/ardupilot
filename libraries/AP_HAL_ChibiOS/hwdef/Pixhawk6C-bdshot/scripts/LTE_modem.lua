@@ -71,7 +71,7 @@ local P = {
                                                         -- shared by EVERY link (USB included) --
                                                         -- changing it mid-session disconnects any
                                                         -- other GCS already attached under the old id.
-    AUTHKEY     = bind_add_param('AUTHKEY', 28, 0)     -- 1 = self-apply the mavlinkSigningKey from the
+    AUTHKEY     = bind_add_param('AUTHKEY', 28, 1)     -- 1 = self-apply the mavlinkSigningKey from the
                                                         -- HTTPAUTH response via gcs:set_signing_key().
                                                         -- 0 = signing OFF: the stored key is actively
                                                         -- erased (see update(), bottom of file), not
