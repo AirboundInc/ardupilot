@@ -1164,32 +1164,51 @@ local next_after_registration
 -- no_retry: true for failures no retry can fix (e.g. nothing provisioned to
 -- send) -- these skip straight to HALT rather than burning the retry budget.
 local function http_fail(reason, no_retry)
-    -- SimCom's HTTP(S) app needs an explicit AT+HTTPTERM to close its session;
-    -- unlike the success path (READ, further down) this failure path never
-    -- called it, so a failed attempt left the session open and the next
-    -- AT+HTTPINIT piled on top of it. Best-effort, response not awaited.
-    -- No-op for Quectel (no modem.http.term).
-    if modem.http and modem.http.term then
-        AT_send(modem.http.term)
-    end
-
-    if not no_retry and cs.http_retry_count < 3 then
-        cs.http_retry_count = cs.http_retry_count + 1
-        gcs:send_text(MAV_SEVERITY.WARNING, string.format(
-            'LTE HTTPAUTH: %s — retry %d/%d', reason, cs.http_retry_count, 3))
-        -- http_sub == nil is step_HTTPAUTH's own "start a fresh attempt" signal
-        -- (see the top of that function): this restarts the whole flow, cert
-        -- presence check through the craft-id/password POST, next time it runs.
+    if no_retry or cs.http_retry_count >= 3 then
+        -- Halting. Close the session best-effort and don't wait for the reply:
+        -- nothing downstream parses AT replies in a way a stray OK can derail
+        -- (step_CIPMODE's cs.cipmode_sent guard covers the one place it could),
+        -- and HALT is terminal anyway. No-op for Quectel (no modem.http.term).
+        if modem.http and modem.http.term then AT_send(modem.http.term) end
+        gcs:send_text(MAV_SEVERITY.CRITICAL, 'LTE HTTPAUTH: ' .. reason .. ' — no static fallback, halting')
+        cs.auth_ip = nil; cs.auth_port = nil
+        cs.auth_done = true
         cs.http_sub = nil
+        cs.halt_reason = 'HTTPAUTH failed (' .. reason .. ')'
+        step = "HALT"
         return
     end
 
-    gcs:send_text(MAV_SEVERITY.CRITICAL, 'LTE HTTPAUTH: ' .. reason .. ' — no static fallback, halting')
-    cs.auth_ip = nil; cs.auth_port = nil
-    cs.auth_done = true
-    cs.http_sub = nil
-    cs.halt_reason = 'HTTPAUTH failed (' .. reason .. ')'
-    step = "HALT"
+    cs.http_retry_count = cs.http_retry_count + 1
+    gcs:send_text(MAV_SEVERITY.WARNING, string.format(
+        'LTE HTTPAUTH: %s — retry %d/%d', reason, cs.http_retry_count, 3))
+
+    if modem.http and modem.http.term then
+        -- SimCom's HTTP(S) app needs an explicit AT+HTTPTERM to close its
+        -- session; unlike the success path (READ, further down) this failure
+        -- path never called it, so a failed attempt left the session open and
+        -- the retry's AT+HTTPINIT piled on top of it.
+        --
+        -- Awaited in its own sub-state rather than fired and forgotten: the
+        -- reply is a bare OK, which is exactly what SC_CERT_LIST reads as
+        -- "cert list empty", and the SIM7500/7600 manual (13.2.2) allows
+        -- AT+HTTPTERM up to 120s to answer — so no fixed delay is both short
+        -- enough to be worth waiting and long enough to be safe. Sending
+        -- AT+CCERTLIST first and hoping means the retry eats this term OK as
+        -- its answer, re-uploads the cert for nothing, and then reads every
+        -- later reply one command out of step until the budget is gone. The
+        -- deadline is refreshed because TERM_WAIT is the start of the new
+        -- attempt, not the tail of the failed one.
+        cs.http_sub = "TERM_WAIT"; cs.http_buf = ""
+        cs.http_deadline = millis():tofloat() + HTTP_TOTAL_TIMEOUT
+        AT_send(modem.http.term)
+    else
+        -- Quectel: no session to close. http_sub == nil is step_HTTPAUTH's own
+        -- "start a fresh attempt" signal (see the top of that function): it
+        -- restarts the whole flow, cert presence check through the
+        -- craft-id/password POST, next time it runs.
+        cs.http_sub = nil
+    end
 end
 
 local function step_HTTPAUTH()
@@ -1238,7 +1257,18 @@ local function step_HTTPAUTH()
     if #cs.http_buf > 4096 then cs.http_buf = cs.http_buf:sub(-2048) end
     local b = cs.http_buf
 
-    if cs.http_sub == "CERT_LIST" then
+    if cs.http_sub == "TERM_WAIT" then
+        -- Exactly one command is outstanding — the AT+HTTPTERM http_fail()
+        -- just sent — so the first OK or ERROR here is unambiguously its
+        -- reply, whichever it is (ERROR just means there was no session to
+        -- stop). Consuming it is the entire point of this state; clearing
+        -- http_sub hands back to the fresh-attempt block at the top, which
+        -- starts the retry next tick on an already-cleared buffer.
+        if b:find('OK\r\n') or b:find('ERROR') then
+            cs.http_buf = ""; cs.http_sub = nil
+        end
+
+    elseif cs.http_sub == "CERT_LIST" then
         -- AT+QFLST="*" echoes existing files as "UFS:<name>",<size> -- a bare
         -- substring match on the filename is enough to know it's already there.
         if b:find(modem.http.cert_filename, 1, true) then
@@ -1780,11 +1810,20 @@ local function step_SIMINFO()
     -- "Simcard" prefers the SPN and falls back to the registered network name
     -- for cards with no SPN. A refresh that timed out or was rejected keeps
     -- the last known values; only a never-answered first lookup is 'unknown'.
+    -- Each field is updated only from its own answer. The previous form
+    -- rewrote both whenever either arrived, so a partial reply corrupted the
+    -- half that had not: an SPN with +COPS timed out blanked the network (Net
+    -- logged 'unknown'), and a +COPS with no SPN reply overwrote a known card
+    -- name with the network name. Reconnects only get 0.8s, so partial replies
+    -- are the expected case there, not an edge one — and both fields go
+    -- straight into the LTEI row.
     local prev = modem.sim_name
-    if spn or oper or not prev then
-        modem.sim_oper = oper
-        modem.sim_name = spn or oper or 'unknown'
-    end
+    if spn then modem.sim_spn = spn end
+    if oper then modem.sim_oper = oper end
+    -- Derived, never stored: prefers the card (EF-SPN, fixed for the card) and
+    -- falls back to the registered network for cards that carry no SPN.
+    -- 'unknown' only while neither has ever answered.
+    modem.sim_name = modem.sim_spn or modem.sim_oper or 'unknown'
 
     -- Force an LTEI row now: this is a fresh registration, which is exactly
     -- the event worth logging, and it is also how a value that changed across
