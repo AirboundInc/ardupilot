@@ -838,9 +838,11 @@ void Tiltrotor::dual_axis_output(void)
         const float throttle = force_backtrans_hold
             ? get_backtrans_throttle(now, raw_throttle * 0.01f) * 100.0f
             : raw_throttle;
-        if (quadplane.assisted_flight || force_backtrans_hold) {
-            quadplane.hold_stabilize(throttle * 0.01f);
-            quadplane.motors_output(true);
+        if (force_backtrans_hold) {
+            // quadplane.hold_stabilize(throttle * 0.01f);
+            // quadplane.motors_output(true);
+            plane.stabilize_roll();
+            plane.stabilize_pitch();
         } else {
             quadplane.motors_output(false);
         }
