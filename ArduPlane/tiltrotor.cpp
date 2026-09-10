@@ -924,6 +924,7 @@ void Tiltrotor::dual_axis_output(void)
             plane.stabilize_pitch();
             plane.stabilize_roll();
             plane.stabilize_yaw();
+            plane.calc_nav_yaw_coordinated();
             quadplane.attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd, plane.nav_pitch_cd, 0.0f);
             float alpha =  constrain_float(-axis1_pos / SERVO_MAX, 0.0f, 1.0f);
             // FW rudder command
