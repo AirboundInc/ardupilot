@@ -933,17 +933,6 @@ local function apply_auth_identity(s)
                 -- later. The server has been handing back the same id per
                 -- craft, so the saved value is normally already correct and
                 -- the boot-time window disappears.
-                --
-                -- Cheap to call every session: AP_Param::save() compares
-                -- against the stored value and skips the write when it has not
-                -- changed, so a steady id costs no EEPROM wear -- only an
-                -- actually-reassigned id writes.
-                --
-                -- The tradeoff, deliberately accepted: a stale saved id
-                -- survives a reboot, so if the server ever reassigns this
-                -- craft's id to a different aircraft, both boot up claiming
-                -- the same sysid until each one re-authenticates. gcs:set_sysid
-                -- below still drives the live value either way.
                 if not Parameter('SYSID_THISMAV'):set_and_save(sysid) then
                     gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: sysid save failed')
                 end
@@ -1230,7 +1219,24 @@ local function step_HTTPAUTH()
         gcs:send_text(MAV_SEVERITY.INFO, 'LTE HTTPAUTH: fetching server addr')
         AT_send(modem.http.cert_list)
     end
-    if millis():tofloat() > cs.http_deadline then http_fail('timeout'); return end
+    if millis():tofloat() > cs.http_deadline then
+        -- A modem that will not answer a teardown has a wedged HTTP session, so
+        -- reset it rather than retry. That discards the session and any reply
+        -- still in flight with it, which no amount of retrying can do, and
+        -- reset_state() clears http_sub and the retry count on the way through.
+        if cs.http_sub == "TERM_WAIT" then
+            -- Reset once, then give up. reset_state() zeroes http_retry_count,
+            if cs.term_reset_done then
+                http_fail('HTTPTERM timeout', true)   -- no_retry: straight to HALT
+                return
+            end
+            cs.term_reset_done = true
+            gcs:send_text(MAV_SEVERITY.WARNING, 'LTE HTTPAUTH: HTTPTERM timeout, modem reset')
+            reset_to_ATI()
+            return
+        end
+        http_fail('timeout'); return
+    end
 
     -- IMPORTANT: uart_read() returns the raw byte stream. When CMUX is
     -- active (it is, for the whole session -- see "CMUX mode set" at boot)
