@@ -918,16 +918,19 @@ void Tiltrotor::dual_axis_output(void)
         tilt_left_adjusted  += extra_elevator;
         tilt_right_adjusted += extra_elevator;
         if(force_backtrans_hold){
+            // Setpoint updated part need to done at the place where this method is invoked.
+            plane.nav_pitch_cd = 0.0f;
+            plane.nav_roll_cd = 0.0f;
             plane.stabilize_pitch();
             plane.stabilize_roll();
             plane.stabilize_yaw();
+            quadplane.attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd, plane.nav_pitch_cd, 0.0f);
             float alpha =  constrain_float(-axis1_pos / SERVO_MAX, 0.0f, 1.0f);
             // FW rudder command
             const float rud_gain_fw  = float(plane.g2.rudd_dt_gain) * 0.01f;
             const float rudder_dt_fw = rud_gain_fw * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
             const float rudder_left = constrain_float(throttle + 50.0f * rudder_dt_fw, 0, 100);
             const float rudder_right = constrain_float(throttle - 50.0f * rudder_dt_fw, 0, 100);
-            gcs().send_text(MAV_SEVERITY_INFO, "Backtrans: alpha=%.2f, rudder_dt =%.2f,throttle=%.2f, rudder_left=%.2f, rudder_right=%.2f", alpha, rudder_dt_fw, throttle, rudder_left, rudder_right);
 
             // FW tilt command
             const float scaler_fw = (plane.control_mode == &plane.mode_manual) ? 1.0f :
@@ -1012,8 +1015,6 @@ void Tiltrotor::dual_axis_output(void)
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle + 50.0f * rudder_dt, 0, 100));
     SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle - 50.0f * rudder_dt, 0, 100));
-    gcs().send_text(MAV_SEVERITY_DEBUG, "DualAxis:, rudder_dt=%.2f, throttleLeft=%.2f, throttleRight=%.2f", rudder_dt, SRV_Channels::get_output_scaled(SRV_Channel::k_throttleLeft), SRV_Channels::get_output_scaled(SRV_Channel::k_throttleRight));
-
 
     // forward flight: Axis 1 is at 90deg (motors fully forward)
     // use rudder for differential yaw vectoring via Axis 2
