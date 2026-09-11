@@ -43,6 +43,7 @@ class AP_TTLServo {
     uint32_t baudrate;
     uint32_t us_per_byte;
     uint32_t us_gap;
+    uint32_t read_command_sent_time_us;
 
     uint8_t calculate_crc(uint8_t *txpacket, uint8_t len);
     void configure_servos(void);
@@ -52,7 +53,13 @@ class AP_TTLServo {
     void read_bytes();
     void send_command(uint8_t id, uint8_t reg, uint16_t value, uint8_t len);
     void send_packet(const uint8_t *packet, uint8_t len);
-
+    void send_read_register_instruction(uint8_t id, uint8_t reg,uint8_t readlen);
+  
+    void send_position_read_command();
+    void send_read_baudrate_command();
+    void send_read_voltage_command();
+    // void handle_position_read_response(const uint8_t* packet, uint8_t length);
+    
     struct gcs_announce{
       bool empty_servo_bus = false;
     }_gcs_announce;
@@ -62,6 +69,7 @@ class AP_TTLServo {
     // Used for the auto-detection of the servo IDs connected
     uint8_t detection_count;
     int8_t configured_servos;
+    int8_t ping_count;
 
     // Received data buffer
     uint8_t pktbuf[64];

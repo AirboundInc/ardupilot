@@ -177,7 +177,7 @@ void AP_TTLServo::detect_servos(void)
     // GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "TTLServo: Detecting servos on the bus");
     // Give plenty of time to receive replies from all servos
     last_send_us = AP_HAL::micros();
-    delay_time_us += 1000 * us_per_byte;
+    delay_time_us += 100 * us_per_byte;
 }
 
 // Init the serial port
@@ -200,22 +200,29 @@ void AP_TTLServo::process_packet(const uint8_t *packet, uint8_t length)
     uint8_t id = packet[PKT_ID];
 
     // Discard servos beyond the maximum permissible number of servo channels
-    if (id > NUM_SERVO_CHANNELS) {
+    if (id < 1 || id > NUM_SERVO_CHANNELS) {
+        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "TTLServo: Invalid Servo id");
         return;
     }
 
     // If the servo wasn't previously identified, mark its existence on the network
-    uint32_t id_mask = (1U<<(id));
+    uint32_t id_mask = (1U<<(id-1));
     if (!(id_mask & servo_id_mask)) {
         GCS_SEND_TEXT(MAV_SEVERITY_INFO, "TTLServo: ID %u identified\n",id);
         servo_id_mask.set_and_save_ifchanged(servo_id_mask+id_mask);
     }
+
 }
 
 // Read the bytes received from responses
 void AP_TTLServo::read_bytes(void)
 {
     uint32_t n = port->available();
+    
+    if(n>0)
+    {
+        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: UART Readbuffer:%d",n);
+    }    
 
     // If no bytes received or received less than the required to decode an
     // instruction, return in order to wait for the required number of bytes
@@ -270,7 +277,56 @@ void AP_TTLServo::read_bytes(void)
     pktbuf_ofs -= total_packet_length;
 }
 
+
+void AP_TTLServo::send_position_read_command()
+{
+    uint8_t id = 1; 
+    uint8_t reg_address = 0x38;
+    uint8_t len = 2;
+    send_read_register_instruction(id,reg_address,len);
+    last_send_us = AP_HAL::micros();
+    delay_time_us += 100* us_per_byte;
+}
+
+void AP_TTLServo::send_read_baudrate_command()
+{
+    uint8_t id = 1; 
+    uint8_t reg_address = 0x06;
+    uint8_t len = 1;
+    send_read_register_instruction(id,reg_address,len);
+}
+
+void AP_TTLServo::send_read_voltage_command()
+{
+    uint8_t id = 1; 
+    uint8_t reg_address = 0x3E;
+    uint8_t len = 1;
+    send_read_register_instruction(id,reg_address,len);
+    last_send_us = AP_HAL::micros();
+    delay_time_us += 10 * us_per_byte;
+}
+
+void AP_TTLServo::send_read_register_instruction(uint8_t id, uint8_t reg,uint8_t readlen)
+{
+    struct packet {
+        uint8_t id;                       //#1 Servo ID
+        uint8_t length;                   //#2 length field of feetech protocol.
+        uint8_t instruction = INST_READ; //#3 Instruction read
+        uint8_t reg;                      //#4 First parameter is the register address
+        uint8_t readlength;             //#5
+    } tx_packet;
+
+    tx_packet.id = id;
+    //lengthfield byte + instruction byte + Read address byte + Readlength byte
+    tx_packet.length = 4;
+    tx_packet.reg = reg;
+    tx_packet.readlength = readlen;
+
+    send_packet((const uint8_t *) &tx_packet, tx_packet.length);
+}
+
 // Send a command to the servos, changing a register value
+// Relook at this function. Supports only write function with parameter length = 2
 void AP_TTLServo::send_command(uint8_t id, uint8_t reg, uint16_t value, uint8_t len)
 {
     struct packet {
@@ -282,8 +338,8 @@ void AP_TTLServo::send_command(uint8_t id, uint8_t reg, uint16_t value, uint8_t 
     } tx_packet;
     
     tx_packet.id = id;
-    // Packet length equals number of Parameters (one of the params is the 
-    // desired register + length of value) + 2
+    // Packet length equals number of Parameters
+    // (length byte + instruction + register byte + parameter 1 + parameter)
     tx_packet.length = 3 + len;
     tx_packet.reg = reg;
     tx_packet.value = value;
@@ -296,6 +352,7 @@ void AP_TTLServo::send_command(uint8_t id, uint8_t reg, uint16_t value, uint8_t 
 void AP_TTLServo::send_packet(const uint8_t *packet, uint8_t len)
 {
     // Calculate total Packet length
+    //Length field + 1 (ID field). Excludes Header bytes and CRC byte
     uint8_t total_packet_length = len + 1;
     uint8_t crc = 0;
     uint8_t tx_packet;
@@ -318,6 +375,7 @@ void AP_TTLServo::send_packet(const uint8_t *packet, uint8_t len)
             hal.scheduler->delay_microseconds(us_per_byte);
         } else {
             // Communication error
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO,"TTLServo: comm error");
             hal.scheduler->delay_microseconds(100);
             return;
         }
@@ -366,7 +424,19 @@ void AP_TTLServo::update()
         // Send a Ping Packet
         if (detection_count < DETECT_SERVO_COUNT) {
             detection_count++;
-            detect_servos();
+            // send_position_read_command();
+            send_read_voltage_command();
+            // detect_servos();
+            // send_read_baudrate_command();
+            return;
+        }
+
+        // Ping 
+        if(ping_count< 1)
+        {
+            // send_position_read_command();
+            send_read_voltage_command();
+            // detect_servos();
             return;
         }
 
@@ -381,54 +451,65 @@ void AP_TTLServo::update()
         }
     }
 
+
     // Configure the servos with the required values so they can work - sent by
     // broadcast Packet
-    if (configured_servos < CONFIGURE_SERVO_COUNT) {
-        configured_servos++;
-        last_send_us = now;
-        configure_servos();
-        return;
-    }
+    // if (configured_servos < CONFIGURE_SERVO_COUNT) {
+    //     configured_servos++;
+    //     last_send_us = now;
+    //     configure_servos();
+    //     return;
+    // }
 
-    last_send_us = now;
-    delay_time_us = 0;
+    // last_send_us = now;
+    // delay_time_us = 0;
 
-    // Loop through all servo channels
-    for (uint8_t i = 0; i < NUM_SERVO_CHANNELS; i++) {
+    // // Loop through all servo channels
+    // for (uint8_t i = 0; i < NUM_SERVO_CHANNELS; i++) {
 
-        // If this channel doesn't correspond to a servo ID, skip it
-        if (((1U << i) & servo_id_mask) == 0) {
-            continue;
-        }
+    //     // If this channel doesn't correspond to a servo ID, skip it
+    //     if (((1U << i) & servo_id_mask) == 0) {
+    //         continue;
+    //     }
 
-        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Read Srv chan: %d",i);
+    //     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Read Srv chan: %d",i);
 
-        SRV_Channel *c = SRV_Channels::srv_channel(i);
+    //     SRV_Channel *c = SRV_Channels::srv_channel(i);
 
-        if (c == nullptr) {
-            continue;
-        }
+    //     if (c == nullptr) {
+    //         continue;
+    //     }
 
-        // Calculate the desired goal position, converting the channel values
-        // to the servo values
-        const uint16_t pwm = c->get_output_pwm();
-        const uint16_t min = c->get_output_min();
-        const uint16_t max = c->get_output_max();
-        float v = float(pwm - min) / (max - min);
-        uint16_t goalPosition = (uint16_t)(pos_min) + (uint16_t)(v * (pos_max - pos_min));
+    //     // Calculate the desired goal position, converting the channel values
+    //     // to the servo values
+    //     const uint16_t pwm = c->get_output_pwm();
+    //     const uint16_t min = c->get_output_min();
+    //     const uint16_t max = c->get_output_max();
+    //     float v = float(pwm - min) / (max - min);
+    //     uint16_t goalPosition = (uint16_t)(pos_min) + (uint16_t)(v * (pos_max - pos_min));
 
-        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: i: %d,PWM: %d",i,pwm);
+    //     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: i: %d,PWM: %d",i,pwm);
 
-        // Don't send goal position if it is equal to previous
-        if (servo_position[i] == goalPosition) {
-            continue;
-        } else {
-            servo_position[i] = goalPosition;
-        }
+    //     // Don't send goal position if it is equal to previous
+    //     if (servo_position[i] == goalPosition) {
+    //         continue;
+    //     } else {
+    //         servo_position[i] = goalPosition;
+    //     }
 
-        // Send the goal position to the servo
-        send_command(i, servo_goal_pos_reg, goalPosition, 2);
-    }
+    //     // Send the goal position to the servo
+    //     send_command(i, servo_goal_pos_reg, goalPosition, 2);
+    // }
+
+    
+    // read_bytes();
+
+    // if(last_send_us!=0 && now - last_send_us > delay_time_us)
+    // {   
+    //     send_position_read_command();
+    //     last_send_us = 0;
+    // }
+
 }
 
 #endif //NUM_SERVO_CHANNELS

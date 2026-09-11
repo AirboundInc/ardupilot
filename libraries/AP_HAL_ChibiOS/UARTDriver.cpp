@@ -126,7 +126,7 @@ void UARTDriver::uart_thread()
     }
 
     while (true) {
-        eventmask_t mask = chEvtWaitAnyTimeout(EVT_TRANSMIT_DATA_READY | EVT_TRANSMIT_END | EVT_TRANSMIT_UNBUFFERED, chTimeMS2I(1));
+        eventmask_t mask = chEvtWaitAnyTimeout(EVT_TRANSMIT_DATA_READY | EVT_TRANSMIT_END | EVT_TRANSMIT_UNBUFFERED, chTimeUS2I(1000));
         uint32_t now = AP_HAL::micros();
         bool need_tick = false;
         if (now - last_thread_run_us >= 1000) {
@@ -1245,6 +1245,8 @@ void UARTDriver::_tx_timer_tick(void)
 
     if (hd_tx_active) {
         WITH_SEMAPHORE(tx_sem);
+        //if was transmitting and still transmitting
+        //if was transmitting and stopped tranmitting.
         hd_tx_active &= ~chEvtGetAndClearFlags(&hd_listener);
         if (!hd_tx_active) {
             /*
