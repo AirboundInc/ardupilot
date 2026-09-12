@@ -53,38 +53,18 @@ local P = {
     STUCK_T     = bind_add_param('STUCK_T', 23, 15),
     TX_DEAD     = bind_add_param('TX_DEAD', 24, 5),   -- consecutive QISEND stalls before declaring socket dead (0=disable)
     SOCK_T      = bind_add_param('SOCK_T', 25, 4),     -- short timeout (s) for DP recovery steps before hard reset
-    HTTPAUTH    = bind_add_param('HTTPAUTH', 26, 1),   -- 1 = fetch server IP/port via HTTPS first.
-                                                        -- Runs with full server-cert verification
-                                                        -- (seclevel/authmode=1, see quectel_http/
-                                                        -- simcom_http below): the CA cert is uploaded
-                                                        -- to the modem automatically (once per aircraft,
-                                                        -- CERT_LIST/SC_CERT_LIST check before uploading)
-                                                        -- before every HTTPAUTH attempt. Bench-verified
-                                                        -- 2026-08-17 on EC200U and SIM7600 -- see
-                                                        -- LTE_modem_TLS_CERT_SETUP.md for the full log.
-                                                        -- EC25/EC20/BG95/EG800Q untested on this flow.
-    AUTHSYS     = bind_add_param('AUTHSYS', 27, 1),    -- 1 = apply sysId from the HTTPAUTH response
-                                                        -- (saves it to SYSID_THISMAV too, so the next
-                                                        -- boot starts on it rather than on the stored
-                                                        -- default). NOTE:
-                                                        -- mavlink_system.sysid is a single global
-                                                        -- shared by EVERY link (USB included) --
-                                                        -- changing it mid-session disconnects any
-                                                        -- other GCS already attached under the old id.
-    AUTHKEY     = bind_add_param('AUTHKEY', 28, 1)     -- 1 = self-apply the mavlinkSigningKey from the
-                                                        -- HTTPAUTH response via gcs:set_signing_key().
-                                                        -- 0 = signing OFF: the stored key is actively
-                                                        -- erased (see update(), bottom of file), not
-                                                        -- merely left unapplied. The key lives in FRAM,
-                                                        -- not in a parameter, so nothing short of erasing
-                                                        -- it stops the vehicle signing. The key is
-                                                        -- deliberately never printed/logged (it would
-                                                        -- defeat MAVLink signing to broadcast the secret
-                                                        -- in plaintext over the same link signing is meant
-                                                        -- to protect) -- enabling this makes the vehicle
-                                                        -- start rejecting unsigned commands with nothing on
-                                                        -- the GCS able to sign them unless it's provisioned
-                                                        -- with the same key through some other channel.
+    HTTPAUTH    = bind_add_param('HTTPAUTH', 26, 1),   -- 1 = fetch server IP/port via HTTPS first,
+                                                        -- with full cert verification (CA uploaded
+                                                        -- automatically). Bench-verified on EC200U and
+                                                        -- SIM7600; see LTE_modem_TLS_CERT_SETUP.md.
+    AUTHSYS     = bind_add_param('AUTHSYS', 27, 1),    -- 1 = apply sysId from the response, saving it
+                                                        -- to SYSID_THISMAV. mavlink_system.sysid is one
+                                                        -- global across every link, so changing it
+                                                        -- mid-session drops any GCS on the old id.
+    AUTHKEY     = bind_add_param('AUTHKEY', 28, 1)     -- 1 = self-apply the mavlinkSigningKey.
+                                                        -- 0 = signing OFF: the stored key is erased
+                                                        -- (see update()), not just left unapplied -- it
+                                                        -- lives in FRAM, not a parameter. Never logged.
 }
 
 -- ---- HTTPS auth endpoint (returns the data-server IP/port) ---------------
@@ -92,15 +72,11 @@ local P = {
 local AUTH_URL             = "https://poc.rudra.airbound.com/api/v1/users/aircraft-login"
 local AUTH_EVERY_RECONNECT = false   -- false = fetch once/session, cache until hard reset
 
--- ISRG Root X1 (Let's Encrypt) -- anchors the cert chain poc.rudra.airbound.com
--- presents (leaf -> YE1 intermediate -> Root YE -> ISRG Root X2 -> this root).
--- Trusting the root instead of the leaf/intermediate survives LE's periodic
--- intermediate rotation. Bench-verified 2026-08-17 against the live endpoint
--- on both EC200U (AT+QFUPL, CRC 4f64) and SIM7600 (AT+CCERTDOWN):
+-- ISRG Root X1 (Let's Encrypt), the root of poc.rudra.airbound.com's chain.
+-- Pinning the root, not the intermediate, survives LE's intermediate rotation;
+-- only a change of issuer needs this replaced on every provisioned modem.
 -- SHA-256 96:BC:EC:06:26:49:76:F3:74:60:77:9A:CF:28:C5:A7:CF:E8:A3:C0:AA:E1:1A:8F:FC:EE:05:C0:BD:DF:08:C6
--- valid 2015-06-04 to 2035-06-04. Source: https://letsencrypt.org/certs/isrgrootx1.pem
--- If poc.rudra.airbound.com ever moves off this root (a different issuer, not
--- just a new LE intermediate), every provisioned modem needs this updated.
+-- Valid to 2035-06-04. Source: https://letsencrypt.org/certs/isrgrootx1.pem
 local CA_CERT_FILENAME = "isrgrootx1.pem"
 local CA_CERT_PEM = table.concat({
     "-----BEGIN CERTIFICATE-----",
@@ -495,16 +471,10 @@ local function want_direct_push()
     return (not cmux_enabled()) and modem ~= nil and modem.cipopen_udp_dp ~= nil
 end
 
--- Conservative cap on outgoing CMUX frame payload size. GSM 07.10's N1
--- (max frame size) is negotiated via AT+CMUX=...; this script sends a bare
--- AT+CMUX=0 with no N1 override, so each modem's own default applies and
--- that default is NOT consistent across chipsets -- Quectel EC200 accepts
--- a single frame carrying the whole ~1.7KB CA cert PEM, but a SIM7600
--- silently wedges (stops responding, just streams idle FLAG bytes) on the
--- same single oversized frame. Splitting into <=127-byte frames is safe
--- for every modem regardless of its N1: cmux.feed_uart_in() already
--- reassembles a DLC's data across frame boundaries, so the AT parser on
--- the other end sees one continuous byte stream either way.
+-- Cap on outgoing CMUX frame payload. AT+CMUX=0 leaves N1 at each chipset's
+-- own default: EC200 takes the whole ~1.7KB CA cert in one frame, SIM7600
+-- silently wedges on it. <=127 bytes is safe for any N1, and feed_uart_in()
+-- reassembles across frames so the far-end AT parser sees one stream either way.
 local CMUX_MAX_FRAME = 127
 
 local function AT_send(atcmd)
@@ -678,7 +648,6 @@ local function check_modem_revision(s)
         -- Computed here, not at print time, because ATI is the only place the
         -- raw revision exists and the main chunk has no room for another local.
         modem.fw_short = rev:match("(R%d%d[Aa]%d%d)") or rev:match("(V%d+%.[%d%.]*%d)") or rev
-        gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: firmware " .. rev)
 
         -- CMUX auto-disable / direct-push is EC25-specific. Other families
         -- (SimCom, EC20, BG95, Air780…) fall through untouched and use CMUX
@@ -703,7 +672,7 @@ local function check_modem_banner(s)
         if s:find(modem_list[model].banner) then
             modem = modem_list[model]
             modem.model = model
-            gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: found modem: " .. model)
+            -- Not announced here: step_SIMINFO prints model and firmware once.
             -- Try to extract firmware revision from the same response
             check_modem_revision(s)
             return
@@ -1173,21 +1142,12 @@ local function http_fail(reason, no_retry)
         'LTE HTTPAUTH: %s — retry %d/%d', reason, cs.http_retry_count, 3))
 
     if modem.http and modem.http.term then
-        -- SimCom's HTTP(S) app needs an explicit AT+HTTPTERM to close its
-        -- session; unlike the success path (READ, further down) this failure
-        -- path never called it, so a failed attempt left the session open and
-        -- the retry's AT+HTTPINIT piled on top of it.
-        --
-        -- Awaited in its own sub-state rather than fired and forgotten: the
-        -- reply is a bare OK, which is exactly what SC_CERT_LIST reads as
-        -- "cert list empty", and the SIM7500/7600 manual (13.2.2) allows
-        -- AT+HTTPTERM up to 120s to answer — so no fixed delay is both short
-        -- enough to be worth waiting and long enough to be safe. Sending
-        -- AT+CCERTLIST first and hoping means the retry eats this term OK as
-        -- its answer, re-uploads the cert for nothing, and then reads every
-        -- later reply one command out of step until the budget is gone. The
-        -- deadline is refreshed because TERM_WAIT is the start of the new
-        -- attempt, not the tail of the failed one.
+        -- SimCom needs an explicit AT+HTTPTERM to close the session, or the
+        -- retry's HTTPINIT piles on top of the failed one. Awaited in its own
+        -- sub-state, not fired and forgotten: the reply is a bare OK, which is
+        -- also what SC_CERT_LIST reads as "cert list empty", so racing it
+        -- leaves every later reply one command out of step. Deadline refreshed
+        -- -- TERM_WAIT starts the new attempt, it isn't the tail of the old.
         cs.http_sub = "TERM_WAIT"; cs.http_buf = ""
         cs.http_deadline = millis():tofloat() + HTTP_TOTAL_TIMEOUT
         AT_send(modem.http.term)
@@ -1238,16 +1198,10 @@ local function step_HTTPAUTH()
         http_fail('timeout'); return
     end
 
-    -- IMPORTANT: uart_read() returns the raw byte stream. When CMUX is
-    -- active (it is, for the whole session -- see "CMUX mode set" at boot)
-    -- that raw stream is still wrapped in CMUX frames (flag/address/control/
-    -- FCS bytes around each frame's payload). Long AT+QHTTPREAD responses
-    -- (e.g. once mavlinkSigningKey made the JSON body span multiple CMUX
-    -- frames) get a fresh set of these framing bytes injected mid-payload
-    -- at every frame boundary, corrupting whatever field straddles it --
-    -- this is what was truncating "port" mid-digit. De-frame through the
-    -- same cmux.feed_uart_in() path step_CONNECTED() already uses, instead
-    -- of treating the raw stream as plain text.
+    -- uart_read() is the raw stream, still CMUX-framed. A long QHTTPREAD body
+    -- spans frames, so framing bytes land mid-payload and corrupt whatever
+    -- field straddles the boundary (this truncated "port" mid-digit). De-frame
+    -- through cmux.feed_uart_in(), as step_CONNECTED() does.
     local raw = uart_read()
     if cmux_enabled() then
         if raw and #raw > 0 then buf.parse = buf.parse .. raw end
@@ -1502,15 +1456,11 @@ local function step_ATI()
         cs.ati_dbg_ms = millis()
         gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE: waiting for modem (ATI, %ds)', math.floor(ati_s)))
     end
-    -- A reset (AT+CFUN=1,1) does not always drop the modem's CMUX session -
-    -- some firmware (seen on EC200) keeps replying in CMUX framing straight
-    -- through the reset. Detect that by looking for the frame FLAG byte
-    -- anywhere in this read, not just at the exact start/end of the chunk -
-    -- UART reads are chunked arbitrarily and rarely align on frame edges.
-    -- This must run before the modem~=default_modem branch below: once the
-    -- banner has matched even once, that branch always returns first, so a
-    -- mux session revealed in the same read as the banner would otherwise
-    -- never be detected.
+    -- AT+CFUN=1,1 doesn't always drop the CMUX session (seen on EC200), so
+    -- look for the FLAG byte anywhere in the read -- UART chunks rarely align
+    -- on frame edges. Must run before the modem~=default_modem branch below,
+    -- which returns first once the banner has matched and would hide a mux
+    -- session revealed in that same read.
     if not found_cmux and not option_enabled(OPT.NOMUX) and not cmux_force_disabled
        and s and #s >= 4 and s:find(string.char(cmux.FLAG), 1, true) then
         found_cmux = true; gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: in CMUX mode"); log_data("{INCMUX}", '***')
@@ -1559,15 +1509,9 @@ local function set_BAND()
 end
 
 local function step_CONFIG()
-    -- Local echo is on by default and was never turned off -- harmless for
-    -- short commands (their echo is a few bytes lost in the noise), but the
-    -- ~1.7KB CA cert upload during HTTPAUTH gets mirrored back in full as a
-    -- dense burst of echoed CMUX frames on the same DLC. If de-framing ever
-    -- desyncs on one of those, the module's real completion OK can get lost
-    -- in the corruption that follows, leaving the upload step waiting
-    -- forever (a permanent stall, not just a slow one -- doubling the
-    -- timeout didn't help because there's nothing to wait longer for).
-    -- Turning echo off removes that whole burst instead of working around it.
+    -- Echo off. Harmless on short commands, but the ~1.7KB CA cert upload gets
+    -- mirrored back as a dense burst of CMUX frames; one de-framing desync
+    -- there loses the completion OK and stalls the upload permanently.
     AT_send('ATE0\r\n')
     set_BAND(); set_MCCMNC()
     if modem.config_extra then AT_send(modem.config_extra) end
@@ -1757,20 +1701,11 @@ local function step_CREG()
     AT_send(modem.fast_connect and 'AT+CEREG?\r\n' or 'AT+CREG?\r\n')
 end
 
--- Registered but not connected yet: name the modem, its firmware and the
--- network the SIM is on, in one block, then hand over to HTTPAUTH. Sits here
--- because AT+COPS? can only return an operator name once registration has
--- actually succeeded, and this is the last quiet moment before the socket
--- work starts.
---
--- AT+COPS=3,0 pins the read format to long alphanumeric first: <mode>=3 sets
--- only <format> and does not touch registration, which matters because
--- set_MCCMNC may have left the modem in numeric format via AT+COPS=4,2 -- in
--- which case AT+COPS? answers "40410" instead of "airtel".
---
--- Capped at 1.5s and no call to handle_error: a silent modem, or one that
--- rejects either command, still gets the block printed (operator "unknown")
--- and moves straight on, so this can never hold up or reset the connect.
+-- Registered but not connected: name the modem and the network, then hand to
+-- HTTPAUTH. Sits here because AT+COPS? only answers once registered.
+-- AT+COPS=3,0 pins the read to long alphanumeric -- set_MCCMNC may have left
+-- it numeric (AT+COPS=4,2), giving "40410" instead of "airtel".
+-- Capped at 1.5s and never calls handle_error, so it can't hold up a connect.
 local function step_SIMINFO()
     local raw = uart_read()
     if raw and #raw > 0 then buf.setup = buf.setup .. raw end
@@ -1787,66 +1722,75 @@ local function step_SIMINFO()
     local oper = buf.setup:match('%+COPS:%s*%d+,%d+,"([^"]*)"')
     if oper == "" then oper = nil end
 
-    -- The SIM's own service provider name, read off EF-SPN by the modem:
+    -- The card's own name from EF-SPN. Only the SPN is taken -- QSPN's FNN/SNN
+    -- name the registered network, which +COPS already gives. A blank EF-SPN
+    -- is normal, not a failure.
     --   +QSPN: "<FNN>","<SNN>","<SPN>",<alphabet>,"<RPLMN>"   (Quectel)
     --   +CSPN: "<SPN>",<display_mode>                         (SimCom)
-    -- Only the SPN is taken -- QSPN's FNN/SNN name the registered network,
-    -- which AT+COPS? already gives. The SPN identifies the card itself and
-    -- does not change under roaming. Plenty of operators ship cards with
-    -- EF-SPN blank, so an empty value here is normal, not a failure.
     local spn = buf.setup:match('%+QSPN:%s*"[^"]*","[^"]*","([^"]*)"')
                 or buf.setup:match('%+CSPN:%s*"([^"]*)"')
     if spn == "" then spn = nil end
 
-    -- Both answers are in once +COPS: carries a name and the SPN query has
-    -- replied at all -- keyed on the response prefix, not on a non-empty SPN,
-    -- or a blank-EF-SPN card would burn the whole budget every single time.
-    -- ERROR counts as replied: not every firmware supports the query, and on
-    -- SIM7600 AT+CSPN? has been seen not to answer at all, which the budget
-    -- below covers.
+    -- Keyed on the reply prefix, not a non-empty SPN, or a blank-EF-SPN card
+    -- burns the whole budget every time. ERROR counts as replied.
     local spn_done = (not modem.spn) or buf.setup:find('%+[QC]SPN:')
                      or buf.setup:find('ERROR')
-    -- Re-queried on every registration, so a reconnect or a network change is
-    -- reflected rather than reporting whatever answered first at boot.
-    -- Revisits are on the reconnect path and get a shorter budget: getting the
-    -- link back outranks naming the operator.
+    -- Re-queried each registration so a network change is picked up. Revisits
+    -- get a shorter budget: restoring the link outranks naming the operator.
     local waited = (millis():tofloat() - cs.step_timer_ms) / 1000
     if not (oper and spn_done) and waited < (cs.siminfo_printed and 0.8 or 1.5) then return end
 
-    -- "Simcard" prefers the SPN and falls back to the registered network name
-    -- for cards with no SPN. A refresh that timed out or was rejected keeps
-    -- the last known values; only a never-answered first lookup is 'unknown'.
-    -- Each field is updated only from its own answer. The previous form
-    -- rewrote both whenever either arrived, so a partial reply corrupted the
-    -- half that had not: an SPN with +COPS timed out blanked the network (Net
-    -- logged 'unknown'), and a +COPS with no SPN reply overwrote a known card
-    -- name with the network name. Reconnects only get 0.8s, so partial replies
-    -- are the expected case there, not an edge one — and both fields go
-    -- straight into the LTEI row.
-    local prev = modem.sim_name
+    -- Each field updated only from its own answer -- a partial reply must not
+    -- blank the half that didn't arrive, which is the common case at 0.8s.
     if spn then modem.sim_spn = spn end
     if oper then modem.sim_oper = oper end
-    -- Derived, never stored: prefers the card (EF-SPN, fixed for the card) and
-    -- falls back to the registered network for cards that carry no SPN.
-    -- 'unknown' only while neither has ever answered.
-    modem.sim_name = modem.sim_spn or modem.sim_oper or 'unknown'
 
-    -- Force an LTEI row now: this is a fresh registration, which is exactly
-    -- the event worth logging, and it is also how a value that changed across
-    -- a network reset reaches the log promptly.
+    -- One operator, many spellings: "airtel airtel" (EF-SPN) vs "IND airtel"
+    -- (+COPS), "Jio 4G" vs "IND-JIO", Vi as Vodafone or IDEA. Reduce to a
+    -- brand token so SPN and +COPS agree and the name stops moving with
+    -- whichever query answered first. Local, so it costs nothing at file scope
+    -- (the script is near the VM's local limit) and is built once per
+    -- registration, not per 50ms tick.
+    local function brand(s)
+        if not s then return nil end
+        local l = s:lower()
+        -- 'vi' needs %f word boundaries; as a substring it hides in Movistar.
+        for _, b in ipairs({{'airtel', 'airtel'}, {'jio', 'jio'},
+                            {'vodafone', 'vi'}, {'idea', 'vi'},
+                            {'%f[%a]vi%f[%A]', 'vi'},
+                            {'bsnl', 'bsnl'}, {'mtnl', 'mtnl'}}) do
+            if l:find(b[1]) then return b[2] end
+        end
+        -- Unlisted operator: keep its own name (the cue to add it above), just
+        -- strip the "IND " prefix and the doubled word EF-SPN often carries.
+        l = l:gsub('^ind[%s%-_]+', '')
+        local a, b2 = l:match('^(%S+)%s+(%S+)$')
+        if a and a == b2 then l = a end
+        return l
+    end
+
+    -- Prefers the card (EF-SPN, fixed) over the registered network. sim_oper
+    -- keeps the raw +COPS string for the LTEI Net column.
+    modem.sim_name = brand(modem.sim_spn) or brand(modem.sim_oper) or 'unknown'
+
+    -- Fresh registration: force an LTEI row now.
     cs.ltei_ms = nil
 
-    -- Printed once per boot, and again only when the name actually changes --
-    -- a reconnect onto the same card says nothing new and would otherwise
-    -- repeat three GCS lines every time the link drops.
-    if not cs.siminfo_printed or modem.sim_name ~= prev then
+    -- Model and firmware can't change within a boot, so this is the only place
+    -- either is announced. siminfo_printed also shortens the budget above on
+    -- revisits. Clipped to 16 to stay inside the 50-char statustext field.
+    if not cs.siminfo_printed then
         local fw = (modem.fw_short and #modem.fw_short > 0) and modem.fw_short or
                    (#modem_revision > 0 and modem_revision or 'unknown')
-        gcs:send_text(MAV_SEVERITY.INFO, 'Module name: ' .. (modem.model or 'unknown'))
-        gcs:send_text(MAV_SEVERITY.INFO, 'Firmware version: ' .. fw)
-        gcs:send_text(MAV_SEVERITY.INFO, 'Simcard: ' .. modem.sim_name)
+        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: module: ' .. (modem.model or 'unknown'):sub(1, 16))
+        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: firmware: ' .. fw:sub(1, 16))
         cs.siminfo_printed = true
     end
+
+    -- Every registration, one short line. Statustext is best-effort -- unsent
+    -- entries are dropped after 5s (GCS_Common.cpp) -- so a multi-line burst
+    -- goes missing as a block; LTEI is what to post-process against.
+    gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: sim: ' .. modem.sim_name:sub(1, 16))
 
     buf.setup = ""
     if P.HTTPAUTH:get() == 1 and modem.http and (AUTH_EVERY_RECONNECT or not cs.auth_done) then
@@ -1856,15 +1800,12 @@ local function step_SIMINFO()
     end
 end
 
--- Recovery router. After the stall counter declares the socket dead we don't
--- know whether the modem is still registered (socket wedged, radio fine) or
--- genuinely fell off the network. The modem won't volunteer it, so ask once:
---   registered (1/5)   -> only the socket died -> SOCKET_STATE (reopen ~1-2s)
---   not reg (0/2/3/4)  -> radio dropped -> close socket, go re-register (CREG)
+-- Recovery router: once the socket is declared dead, ask whether the radio is
+-- still registered so each failure goes straight to the right recovery,
+-- instead of always trying reopen first via the slow CIPOPEN retry ladder.
+--   registered (1/5)   -> socket only -> SOCKET_STATE (reopen ~1-2s)
+--   not reg (0/2/3/4)  -> radio dropped -> close socket, re-register (CREG)
 --   no reply in SOCK_T -> AT channel wedged -> hard reset (run_step watchdog)
--- Routes each failure to the right recovery immediately instead of always
--- trying reopen first and finding out registration is gone the slow way (via
--- the CIPOPEN retry ladder).
 local function step_CEREG_CHECK()
     local s = uart_read()
     if s and #s > 0 then buf.setup = buf.setup .. s end
@@ -2345,7 +2286,11 @@ local function run_step()
     local now_ms = millis()
 
     if step_changed then
-    gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE_modem: step %s', step))
+    -- SIMINFO is silent here: it announces itself with the module/firmware/sim
+    -- lines it prints, so a step line ahead of them says nothing extra.
+    if step ~= "SIMINFO" then
+        gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE_modem: step %s', step))
+    end
     if cs.last_step and cs.last_step ~= "ATI" and not cs.reset_recorded then
         table.insert(cs.step_times, {name=cs.last_step, ms=math.floor(now_ms:tofloat()-cs.step_timer_ms)})
     end
@@ -2450,23 +2395,13 @@ local function run_step()
 end
 
 local function update()
-    -- AUTHKEY == 0 means "signing off", not just "don't apply a key". The key
-    -- gcs:set_signing_key() installs is written to FRAM (StorageManager::
-    -- StorageKeys), NOT to a parameter, so load_signing_key() re-arms
-    -- MAVLINK_SIGNING_FLAG_SIGN_OUTGOING on every channel at every boot until
-    -- that block is erased -- clearing the param alone left the vehicle signing
-    -- forever, with no way back short of a SETUP_SIGNING from a GCS.
-    --
-    -- Both the key and the timestamp must go to zero: that pair is what trips
-    -- the all_zero branch in load_signing_key() (GCS_Signing.cpp) and detaches
-    -- signing from every channel. Zeroing only one would leave the vehicle
-    -- signing with an all-zero key rather than not signing at all.
-    --
-    -- Runs ahead of the ENABLE check on purpose -- signing stuck on with the
-    -- script disabled is exactly the state there'd be no other way out of.
-    -- Edge-triggered on the observed value (authkey_seen starts nil, so a boot
-    -- with AUTHKEY=0 still erases once), and latched only on success, because
-    -- set_signing_key() refuses while armed and has to be retried on disarm.
+    -- AUTHKEY == 0 means signing OFF, not just "don't apply a key": the key is
+    -- in FRAM, not a parameter, so load_signing_key() re-arms it every boot
+    -- until the block is erased. Key and timestamp must BOTH be zeroed -- that
+    -- pair trips the all_zero branch in load_signing_key() (GCS_Signing.cpp).
+    -- Ahead of the ENABLE check on purpose: signing stuck on with the script
+    -- disabled is the one state with no way out. Edge-triggered, latched only
+    -- on success, since set_signing_key() refuses while armed.
     local authkey = P.AUTHKEY:get()
     if authkey ~= cs.authkey_seen then
         if authkey ~= 0 then
@@ -2479,36 +2414,14 @@ local function update()
 
     if P.ENABLE:get() == 0 then return 500 end
 
-    -- Modem/SIM identity into the dataflash log, once per arm, next to the
-    -- other LTE* messages. Written here and not where the block is printed to
-    -- the GCS: LOG_DISARMED is 0 on this airframe, so no log file exists until
-    -- arming and a write at print time would simply be dropped. Latched on the
-    -- arm transition rather than once per boot because each arm opens a fresh
-    -- log, and each one should carry the identity.
-    --
-    -- All three fields are char[16] and logger:write() raises a Lua error on
-    -- anything longer ("arg N too long for N format", lua_bindings.cpp), so
-    -- each is truncated: a long operator name must not be able to kill the
-    -- script mid-flight.
-    -- Modem/SIM identity into the dataflash log beside the other LTE*
-    -- messages: Mdl/FW name the module, Sim is the card (EF-SPN) and Net the
-    -- network it registered on -- the last two differ under roaming.
-    --
-    -- No arming condition: SIMINFO clears cs.ltei_ms on every registration, so
-    -- a row goes out at each connect and reconnect, and the 0.1Hz repeat below
-    -- covers the rest. That repeat is not belt-and-braces -- AP_Logger drops
-    -- blocks silently when its buffer is full ("bufferspace_available() <
-    -- msg_len -> return false" in AP_Logger_Backend::Write) and the Lua binding
-    -- ignores that return, so a lost row is indistinguishable from a written
-    -- one. Registration lands a few seconds into the log, while ArduPilot is
-    -- still dumping every FMT plus the whole parameter set, which is precisely
-    -- when the buffer is most likely saturated: log 00000013 lost its only row
-    -- exactly that way. Repeating costs ~9 bytes/s and keeps working while the
-    -- script sits in HALT, where a failed HTTPAUTH leaves it.
-    --
-    -- All four fields are char[16]; logger:write() raises a Lua error on
-    -- anything longer ("arg N too long for N format", lua_bindings.cpp), so
-    -- each is truncated -- a long operator name must not kill the script.
+    -- Modem/SIM identity into the dataflash log: Mdl/FW name the module, Sim
+    -- is the brand token and Net the raw network name -- they differ under
+    -- roaming. SIMINFO clears cs.ltei_ms so a row goes out at every
+    -- registration; the 0.1Hz repeat covers rows lost to a full AP_Logger
+    -- buffer (dropped silently, and the Lua binding ignores the return), which
+    -- is likely at registration while FMTs and params are still streaming.
+    -- All four fields are char[16] -- logger:write() raises a Lua error on
+    -- anything longer, so a long operator name must not reach it untruncated.
     if modem.sim_name then
         local now = millis():tofloat()
         if not cs.ltei_ms or now - cs.ltei_ms > 10000 then
