@@ -30,12 +30,21 @@ EXPECTED_PORT = 8080
 STATIC_IP = "10.9.8.7"
 STATIC_PORT = 9999
 
-# ── Expected step order for the happy path (CMUX bypassed via sed) ────
+# ── Expected step order for the happy path ────────────────────────────
 # Allow CIPCLOSE between SOCKET_STATE and final CIPOPEN/CONNECTED
 ALLOWED_STEPS = {"ATI", "BAUD", "CPIN", "CONFIG", "CREG", "HTTPAUTH",
                  "SIGNAL_GATE", "QENG", "SOCKET_STATE", "CIPOPEN",
                  "CIPCLOSE", "CONNECTED"}
-REQUIRED_STEPS = ["ATI", "CPIN", "CREG", "HTTPAUTH", "CIPOPEN", "CONNECTED"]
+# ATI is not required even though it always runs first. AP_LTE starts from
+# init_ardupilot(), before any GCS link exists, so its "step ATI" statustext is
+# emitted into a void and dropped. Reaching BAUD proves ATI completed anyway:
+# that is the only way out of ATI, and it needs the modem banner parsed.
+REQUIRED_STEPS = ["CPIN", "CREG", "HTTPAUTH", "CIPOPEN", "CONNECTED"]
+# Without HTTPAUTH the driver takes the static LTE_SERVER_* address instead.
+REQUIRED_STEPS_NO_AUTH = ["CPIN", "CREG", "CIPOPEN", "CONNECTED"]
+
+# Set from --no-httpauth; see the argument's help text for why it exists.
+NO_HTTPAUTH = False
 
 # ── AT command → response table (happy-path) ──────────────────────────
 AT_RESPONSES = {
@@ -46,8 +55,13 @@ AT_RESPONSES = {
     'AT+QCSQ':    b'\r\n+QCSQ: "eMTC",-65,-10,18,-8\r\nOK\r\n',
     'AT+CPSI?':   b'\r\n+CPSI: LTE,Online,404-45,0x0001,1A2B3C,300,'
                   b'EUTRAN-BAND1,1,3,3,-110,-12,-80,11\r\nOK\r\n',
-    'AT+QENG=':   b'\r\n+QENG: "servingcell","LTE","FDD",404,45,'
-                  b'1A2B3C,300,1,3,-110,-12,-80,11,-,-,-,-,-,-\r\nOK\r\n',
+    # Real EC25 shape, including the <state> field. It used to be omitted,
+    # which made every field after it shift by one and the reply parse as
+    # not-LTE, so the servingcell parser was never actually exercised.
+    # "servingcell",<state>,<rat>,<is_tdd>,<MCC>,<MNC>,<cellID>,<PCID>,
+    # <earfcn>,<band>,<ULbw>,<DLbw>,<TAC>,<RSRP>,<RSRQ>,<RSSI>,<SINR>
+    'AT+QENG=':   b'\r\n+QENG: "servingcell","NOCONN","LTE","FDD",404,45,'
+                  b'1A2B3C,300,1650,3,5,5,3A5F,-88,-10,-60,14,-\r\nOK\r\n',
     'AT+QISTATE': b'\r\nOK\r\n',
     'AT+QICLOSE': b'\r\nOK\r\n',
     'AT+COPS':    b'\r\nOK\r\n',
@@ -294,13 +308,14 @@ def inject_params_thread(mavlink_port):
 def validate_steps(observed):
     """Check observed step sequence contains all required steps and uses only allowed steps."""
     # Check 1: all required steps must appear in order
+    required_steps = REQUIRED_STEPS_NO_AUTH if NO_HTTPAUTH else REQUIRED_STEPS
     obs_idx = 0
-    for required in REQUIRED_STEPS:
+    for required in required_steps:
         try:
             obs_idx = observed.index(required, obs_idx) + 1
         except ValueError:
             print(f"\n❌ FAIL: Required step '{required}' missing or out of order", flush=True)
-            print(f"   Required (in order): {' → '.join(REQUIRED_STEPS)}", flush=True)
+            print(f"   Required (in order): {' → '.join(required_steps)}", flush=True)
             print(f"   Observed:            {' → '.join(observed)}", flush=True)
             return False
 
@@ -325,10 +340,14 @@ def monitor_gcs(mavlink_port, inject_port, timeout):
     print(f"[GCS] Heartbeat received (system {master.target_system},"
           f" component {master.target_component})", flush=True)
 
-    # Start param injection in background — doesn't block monitoring
-    inject_thread = threading.Thread(
-        target=inject_params_thread, args=(inject_port,), daemon=True)
-    inject_thread.start()
+    # Start param injection in background — doesn't block monitoring.
+    # Skipped without HTTPAUTH: the injected LTE_SERVER_* exist only to be
+    # overridden by the auth result, so injecting them with auth off would
+    # point the driver away from the address the mock accepts.
+    if not NO_HTTPAUTH:
+        inject_thread = threading.Thread(
+            target=inject_params_thread, args=(inject_port,), daemon=True)
+        inject_thread.start()
 
     # Monitor STATUSTEXT immediately — catch every step from ATI onwards
     print(f"[GCS] Monitoring STATUSTEXT for {timeout}s...", flush=True)
@@ -357,8 +376,11 @@ def monitor_gcs(mavlink_port, inject_port, timeout):
             step_name = text.split("step ")[-1].strip()
             observed_steps.append(step_name)
 
-        # "connected" without "step" is the final state message
-        elif "connected" in text.lower() and "step" not in text.lower():
+        # The socket-open message is the final state. Matched exactly, not by
+        # searching for "connected": "LTE: connected on Band 3 (EARFCN 1650)"
+        # is a signal report that arrives well before the socket exists, and a
+        # loose match reads it as success and stops the test early.
+        elif text.strip() == "LTE_modem: connected":
             observed_steps.append("CONNECTED")
 
             # --- CHECK 1: Step sequence ---
@@ -367,7 +389,9 @@ def monitor_gcs(mavlink_port, inject_port, timeout):
 
             # --- CHECK 2: HTTPAUTH returned the expected address ---
             expected_server = f"{EXPECTED_IP}:{EXPECTED_PORT}"
-            if auth_server == expected_server:
+            if NO_HTTPAUTH:
+                print("⏭  HTTPAUTH check skipped (--no-httpauth)", flush=True)
+            elif auth_server == expected_server:
                 print(f"✅ HTTPAUTH address OK: {auth_server}", flush=True)
             elif auth_server is None:
                 print(f"\n❌ FAIL: HTTPAUTH never reported a server address",
@@ -403,7 +427,7 @@ def monitor_gcs(mavlink_port, inject_port, timeout):
         # Fatal errors — bail out instead of burning the rest of the timeout
         fail_keywords = ["could not find", "bad step", "halted", "halting"]
         if any(kw in text.lower() for kw in fail_keywords):
-            print(f"\n❌ FAIL: Lua script error — {text}", flush=True)
+            print(f"\n❌ FAIL: LTE driver error — {text}", flush=True)
             if observed_steps:
                 print(f"   Got as far as: {' → '.join(observed_steps)}",
                       flush=True)
@@ -426,8 +450,16 @@ if __name__ == "__main__":
                         help="UDP port for param injection (default: mavlink-port + 1)")
     parser.add_argument("--timeout", type=int, default=120,
                         help="Seconds to wait for CONNECTED (default 120)")
+    parser.add_argument("--no-httpauth", action="store_true",
+                        help="Vehicle has LTE_HTTPAUTH=0 and a static "
+                             "LTE_SERVER_* address. Skips param injection and "
+                             "the auth assertions, and still checks the step "
+                             "sequence and the QIOPEN destination. Needed "
+                             "while CI cannot provision the craft ID and "
+                             "password the HTTPS login requires.")
     args = parser.parse_args()
 
+    NO_HTTPAUTH = args.no_httpauth
     inject_port = args.inject_port if args.inject_port else args.mavlink_port + 1
 
     threading.Thread(target=mock_modem_thread, args=(args.port,),

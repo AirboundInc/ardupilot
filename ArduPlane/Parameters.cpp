@@ -1035,6 +1035,12 @@ const AP_Param::Info Plane::var_info[] = {
     GOBJECT(quicktune, "QWIK_",  AP_Quicktune),
 #endif
 
+#if AP_LTE_ENABLED
+    // @Group: LTE_
+    // @Path: ../libraries/AP_LTE/AP_LTE.cpp
+    GOBJECT(lte, "LTE_",  AP_LTE),
+#endif
+
     AP_VAREND
 };
 
