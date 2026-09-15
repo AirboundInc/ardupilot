@@ -24,6 +24,8 @@
 #define AP_FEETECHSERVO_ENABLED 1
 #endif
 
+#define TTLSERVO_DEBUG_LEVEL 1
+
 #if AP_FEETECHSERVO_ENABLED
 class AP_TTLServo {
   public:
@@ -45,12 +47,30 @@ class AP_TTLServo {
     uint32_t us_gap;
     uint32_t read_command_sent_time_us;
 
+    enum class COMM_STATE
+    {
+      IDLE = 0,
+      COMMAND_POSITION,
+      GET_COMMAND_POSITION_RESPONSE,
+      READ_CURRENT_POSITION,
+      GET_CURRENT_POSITION_RESPONSE,
+    };
+
+    enum class RESPONSE_TYPE
+    {
+      PING,
+      POSITION_COMMAND,
+      CURRENT_POSITION,
+    }servo_response;
+
+
     uint8_t calculate_crc(uint8_t *txpacket, uint8_t len);
     void configure_servos(void);
     void detect_servos(void);
     void init(void);
-    void process_packet(const uint8_t *packet, uint8_t length);
-    void read_bytes();
+    void process_packet(RESPONSE_TYPE response,const uint8_t *packet, uint8_t length);
+    void read_bytes(RESPONSE_TYPE response);
+
     void send_command(uint8_t id, uint8_t reg, uint16_t value, uint8_t len);
     void send_packet(const uint8_t *packet, uint8_t len);
     void send_read_register_instruction(uint8_t id, uint8_t reg,uint8_t readlen);
@@ -58,13 +78,26 @@ class AP_TTLServo {
     void send_position_read_command();
     void send_read_baudrate_command();
     void send_read_voltage_command();
-    // void handle_position_read_response(const uint8_t* packet, uint8_t length);
+
+    //Servo
+    void set_pwm();
+
+    COMM_STATE servo_comm_state=COMM_STATE::IDLE;
     
     struct gcs_announce{
       bool empty_servo_bus = false;
     }_gcs_announce;
 
+    struct Servo_state
+    {
+      float angular_position_deg;
+      uint32_t last_position_update_ms;
+    };
+
+    Servo_state servo_state[4];
+
     bool initialised;
+    bool auto_detect_complete;
 
     // Used for the auto-detection of the servo IDs connected
     uint8_t detection_count;
@@ -101,6 +134,27 @@ class AP_TTLServo {
 
     // Servo goal position register adress
     AP_Int8 servo_goal_pos_reg;
+
+#if TTLSERVO_DEBUG_LEVEL > 0
+    struct debug{
+      uint16_t position_command_count;
+      uint16_t position_command_response_count;
+      uint16_t read_position_count;
+      uint16_t read_position_response_count;
+      uint16_t bad_response_count;
+      bool operator!=(const debug& other) const{return position_command_count != other.position_command_count 
+                                                ||position_command_response_count != other.position_command_response_count 
+                                                || bad_response_count != other.bad_response_count
+                                                || read_position_count != other.read_position_count
+                                                || read_position_response_count != other.read_position_response_count;}
+      uint32_t last_gcs_announce_time;
+    };
+
+    debug _debug;
+    debug _prev_debug; 
+    void print_debug();
+
+#endif
 
 };
 
