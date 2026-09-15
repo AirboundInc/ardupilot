@@ -118,8 +118,11 @@ jobs:
           sed -i 's/step = "CMUX"/step = "CPIN"/g' ArduPlane/scripts/LTE_modem.lua
           sed -i "s/step = 'CMUX'/step = 'CPIN'/g" ArduPlane/scripts/LTE_modem.lua
 
+          # SCR_HEAP_SIZE must match Pixhawk6C-bdshot defaults.parm: the 200KB SITL
+          # default is too small for the Lua parser to compile LTE_modem.lua.
           cat <<'EOF' > lte_test.parm
           SCR_ENABLE 1
+          SCR_HEAP_SIZE 300000
           LTE_ENABLE 1
           LTE_SERPORT 0
           SERIAL1_PROTOCOL 28
