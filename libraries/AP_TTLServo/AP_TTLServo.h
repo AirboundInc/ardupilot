@@ -19,6 +19,7 @@
 
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Param/AP_Param.h>
+#include <AP_Servo_Telem/AP_Servo_Telem.h>
 
 #ifndef AP_FEETECHSERVO_ENABLED
 #define AP_FEETECHSERVO_ENABLED 1
@@ -26,7 +27,11 @@
 
 #define TTLSERVO_DEBUG_LEVEL 1
 
-#if AP_FEETECHSERVO_ENABLED
+#define MAX_NUM_SERVOS 8
+
+
+#if AP_FEETECHSERVO_ENABLED && AP_SERVO_TELEM_ENABLED
+
 class AP_TTLServo {
   public:
 
@@ -79,6 +84,9 @@ class AP_TTLServo {
     void send_read_baudrate_command();
     void send_read_voltage_command();
 
+
+    void update_telem();
+    void send_telemetry();
     //Servo
     void set_pwm();
 
@@ -88,13 +96,16 @@ class AP_TTLServo {
       bool empty_servo_bus = false;
     }_gcs_announce;
 
-    struct Servo_state
-    {
-      float angular_position_deg;
-      uint32_t last_position_update_ms;
-    };
-
-    Servo_state servo_state[4];
+    struct {
+      uint32_t last_response_ms;
+      uint8_t id;
+      float angle;
+      // float desired_angle;
+      // float current;
+      // float voltage;
+      uint8_t error_flags;
+    } telem_data[MAX_NUM_SERVOS];
+  
 
     bool initialised;
     bool auto_detect_complete;
@@ -103,6 +114,7 @@ class AP_TTLServo {
     uint8_t detection_count;
     int8_t configured_servos;
     int8_t ping_count;
+    uint8_t servo_count;
 
     // Received data buffer
     uint8_t pktbuf[64];

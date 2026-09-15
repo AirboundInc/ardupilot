@@ -113,26 +113,12 @@ const AP_Param::GroupInfo AP_TTLServo::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("DESSPD", 4, AP_TTLServo, servo_des_run_speed, RUNNING_SPEED),
 
-    // @Param: SPDREG
-    // @DisplayName: Servo running speed register address
-    // @Description: Address of the servo's running speed register, to which the desired running speed will be written to
-    // @Range: 0 255
-    // @User: Standard
-    AP_GROUPINFO("SPDREG", 5, AP_TTLServo, servo_des_run_speed_reg, RUNNING_SPEED_REG),
-
     // @Param: ID_BM
     // @DisplayName: Servo IDs bitmask
     // @Description: Bitmask of the servo IDs connected. Enable the servo in the corresponding servo_channel slot. Servo ID 0 corresponds to servo1_channel
     // @Bitmask: 0:ID 0, 1:ID 1, 2:ID 2, 3:ID 3, 4:ID 4, 5:ID 5, 6:ID 6, 7:ID 7, 8:ID 8, 9:ID 9, 10:ID 10, 11:ID 11, 12:ID 12, 13:ID 13, 14:ID 14, 15:ID 15, 16:ID 16, 17:ID 17, 18:ID 18, 19:ID 19, 20:ID 20, 21:ID 21, 22:ID 22, 23:ID 23, 24:ID 24, 25:ID 25, 26:ID 26, 27:ID 27, 28:ID 28, 29:ID 29, 30:ID 30, 31:ID 31
     // @User: Advanced
-    AP_GROUPINFO("ID_BM", 6, AP_TTLServo, servo_id_mask, 0),
-
-    // @Param: POSREG
-    // @DisplayName: Servo goal position register address
-    // @Description: Address of the servo's goal position register, to which the desired position will be written to
-    // @Range: 0 255
-    // @User: Standard
-    AP_GROUPINFO("POSREG", 7, AP_TTLServo, servo_goal_pos_reg, GOAL_POSITION_REG),
+    AP_GROUPINFO("ID_BM", 5, AP_TTLServo, servo_id_mask, 0),
 
     AP_GROUPEND
 };
@@ -162,7 +148,7 @@ uint8_t AP_TTLServo::calculate_crc(uint8_t *tx_packet, uint8_t len)
 void AP_TTLServo::configure_servos(void)
 {
     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"Configuring servo");
-    send_command(BROADCAST_ID, servo_des_run_speed_reg, servo_des_run_speed, 2);
+    send_command(BROADCAST_ID, RUNNING_SPEED_REG, servo_des_run_speed, 2);
 }
 
 // Use a broadcast ping to find attached servos
@@ -213,6 +199,7 @@ void AP_TTLServo::process_packet(RESPONSE_TYPE response,const uint8_t *packet, u
     if (!(id_mask & servo_id_mask)) {
         GCS_SEND_TEXT(MAV_SEVERITY_INFO, "TTLServo: ID %u identified\n",id);
         servo_id_mask.set_and_save_ifchanged(servo_id_mask+id_mask);
+        servo_count++;
     }
 
     switch (response)
@@ -240,13 +227,14 @@ void AP_TTLServo::process_packet(RESPONSE_TYPE response,const uint8_t *packet, u
                 int8_t direction = (raw & 0x8000)==0?1:-1;
                 uint16_t raw_magnitude = (raw & 0x7FFF);
                 float position = direction * raw_magnitude * 0.087;
-                if(!is_equal(servo_state[id].angular_position_deg, position))
+                int8_t i = id - 1;
+                if(!is_equal(telem_data[i].angle, position))
                 {
                     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo:Curr Position:%0.2f",position);
 
                 }
-                servo_state[id].angular_position_deg = position;
-                servo_state[id].last_position_update_ms = AP_HAL::millis();
+                telem_data[i].angle = position;
+                telem_data[i].last_response_ms = AP_HAL::millis();
 #if TTLSERVO_DEBUG_LEVEL > 0
                 _debug.read_position_response_count++;
 #endif
@@ -275,6 +263,9 @@ void AP_TTLServo::process_packet(RESPONSE_TYPE response,const uint8_t *packet, u
                 {
                     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Command Error: %d",error_status);
                 }
+                int8_t i = id - 1;
+                telem_data[i].error_flags = error_status;
+                telem_data[i].last_response_ms = AP_HAL::millis();
 #if TTLSERVO_DEBUG_LEVEL > 0
                 _debug.position_command_response_count++;
 #endif
@@ -497,7 +488,7 @@ void AP_TTLServo::set_pwm()
 
         // Send the goal position to the servo
         uint8_t id = i+1;
-        send_command(id, servo_goal_pos_reg, goalPosition, 2);
+        send_command(id, GOAL_POSITION_REG, goalPosition, 2);
 #if TTLSERVO_DEBUG_LEVEL > 0
                 _debug.position_command_count++;
 #endif
@@ -629,67 +620,42 @@ void AP_TTLServo::update()
         default:
             break;
     }
-    
+
+    update_telem();
 #if TTLSERVO_DEBUG_LEVEL > 0
         print_debug();
 #endif    
-    // Configure the servos with the required values so they can work - sent by
-    // broadcast Packet
-    // if (configured_servos < CONFIGURE_SERVO_COUNT) {
-    //     configured_servos++;
-    //     last_send_us = now;
-    //     configure_servos();
-    //     return;
-    // }
 
-    // last_send_us = now;
-    // delay_time_us = 0;
+}
 
-    // // Loop through all servo channels
-    // for (uint8_t i = 0; i < NUM_SERVO_CHANNELS; i++) {
+void AP_TTLServo::update_telem()
+{
+    // Report telem data
+    AP_Servo_Telem *servo_telem = AP_Servo_Telem::get_singleton();
+    if (servo_telem != nullptr) {
+        const uint32_t now_ms = AP_HAL::millis();
+        
+        for (uint8_t i=0; i<ARRAY_SIZE(telem_data); i++) {
 
-    //     // If this channel doesn't correspond to a servo ID, skip it
-    //     if (((1U << i) & servo_id_mask) == 0) {
-    //         continue;
-    //     }
 
-    //     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Read Srv chan: %d",i);
+            if ((telem_data[i].last_response_ms == 0) || ((now_ms - telem_data[i].last_response_ms) > 5000)) {
+                // Never seen telem, or not had a response for more than 5 seconds
+                continue;
+            }
 
-    //     SRV_Channel *c = SRV_Channels::srv_channel(i);
+            const AP_Servo_Telem::TelemetryData data {
+                .command_position = 0,
+                .measured_position = telem_data[i].angle,
+                .voltage = 0,
+                .current = 0,
+                .status_flags = telem_data[i].error_flags,
+                .present_types = AP_Servo_Telem::TelemetryData::Types::MEASURED_POSITION |
+                                AP_Servo_Telem::TelemetryData::Types::STATUS,
+            };
 
-    //     if (c == nullptr) {
-    //         continue;
-    //     }
-
-    //     // Calculate the desired goal position, converting the channel values
-    //     // to the servo values
-    //     const uint16_t pwm = c->get_output_pwm();
-    //     const uint16_t min = c->get_output_min();
-    //     const uint16_t max = c->get_output_max();
-    //     float v = float(pwm - min) / (max - min);
-    //     uint16_t goalPosition = (uint16_t)(pos_min) + (uint16_t)(v * (pos_max - pos_min));
-
-    //     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: i: %d,PWM: %d",i,pwm);
-
-    //     // Don't send goal position if it is equal to previous
-    //     if (servo_position[i] == goalPosition) {
-    //         continue;
-    //     } else {
-    //         servo_position[i] = goalPosition;
-    //     }
-
-    //     // Send the goal position to the servo
-    //     send_command(i, servo_goal_pos_reg, goalPosition, 2);
-    // }
-
-    
-    // read_bytes();
-
-    // if(last_send_us!=0 && now - last_send_us > delay_time_us)
-    // {   
-    //     send_position_read_command();
-    //     last_send_us = 0;
-    // }
+            servo_telem->update_telem_data(i, data);
+        }
+    }
 
 }
 
