@@ -105,8 +105,8 @@ const AP_Param::GroupInfo AP_LTE::var_info[] = {
 
     // @Param: OPTIONS
     // @DisplayName: Driver options
-    // @Description: Option bits. NoMux and DirectPush are inert in this driver, which has neither transport, but keep their bit positions so a value carried over from the Lua applet still means the same thing.
-    // @Bitmask: 0:LogAll,1:Signals,2:NoMux(inert),3:NoSigQuery,4:TCP,5:DirectPush(inert)
+    // @Description: Option bits. DirectPush is inert in this driver, which does not have that transport, but keeps its bit position so a value carried over from the Lua applet still means the same thing.
+    // @Bitmask: 0:LogAll,1:Signals,2:NoMux,3:NoSigQuery,4:TCP,5:DirectPush(inert)
     // @User: Advanced
     AP_GROUPINFO("OPTIONS", 12, AP_LTE, _options, 6),
 
@@ -201,6 +201,10 @@ AP_LTE::AP_LTE()
     _last_band = INT32_MIN;
     _log_fd = -1;
     _post_reset = true;
+    _found_cmux = false;
+    _cmux_was_set = false;
+    _cmux_force_disabled = false;
+    _cmux_cpin_strikes = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -326,6 +330,7 @@ const char *AP_LTE::step_name(Step s)
 {
     switch (s) {
     case Step::ATI:          return "ATI";
+    case Step::CMUX:         return "CMUX";
     case Step::BAUD:         return "BAUD";
     case Step::CPIN:         return "CPIN";
     case Step::CONFIG:       return "CONFIG";
@@ -337,6 +342,8 @@ const char *AP_LTE::step_name(Step s)
     case Step::CEREG_CHECK:  return "CEREG_CHECK";
     case Step::SOCKET_STATE: return "SOCKET_STATE";
     case Step::CIPCLOSE:     return "CIPCLOSE";
+    case Step::CGACT:        return "CGACT";
+    case Step::PPPOPEN:      return "PPPOPEN";
     case Step::CIPMODE:      return "CIPMODE";
     case Step::NETOPEN:      return "NETOPEN";
     case Step::CIPOPEN:      return "CIPOPEN";
@@ -421,8 +428,9 @@ uint32_t AP_LTE::run_step()
 
     const uint32_t time_in_step_s = (now_ms - _step_timer_ms) / 1000;
 
-    if (!step_changed && _step != Step::ATI && _step != Step::CPIN &&
-        _step != Step::CREG && _step != Step::HALT && _step != Step::HTTPAUTH) {
+    if (!step_changed && _step != Step::ATI && _step != Step::CMUX &&
+        _step != Step::CPIN && _step != Step::CREG && _step != Step::HALT &&
+        _step != Step::HTTPAUTH) {
         if (time_in_step_s > uint32_t(pget(_stuck_t))) {
             GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE: %s timeout after %ds",
                           step_name(_step), int(pget(_stuck_t)));
@@ -431,7 +439,8 @@ uint32_t AP_LTE::run_step()
         }
     }
 
-    if (!step_changed && (_step == Step::CPIN || _step == Step::CREG)) {
+    if (!step_changed && (_step == Step::CPIN || _step == Step::CREG ||
+                          _step == Step::CMUX)) {
         const uint32_t patience = MAX(30U, uint32_t(pget(_stuck_t)) * 3);
         if (time_in_step_s > patience) {
             GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "LTE: %s search failed, hard reset",
@@ -447,6 +456,7 @@ uint32_t AP_LTE::run_step()
                       _halt_reason != nullptr ? _halt_reason : "unknown reason");
         return 15000;
     case Step::ATI:          step_ATI();          return 1100;
+    case Step::CMUX:         step_CMUX();         return 50;
     case Step::BAUD:         step_BAUD();         return 50;
     case Step::CPIN:         step_CPIN();         return 50;
     case Step::CONFIG:       step_CONFIG();       return 50;
@@ -458,6 +468,8 @@ uint32_t AP_LTE::run_step()
     case Step::CEREG_CHECK:  step_CEREG_CHECK();  return 100;
     case Step::SOCKET_STATE: step_SOCKET_STATE(); return 50;
     case Step::CIPCLOSE:     step_CIPCLOSE();     return 50;
+    case Step::CGACT:        step_CGACT();        return 200;
+    case Step::PPPOPEN:      step_PPPOPEN();      return 200;
     case Step::CIPMODE:      step_CIPMODE();      return 200;
     case Step::NETOPEN:      step_NETOPEN();      return 200;
     case Step::CIPOPEN:      step_CIPOPEN();      return 50;
@@ -469,8 +481,21 @@ uint32_t AP_LTE::run_step()
     return 1000;
 }
 
+bool AP_LTE::ppp_mode() const
+{
+    return uint8_t(pget(_protocol)) == AP_SerialManager::SerialProtocol_PPP;
+}
+
+AP_LTE::Step AP_LTE::ppp_entry() const
+{
+    return _modem->cgact != nullptr ? Step::CGACT : Step::PPPOPEN;
+}
+
 AP_LTE::Step AP_LTE::next_after_registration() const
 {
+    if (ppp_mode()) {
+        return ppp_entry();
+    }
     if (_modem->fast_connect) {
         return Step::SIGNAL_GATE;
     }
@@ -490,32 +515,84 @@ AP_LTE::Step AP_LTE::next_after_registration() const
 // UART
 // ---------------------------------------------------------------------------
 
-uint16_t AP_LTE::uart_read()
+// Bytes exactly as the modem sent them, no de-framing. Used only by the steps
+// that run before the mux exists, where there is nothing to de-frame.
+uint16_t AP_LTE::uart_read_raw()
 {
-    _chunk_len = 0;
+    _raw_len = 0;
     if (_uart == nullptr) {
         return 0;
     }
-    const ssize_t n = _uart->read(_chunk, sizeof(_chunk));
+    const ssize_t n = _uart->read(_raw, sizeof(_raw));
     if (n <= 0) {
         return 0;
     }
-    _chunk_len = uint16_t(n);
-    log_raw(_chunk, _chunk_len, "<<<");
-    _bytes_in += _chunk_len;
+    _raw_len = uint16_t(n);
+    log_raw(_raw, _raw_len, "<<<");
+    _bytes_in += _raw_len;
     if (_step != Step::CONNECTED) {
         _last_data_ms = AP_HAL::millis();
     }
+    return _raw_len;
+}
+
+uint16_t AP_LTE::uart_read()
+{
+    _chunk_len = 0;
+    _dlc2_len = 0;
+    if (uart_read_raw() == 0) {
+        return 0;
+    }
+    if (!cmux_enabled()) {
+        memcpy(_chunk, _raw, _raw_len);
+        _chunk_len = _raw_len;
+        return _chunk_len;
+    }
+    // fills _chunk from DLC 1 and _dlc2 from DLC 2
+    cmux_feed(_raw, _raw_len);
     return _chunk_len;
 }
 
+void AP_LTE::uart_write_raw(const char *s)
+{
+    if (s == nullptr || _txq == nullptr) {
+        return;
+    }
+    const uint16_t len = uint16_t(strlen(s));
+    _txq->write((const uint8_t *)s, len);
+    log_raw((const uint8_t *)s, len, ">>>");
+    _bytes_out += len;
+}
+
+// An AT command: DLC 1 when multiplexed, straight at the UART otherwise.
 void AP_LTE::send_raw(const uint8_t *data, uint16_t len)
 {
     if (data == nullptr || len == 0 || _txq == nullptr) {
         return;
     }
-    _txq->write(data, len);
+    if (cmux_enabled()) {
+        cmux_send(CMUX_DLC_AT, data, len);
+    } else {
+        _txq->write(data, len);
+    }
     if (option_enabled(OPT_LOGALL) || _step != Step::CONNECTED) {
+        log_raw(data, len, ">>>");
+    }
+    _bytes_out += len;
+}
+
+// The socket stream, which rides DLC 2 when multiplexed.
+void AP_LTE::data_send(const uint8_t *data, uint16_t len)
+{
+    if (data == nullptr || len == 0 || _txq == nullptr) {
+        return;
+    }
+    if (cmux_enabled()) {
+        cmux_send(CMUX_DLC_DATA, data, len);
+    } else {
+        _txq->write(data, len);
+    }
+    if (option_enabled(OPT_LOGALL)) {
         log_raw(data, len, ">>>");
     }
     _bytes_out += len;
@@ -561,6 +638,46 @@ void AP_LTE::at_sendf(const char *fmt, ...)
     at_send(buf);
 }
 
+/*
+  Format and send a command on the socket channel (DLC 2 when multiplexed).
+
+  Quectel's transparent access mode binds the socket to whichever channel
+  issued the open, so every command on the data path -- socket open, CIPMODE,
+  NETOPEN, the PPP dial -- has to go out on DLC 2 and not the AT channel.
+  Issued on DLC 1 the socket lands on the AT channel instead: the downlink is
+  parsed as AT text and discarded, and every uplink byte is framed to a
+  channel with no socket on it.
+
+  Unlike bulk socket traffic these are part of the AT dialogue, so they are
+  always logged rather than only under LOGALL.
+*/
+void AP_LTE::data_sendf(const char *fmt, ...)
+{
+    char buf[128];
+    va_list ap;
+    va_start(ap, fmt);
+    hal.util->vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    const uint16_t len = uint16_t(strlen(buf));
+    if (!option_enabled(OPT_LOGALL)) {
+        log_raw((const uint8_t *)buf, len, ">>>");
+    }
+    data_send((const uint8_t *)buf, len);
+}
+
+/*
+  Accumulate both mux channels into the reply buffer.
+
+  A command sent on DLC 2 is answered there, but modems also echo socket
+  status on the AT channel, so the steps that wait on the data path scan both.
+  Unmuxed, _dlc2_len is always zero and this is just rx_append.
+*/
+void AP_LTE::rx_append_all()
+{
+    rx_append(_chunk, _chunk_len);
+    rx_append(_dlc2, _dlc2_len);
+}
+
 void AP_LTE::uart_write_pending()
 {
     if (_txq == nullptr || _uart == nullptr) {
@@ -594,6 +711,9 @@ void AP_LTE::send_data_reset()
     if (!_modem->reset_not_baudrate) {
         _uart->begin(pget(_ibaud));
     }
+    // After the reset command is queued, not before: at_send still has to
+    // frame it if the modem is currently multiplexed.
+    _found_cmux = false;
     GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: sent reset");
 }
 
@@ -698,6 +818,9 @@ void AP_LTE::reset_buffers()
     _last_data_ms = AP_HAL::millis();
     rx_reset();
     _fc_len = 0;
+    _chunk_len = 0;
+    _dlc2_len = 0;
+    _cmux_partial_len = 0;
     _port.device_clear();
 }
 
@@ -705,6 +828,10 @@ void AP_LTE::reset_state()
 {
     _step = Step::ATI;
     _modem = &AP_LTE_default_modem;
+    // _cmux_force_disabled deliberately survives: it records that this
+    // modem's firmware cannot do CMUX, which a reset does not change.
+    _found_cmux = false;
+    _cmux_was_set = false;
     reset_buffers();
     if (_txq != nullptr) {
         _txq->clear();

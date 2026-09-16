@@ -32,7 +32,7 @@ STATIC_PORT = 9999
 
 # ── Expected step order for the happy path ────────────────────────────
 # Allow CIPCLOSE between SOCKET_STATE and final CIPOPEN/CONNECTED
-ALLOWED_STEPS = {"ATI", "BAUD", "CPIN", "CONFIG", "CREG", "HTTPAUTH",
+ALLOWED_STEPS = {"ATI", "CMUX", "BAUD", "CPIN", "CONFIG", "CREG", "HTTPAUTH",
                  "SIGNAL_GATE", "QENG", "SOCKET_STATE", "CIPOPEN",
                  "CIPCLOSE", "CONNECTED"}
 # ATI is not required even though it always runs first. AP_LTE starts from
@@ -97,6 +97,10 @@ qiopen_result = {
 }
 qiopen_lock = threading.Lock()
 
+# The live CmuxLink, so the checks at the end can ask what actually reached
+# the socket channel.
+mock_link = None
+
 
 def handle_qiopen(line_str, ser):
     """Validate QIOPEN has correct IP and port, reject if wrong."""
@@ -111,6 +115,13 @@ def handle_qiopen(line_str, ser):
             print(f"[MOCK] TX: QIOPEN validated OK "
                   f"({EXPECTED_IP}:{EXPECTED_PORT})", flush=True)
             ser.write(b'\r\nOK\r\n+QIOPEN: 0,0\r\n')
+            # Access mode 2: the channel that opened the socket now carries
+            # it. Unmuxed that is the whole port; muxed it is DLC 2 -- and if
+            # the driver opened on DLC 1, DLC 2 never goes transparent and
+            # nothing it writes there is ever counted.
+            if hasattr(ser, 'data_transparent') and \
+                    (not ser.muxed or ser.reply_dlc == 2):
+                ser.data_transparent = True
         else:
             qiopen_result['validated'] = False
             print(f"[MOCK] TX: QIOPEN REJECTED — expected "
@@ -134,12 +145,147 @@ def finish_upload(pending, ser):
     ser.flush()
 
 
+def _fcs_table():
+    tbl = []
+    for i in range(256):
+        c = i
+        for _ in range(8):
+            c = (c >> 1) ^ 0xE0 if c & 1 else c >> 1
+        tbl.append(c)
+    return tbl
+
+
+CMUX_FCS = _fcs_table()
+CMUX_FLAG = 0xF9
+
+
+def cmux_fcs(header):
+    fcs = 0xFF
+    for b in header:
+        fcs = CMUX_FCS[fcs ^ b]
+    return (~fcs) & 0xFF
+
+
+def cmux_frame(dlc, payload, ctrl=0xEF):
+    """One GSM 07.10 basic-mode frame. ctrl 0xEF is UIH, 0x73 is UA."""
+    hdr = bytes([(dlc << 2) | 0x01 | 0x02, ctrl | 0x10])
+    n = len(payload)
+    hdr += bytes([(n << 1) | 0x01]) if n <= 127 \
+        else bytes([(n & 0x7F) << 1, (n >> 7) & 0xFF])
+    return bytes([CMUX_FLAG]) + hdr + payload + \
+        bytes([cmux_fcs(hdr), CMUX_FLAG])
+
+
+class CmuxLink:
+    """Serial port that can speak either plain AT or GSM 07.10 basic mode.
+
+    The AT logic above is written against a plain port, so the framing is
+    hidden here: read() hands back AT payload and write() frames the reply
+    onto whichever channel the command arrived on.
+
+    Both DLC 1 and DLC 2 are AT channels to start with, as on a real modem.
+    Quectel's access mode 2 binds the socket to the channel that issued the
+    open, so once QIOPEN succeeds DLC 2 goes transparent and everything on it
+    is counted as socket bytes. A driver that opens the socket on DLC 1 and
+    then writes telemetry to DLC 2 gets no CONNECT and no data through.
+    """
+
+    def __init__(self, ser):
+        self.ser = ser
+        self.muxed = False
+        self.partial = b''
+        self.data_rx = 0
+        self.data_buf = b''
+        self.sabm_seen = 0
+        self.reply_dlc = 1
+        self.data_transparent = False
+
+    def read(self, n):
+        data = self.ser.read(n)
+        if not data:
+            return data
+        if not self.muxed:
+            # Unmuxed there is one stream, so once the socket is open its
+            # bytes and the driver's AT polling are the same bytes. Count
+            # them, and still hand them to the AT parser.
+            if self.data_transparent:
+                self.data_rx += len(data)
+                self.data_buf = (self.data_buf + data)[-8192:]
+            return data
+        self.partial += data
+        return self._deframe()
+
+    def _deframe(self):
+        at = b''
+        buf = self.partial
+        pos = 0
+        while pos < len(buf):
+            while pos < len(buf) and buf[pos] != CMUX_FLAG:
+                pos += 1
+            if len(buf) - pos < 6:
+                break
+            addr, ctrl, l1 = buf[pos + 1], buf[pos + 2], buf[pos + 3]
+            if l1 & 0x01:
+                plen, hlen = l1 >> 1, 3
+            else:
+                if len(buf) - pos < 7:
+                    break
+                plen, hlen = (l1 >> 1) | (buf[pos + 4] << 7), 4
+            flen = 1 + hlen + plen + 2
+            if len(buf) - pos < flen:
+                break
+            if buf[pos + flen - 1] != CMUX_FLAG:
+                pos += 1
+                continue
+            dlc = (addr >> 2) & 0x3F
+            payload = buf[pos + 1 + hlen:pos + 1 + hlen + plen]
+            if (ctrl & 0xEF) == 0xEF:
+                if dlc == 2 and self.data_transparent:
+                    self.data_rx += len(payload)
+                    self.data_buf = (self.data_buf + payload)[-8192:]
+                elif dlc in (1, 2):
+                    at += payload
+                    self.reply_dlc = dlc
+            elif (ctrl & ~0x10) == 0x2F:          # SABM: acknowledge with UA
+                self.sabm_seen += 1
+                self.ser.write(cmux_frame(dlc, b'', ctrl=0x63))
+            pos += flen
+        self.partial = buf[pos:]
+        return at
+
+    def write(self, data):
+        self.ser.write(cmux_frame(self.reply_dlc, data) if self.muxed else data)
+
+    def inject_socket(self, data):
+        """Push bytes into the open socket, the way the relay server would.
+
+        Muxed this has to be DLC 2, the channel the socket was opened on.
+        This is the GCS -> vehicle direction, which nothing else here covers:
+        every other check only proves the vehicle can transmit.
+        """
+        self.ser.write(cmux_frame(2, data) if self.muxed else data)
+        self.ser.flush()
+
+    def flush(self):
+        self.ser.flush()
+
+
 def handle_line(line_str, ser):
     """Respond to one AT command.
 
     Returns a pending-upload dict when the reply was a CONNECT prompt, so
     the caller stops line-splitting and counts raw bytes instead.
     """
+    if 'AT+CMUX' in line_str:
+        time.sleep(0.05)
+        # Echoed command then OK, because ATE0 does not go out until CONFIG.
+        # The port only starts framing after this reply is on the wire.
+        ser.ser.write(b'AT+CMUX=0\r\r\nOK\r\n')
+        ser.ser.flush()
+        ser.muxed = True
+        print("[MOCK] TX: CMUX=0 OK, switching to framed mode", flush=True)
+        return None
+
     if 'AT+QIOPEN' in line_str:
         time.sleep(0.05)
         handle_qiopen(line_str, ser)
@@ -195,10 +341,58 @@ def handle_line(line_str, ser):
     return None
 
 
+def check_uplink(link):
+    """Send a param read into the socket, wait for the answer to come back.
+
+    Proves the GCS -> vehicle direction end to end. A vehicle that can
+    transmit but never receives looks perfectly healthy until you try to
+    command it.
+    """
+    if link is None:
+        print("\n⚠️  WARN: no mock link, uplink not checked", flush=True)
+        return True
+
+    from pymavlink.dialects.v20 import ardupilotmega as mav2
+
+    mav = mav2.MAVLink(None, srcSystem=255, srcComponent=190)
+    req = mav.param_request_read_encode(1, 1, b"SYSID_THISMAV", -1).pack(mav)
+
+    # Matched on the raw bytes rather than decoded: unmuxed the socket stream
+    # carries the driver's own AT polling alongside telemetry, so a strict
+    # parser trips over it. PARAM_VALUE carries param_id as plain ASCII, and
+    # the request travels the other way, so this can only be the reply.
+    needle = b"SYSID_THISMAV"
+    link.data_buf = b''
+    deadline = time.time() + 15
+    next_send = 0.0
+    while time.time() < deadline:
+        if time.time() >= next_send:
+            link.inject_socket(req)
+            next_send = time.time() + 1.0
+            print("[MOCK] TX->socket: PARAM_REQUEST_READ SYSID_THISMAV",
+                  flush=True)
+        if needle in link.data_buf:
+            print("✅ GCS->vehicle round trip OK: PARAM_VALUE came back "
+                  "through the socket", flush=True)
+            return True
+        time.sleep(0.2)
+
+    print("\n❌ FAIL: no answer to PARAM_REQUEST_READ sent into the socket",
+          flush=True)
+    print(f"   The vehicle transmits ({link.data_rx}B out) but is not acting "
+          f"on what it receives.", flush=True)
+    if link.muxed:
+        print("   Multiplexed: check the driver reads socket bytes from the "
+              "same DLC it opened the socket on.", flush=True)
+    return False
+
+
 def mock_modem_thread(port):
     """Serial listener that responds to AT commands."""
+    global mock_link
     try:
-        ser = serial.Serial(port, 115200, timeout=0.1)
+        ser = CmuxLink(serial.Serial(port, 115200, timeout=0.1))
+        mock_link = ser
         print(f"[MOCK] Listening on {port}...", flush=True)
         buf = b''
         pending = None          # set while a CONNECT payload is inbound
@@ -420,6 +614,44 @@ def monitor_gcs(mavlink_port, inject_port, timeout):
                 else:
                     print(f"\n⚠️  WARN: CONNECTED but no QIOPEN seen",
                           flush=True)
+
+            # --- CHECK 4: telemetry actually reaches the socket ---
+            # Reaching CONNECTED only proves the socket opened. This proves
+            # MAVLink is flowing through it -- and when multiplexed, that it
+            # is on the channel the socket was opened on. Open the socket on
+            # DLC 1 and write telemetry to DLC 2 and every check above still
+            # passes while nothing leaves the vehicle.
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                if mock_link is not None and mock_link.data_rx > 0:
+                    break
+                time.sleep(0.2)
+            if mock_link is None:
+                print("\n⚠️  WARN: no mock link to inspect", flush=True)
+            elif mock_link.data_rx == 0:
+                print("\n❌ FAIL: CONNECTED but no bytes reached the socket "
+                      "channel in 10s", flush=True)
+                if mock_link.muxed:
+                    print("   Multiplexed: the socket was opened on one DLC "
+                          "and the telemetry written to another.", flush=True)
+                return 1
+            elif b'\xfd' not in mock_link.data_buf:
+                print(f"\n❌ FAIL: {mock_link.data_rx}B reached the socket but "
+                      f"none of it is MAVLink2 (no 0xFD)", flush=True)
+                return 1
+            else:
+                print(f"✅ Socket carries MAVLink2: {mock_link.data_rx}B",
+                      flush=True)
+
+            # --- CHECK 5: GCS -> vehicle round trip ---
+            # Everything above only proves the vehicle can transmit. This
+            # pushes a PARAM_REQUEST_READ into the socket the way the relay
+            # server would and waits for the PARAM_VALUE to come back out of
+            # it, which exercises socket -> driver -> virtual port -> MAVLink
+            # backend -> reply -> socket. Without it a driver that receives
+            # nothing at all still passes every other check.
+            if not check_uplink(mock_link):
+                return 1
 
             print(f"\n✅ SUCCESS: All checks passed.", flush=True)
             return 0

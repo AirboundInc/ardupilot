@@ -223,6 +223,27 @@ bool AP_LTE::check_CSQ()
     return true;
 }
 
+/*
+  "+CGACT: <cid>,<state>" -- PDP context activation state, reported during
+  PPP bring-up so a context that never comes up is visible in the messages
+  tab rather than showing only as a stalled step.
+*/
+bool AP_LTE::check_CGACT()
+{
+    const char *p = rx_at("+CGACT:");
+    if (p == nullptr) {
+        return false;
+    }
+    p += strlen("+CGACT:");
+    int32_t cid = 0, active = 0;
+    if (!parse_int(p, cid) || !parse_int_after(p, ',', active)) {
+        return false;
+    }
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE CGACT: %ld,%ld",
+                  (long)cid, (long)active);
+    return true;
+}
+
 bool AP_LTE::check_CPSI()
 {
     const char *p = rx_at("+CPSI:");
@@ -532,6 +553,19 @@ void AP_LTE::check_modem_revision(const char *s)
     if (_fw_short[0] == 0) {
         strncpy(_fw_short, _modem_revision, sizeof(_fw_short) - 1);
         _fw_short[sizeof(_fw_short) - 1] = 0;
+    }
+
+    // CMUX auto-disable is EC25-specific; every other family goes through the
+    // normal path on its own cmux field.
+    if (strncmp(_modem_revision, "EC25", 4) == 0) {
+        if (is_known_broken_cmux(_modem_revision)) {
+            _cmux_force_disabled = true;
+            GCS_SEND_TEXT(MAV_SEVERITY_WARNING,
+                          "LTE_modem: known-broken CMUX firmware, staying unmuxed");
+        } else if (!is_known_good_ec25(_modem_revision)) {
+            GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE: untested EC25 fw %s - assuming CMUX OK",
+                          _modem_revision);
+        }
     }
 }
 

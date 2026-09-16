@@ -122,6 +122,7 @@ static const AP_LTE_HTTP simcom_http = {
 #define QUECTEL_COMMON(NAME, BANNER, PREFLIGHT, BANDMASK, BANDALL)            \
     .name = NAME,                                                             \
     .banner = BANNER,                                                         \
+    .cmux = "AT+CMUX=0\r\n",                                                 \
     .spn = "AT+QSPN\r\n",                                                     \
     .setbaud = nullptr,                                                       \
     .cpsi = "AT+QENG=\"servingcell\"\r\n",                                    \
@@ -132,6 +133,8 @@ static const AP_LTE_HTTP simcom_http = {
     .cipopen_tcp = "AT+QIOPEN=1,0,\"TCP\",\"%d.%d.%d.%d\",%d,0,2\r\n",        \
     .cipopen_udp = "AT+QIOPEN=1,0,\"UDP\",\"%d.%d.%d.%d\",%d,6001,2\r\n",     \
     .cipclose = "AT+QICLOSE=0\r\n",                                           \
+    .pppopen = "ATD*99#\r",                                                   \
+    .cgact = nullptr,                                                         \
     .netopen = nullptr,                                                       \
     .netclose = nullptr,                                                      \
     .caswitch = nullptr,                                                      \
@@ -160,6 +163,7 @@ const AP_LTE_ModemInfo AP_LTE_modem_list[] = {
     {
         .name = "SimCom",
         .banner = "SIMCOM",
+        .cmux = "AT+CMUX=0\r\n",
         .spn = "AT+CSPN?\r\n",
         .setbaud = "AT+IPR=%u\r\n",
         .cpsi = "AT+CPSI?\r\n",
@@ -170,6 +174,8 @@ const AP_LTE_ModemInfo AP_LTE_modem_list[] = {
         .cipopen_tcp = "AT+CIPOPEN=0,\"TCP\",\"%d.%d.%d.%d\",%d\r\n",
         .cipopen_udp = "AT+CIPOPEN=0,\"UDP\",\"%d.%d.%d.%d\",%d,6001\r\n",
         .cipclose = "AT+CIPCLOSE=0\r\n",
+        .pppopen = "ATD*99#\r",
+        .cgact = nullptr,
         .netopen = "AT+NETOPEN\r\n",
         .netclose = nullptr,
         .caswitch = nullptr,
@@ -189,6 +195,7 @@ const AP_LTE_ModemInfo AP_LTE_modem_list[] = {
     {
         .name = "SimCom2",
         .banner = "R1951",
+        .cmux = "AT+CMUX=0\r\n",
         .spn = "AT+CSPN?\r\n",
         .setbaud = "AT+IPR=%u\r\n",
         .cpsi = "AT+CPSI?\r\n",
@@ -199,6 +206,10 @@ const AP_LTE_ModemInfo AP_LTE_modem_list[] = {
         .cipopen_tcp = "AT+CAOPEN=0,0,\"TCP\",\"%d.%d.%d.%d\",%d\r\n",
         .cipopen_udp = "AT+CAOPEN=0,0,\"UDP\",\"%d.%d.%d.%d\",%d\r\n",
         .cipclose = nullptr,
+        .pppopen = "ATD*99#\r",
+        // Queried, not set: this family reports context state and PPPOPEN
+        // waits for it to read active before dialling.
+        .cgact = "AT+CGACT?\r\n",
         .netopen = "AT+CNACT=0,1\r\n",
         .netclose = "AT+CNACT=0,0\r\n",
         .caswitch = "AT+CASWITCH=0,1\r\n",
@@ -220,6 +231,7 @@ const AP_LTE_ModemInfo AP_LTE_modem_list[] = {
         // so it only ever connected over PPP. CIPOPEN halts on it and says so.
         .name = "Air780",
         .banner = "AirM2M_780E",
+        .cmux = nullptr,
         .spn = nullptr,
         .setbaud = "AT+IPR=%u\r\n",
         .cpsi = nullptr,
@@ -230,6 +242,8 @@ const AP_LTE_ModemInfo AP_LTE_modem_list[] = {
         .cipopen_tcp = nullptr,
         .cipopen_udp = nullptr,
         .cipclose = nullptr,
+        .pppopen = "ATD*99#\r",
+        .cgact = "AT+CGACT=1,1\r\n",
         .netopen = nullptr,
         .netclose = nullptr,
         .caswitch = nullptr,
@@ -268,6 +282,7 @@ const uint8_t AP_LTE_modem_count = ARRAY_SIZE(AP_LTE_modem_list);
 const AP_LTE_ModemInfo AP_LTE_default_modem = {
     .name = "unknown",
     .banner = nullptr,
+    .cmux = nullptr,
     .spn = nullptr,
     .setbaud = nullptr,
     .cpsi = nullptr,
@@ -278,6 +293,8 @@ const AP_LTE_ModemInfo AP_LTE_default_modem = {
     .cipopen_tcp = nullptr,
     .cipopen_udp = nullptr,
     .cipclose = nullptr,
+    .pppopen = nullptr,
+    .cgact = nullptr,
     .netopen = nullptr,
     .netclose = nullptr,
     .caswitch = nullptr,

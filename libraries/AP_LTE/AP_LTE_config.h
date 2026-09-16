@@ -35,3 +35,9 @@
 #ifndef AP_LTE_VPORT_TXBUF
 #define AP_LTE_VPORT_TXBUF 2048
 #endif
+
+// How many muxed attempts may reach CMUX and then time out on CPIN before the
+// driver gives up on the mux for the rest of the boot.
+#ifndef AP_LTE_CMUX_CPIN_STRIKES
+#define AP_LTE_CMUX_CPIN_STRIKES 3
+#endif

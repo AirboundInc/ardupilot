@@ -98,6 +98,7 @@ public:
     enum class Step : uint8_t {
         ATI = 0,
         BAUD,
+        CMUX,
         CPIN,
         CONFIG,
         CREG,
@@ -108,6 +109,8 @@ public:
         CEREG_CHECK,
         SOCKET_STATE,
         CIPCLOSE,
+        CGACT,
+        PPPOPEN,
         CIPMODE,
         NETOPEN,
         CIPOPEN,
@@ -118,9 +121,9 @@ public:
 private:
     static AP_LTE *_singleton;
 
-    // LTE_OPTIONS bits. NOMUX and DPUSH are inert: this driver has neither
-    // transport, but the bits keep their values so a fleet-wide LTE_OPTIONS
-    // carried over from the Lua applet still means the same thing.
+    // LTE_OPTIONS bits. DPUSH is inert: this driver has no direct-push (QISEND)
+    // transport. The bit keeps its value so a fleet-wide LTE_OPTIONS carried
+    // over from the Lua applet still means the same thing.
     enum Option : uint16_t {
         OPT_LOGALL     = (1U << 0),
         OPT_SIGNALS    = (1U << 1),
@@ -180,18 +183,59 @@ private:
     void step_CEREG_CHECK();
     void step_SOCKET_STATE();
     void step_CIPCLOSE();
+    void step_CGACT();
+    void step_PPPOPEN();
     void step_CIPMODE();
     void step_NETOPEN();
     void step_CIPOPEN();
     void step_CONNECTED();
 
     Step next_after_registration() const;
+    // LTE_PROTOCOL 48: hand the modem's PPP link to the IP stack instead of
+    // opening a socket ourselves.
+    bool ppp_mode() const;
+    // Where PPP bring-up starts: the context check, or straight to the dial.
+    Step ppp_entry() const;
+
+    // ---- CMUX (GSM 07.10 basic mode) ---------------------------------------
+    enum : uint8_t {
+        CMUX_FLAG      = 0xF9,
+        CMUX_UIH       = 0xEF,
+        CMUX_SABM      = 0x2F,
+        CMUX_EA        = 0x01,
+        CMUX_CR        = 0x02,
+        CMUX_DLC_AT    = 1,
+        CMUX_DLC_DATA  = 2,
+        // safe for any chipset's N1 default; see cmux_send()
+        CMUX_MAX_FRAME = 127,
+    };
+
+    bool cmux_enabled() const;
+    static uint8_t cmux_fcs(const uint8_t *data, uint8_t len);
+    uint16_t cmux_encode(uint8_t dlc, uint8_t type, const uint8_t *data, uint16_t len,
+                         uint8_t *out, uint16_t out_len);
+    void cmux_send(uint8_t dlc, const uint8_t *data, uint16_t len);
+    void cmux_send_sabm();
+    void cmux_feed(const uint8_t *data, uint16_t len);
+    void step_CMUX();
+    static bool is_known_broken_cmux(const char *rev);
+    static bool is_known_good_ec25(const char *rev);
 
     // ---- UART / framing ----------------------------------------------------
-    uint16_t uart_read();               // into _chunk, returns byte count
+    // Leaves de-framed AT-channel bytes in _chunk (and socket bytes in _dlc2)
+    // when multiplexed, so every step reads replies the same way either way.
+    uint16_t uart_read();
+    // Raw and unframed, for the phases that run before the mux exists.
+    uint16_t uart_read_raw();
+    void uart_write_raw(const char *s);
     void send_raw(const uint8_t *data, uint16_t len);
+    // socket stream: DLC 2 when multiplexed, straight at the UART otherwise
+    void data_send(const uint8_t *data, uint16_t len);
     void at_send(const char *cmd);
     void at_sendf(const char *fmt, ...) FMT_PRINTF(2, 3);
+    // Same, but on the socket channel: DLC 2 when multiplexed.
+    void data_sendf(const char *fmt, ...) FMT_PRINTF(2, 3);
+    void rx_append_all();
     void uart_write_pending();
     void send_data_reset();
     bool handle_error();                // ERROR in _rx -> reset to ATI
@@ -212,6 +256,7 @@ private:
     // ---- parsers -----------------------------------------------------------
     void handle_AT_reply();
     bool check_CSQ();
+    bool check_CGACT();
     bool check_CPSI();
     bool check_QENG();
     bool check_QCSQ();
@@ -314,8 +359,24 @@ private:
     int8_t _authkey_seen;               // -1 = not yet acted on
 
     // ---- buffers -----------------------------------------------------------
-    uint8_t _chunk[512];
+    uint8_t _raw[512];                  // as it came off the UART
+    uint16_t _raw_len;
+    uint8_t _chunk[512];                // AT channel, de-framed when multiplexed
     uint16_t _chunk_len;
+    uint8_t _dlc2[512];                 // socket channel, CMUX only
+    uint16_t _dlc2_len;
+    uint8_t _cmux_partial[1024];        // frame still arriving
+    uint16_t _cmux_partial_len;
+
+    bool _found_cmux;                   // the modem is speaking frames
+    bool _cmux_was_set;                 // per attempt: step_CMUX reached BAUD
+    // Sticky for the life of the boot. Set either by firmware revision
+    // auto-detect, or by CPIN failing repeatedly after CMUX supposedly came
+    // up -- firmware that accepts AT+CMUX=0 and then never opens the channels.
+    bool _cmux_force_disabled;
+    // Consecutive muxed attempts that got the mux up and then timed out on
+    // CPIN. Survives a reset, cleared once a connection comes up muxed.
+    uint8_t _cmux_cpin_strikes;
 
     char _rx[AP_LTE_RXBUF_SIZE + 1];
     uint16_t _rx_len;

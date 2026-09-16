@@ -48,9 +48,11 @@ static bool parse_reg(const char *p, int &stat, bool two_field_only)
 
 void AP_LTE::step_ATI()
 {
-    uart_read();
+    // Raw, not de-framed: at this point we do not yet know whether the modem
+    // is in CMUX, and finding out is the job of the FLAG scan below.
+    uart_read_raw();
     rx_reset();
-    rx_append(_chunk, _chunk_len);
+    rx_append(_raw, _raw_len);
 
     const uint32_t now = AP_HAL::millis();
     const uint32_t ati_s = (now - _step_timer_ms) / 1000;
@@ -63,20 +65,44 @@ void AP_LTE::step_ATI()
                       (unsigned long)ati_s);
     }
 
-    if (_chunk_len > 0 && _modem == &AP_LTE_default_modem) {
+    // AT+CFUN=1,1 does not always drop an existing CMUX session (seen on
+    // EC200), so look for the flag byte anywhere in the read. This has to run
+    // before the banner check below, which returns first once the family is
+    // known and would hide a mux session revealed in the same read.
+    if (!_found_cmux && !option_enabled(OPT_NOMUX) && !_cmux_force_disabled &&
+        _raw_len >= 4 && memchr(_raw, CMUX_FLAG, _raw_len) != nullptr) {
+        _found_cmux = true;
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: in CMUX mode");
+    }
+
+    if (_raw_len > 0 && _modem == &AP_LTE_default_modem) {
         check_modem_banner();
     }
     if (_modem != &AP_LTE_default_modem) {
-        _step = Step::BAUD;
+        _step = cmux_enabled() ? Step::CMUX : Step::BAUD;
         return;
     }
 
-    // The applet alternated a CMUX-framed ATI into this rotation; without that
-    // transport the third slot collapses back to a plain ATI.
+    if (_found_cmux) {
+        at_send("ATI\r");               // framed, the modem only reads frames now
+        return;
+    }
+
+    // Rotate: a plain ATI, a framed one in case the modem is already muxed,
+    // and +++ to break out of a transparent socket left over from a previous
+    // boot. One of the three gets an answer.
     if (_ati_sequence % 3 == 2) {
-        at_send("+++");
+        uart_write_raw("+++");
+    } else if (_ati_sequence % 3 == 1 && !option_enabled(OPT_NOMUX)) {
+        uint8_t frame[16];
+        const uint16_t n = cmux_encode(CMUX_DLC_AT, CMUX_UIH,
+                                       (const uint8_t *)"ATI\r", 4,
+                                       frame, sizeof(frame));
+        if (n > 0 && _txq != nullptr) {
+            _txq->write(frame, n);
+        }
     } else {
-        at_send("\rATI\r");
+        uart_write_raw("\rATI\r");
     }
 
     if (_ati_sequence % 10 == 5) {
@@ -154,6 +180,33 @@ void AP_LTE::step_CPIN()
             at_send("AT+CPIN?\r\n");
             at_send(_modem->sim_probe);
         } else {
+            // A CPIN timeout just after the mux came up is usually the SIM
+            // interface still settling, not firmware that cannot mux. Reset
+            // and try muxed again; only drop the mux for the rest of the boot
+            // once several attempts in a row have failed the same way.
+            if (_cmux_was_set && !_cmux_force_disabled &&
+                !is_known_good_ec25(_modem_revision)) {
+                _cmux_cpin_strikes++;
+                if (_cmux_cpin_strikes >= AP_LTE_CMUX_CPIN_STRIKES) {
+                    GCS_SEND_TEXT(MAV_SEVERITY_WARNING,
+                                  "LTE: CPIN failed after CMUX setup x%u - disabling CMUX",
+                                  unsigned(_cmux_cpin_strikes));
+                    if (_modem_revision[0] != 0) {
+                        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE: add '%s' to the broken list",
+                                      _modem_revision);
+                    }
+                    // Framed, because the modem's UART is still in CMUX mode
+                    // and would drop plain bytes.
+                    at_send(_modem->reset);
+                    uart_write_pending();
+                    _cmux_force_disabled = true;
+                } else {
+                    GCS_SEND_TEXT(MAV_SEVERITY_WARNING,
+                                  "LTE: CPIN failed after CMUX setup (%u/%u) - retrying muxed",
+                                  unsigned(_cmux_cpin_strikes),
+                                  unsigned(AP_LTE_CMUX_CPIN_STRIKES));
+                }
+            }
             GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "LTE: CPIN failed 5 probes, hard reset");
             reset_to_ATI();
         }
@@ -185,6 +238,17 @@ void AP_LTE::step_CREG()
     }
 
     if (_rx_len > 0) {
+        // If the mux is meant to be up but what arrives is neither a framed
+        // reply nor recognisable AT text, the session is out of sync. Go back
+        // and renegotiate rather than polling into a stream nothing can read.
+        // Gated on a fresh read: a half-arrived frame is normal, not corruption.
+        if (cmux_enabled() && _raw_len > 0 && _chunk_len == 0 &&
+            !rx_find("+CEREG:") && !rx_find("+CREG:") && !rx_find("OK\r\n")) {
+            _step = Step::CMUX;
+            rx_reset();
+            return;
+        }
+
         const char *p = rx_at("+CEREG:");
         if (p == nullptr) {
             p = rx_at("+CREG:");
@@ -440,7 +504,8 @@ void AP_LTE::step_SIMINFO()
 void AP_LTE::step_SIGNAL_GATE()
 {
     // where to go once the gate is satisfied
-    const Step onward = (_modem->cipmode != nullptr)   ? Step::CIPMODE :
+    const Step onward = ppp_mode()                     ? ppp_entry() :
+                        (_modem->cipmode != nullptr)   ? Step::CIPMODE :
                         (_modem->preflight != nullptr) ? Step::QENG :
                                                          Step::SOCKET_STATE;
 
@@ -608,11 +673,83 @@ void AP_LTE::step_CIPCLOSE()
     at_send(_modem->cipclose);
 }
 
+/*
+  PPP bring-up, part one: make sure the PDP context is up before dialling.
+
+  Two dialects share this step. SimCom2 queries with AT+CGACT? and this waits
+  for the reply; Air780 sets it with AT+CGACT=1,1 and a bare OK is the answer.
+  Both are satisfied by an OK, so the parse below only has to notice the
+  +CGACT: line for the status report.
+*/
+void AP_LTE::step_CGACT()
+{
+    uart_read();
+    rx_append_all();
+
+    if (handle_error()) {
+        rx_reset();
+        return;
+    }
+
+    check_CGACT();
+
+    if (rx_find("\r\nOK\r\n")) {
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: CGACT OK");
+        rx_reset();
+        // last_data_ms is refreshed here because the dial that follows can sit
+        // silent for seconds, and CONNECTED's data watchdog starts from it.
+        _last_data_ms = AP_HAL::millis();
+        _step = Step::PPPOPEN;
+        return;
+    }
+
+    data_sendf("%s", _modem->cgact);
+    if (_modem->cfun != nullptr) {
+        data_sendf("%s", _modem->cfun);
+    }
+}
+
+/*
+  PPP bring-up, part two: dial, and hand the link over on CONNECT.
+
+  After this the modem's UART carries PPP frames, not AT text, so nothing
+  downstream may send a bare AT command until the link drops.
+*/
+void AP_LTE::step_PPPOPEN()
+{
+    uart_read();
+    rx_append_all();
+
+    // NO CARRIER means the dial was refused outright. A context that reported
+    // active and then would not carry a call is wedged deeper than a redial
+    // fixes, so go back to the top rather than loop on ATD.
+    if ((_modem->cgact != nullptr && rx_find("NO CARRIER")) ||
+        rx_find("CME ERROR:")) {
+        rx_reset();
+        reset_to_ATI();
+        return;
+    }
+
+    if (handle_error()) {
+        rx_reset();
+        return;
+    }
+
+    if (rx_find("CONNECT")) {
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: connected");
+        reset_buffers();
+        _step = Step::CONNECTED;
+        return;
+    }
+
+    data_sendf("%s", _modem->pppopen);
+}
+
 void AP_LTE::step_CIPMODE()
 {
     uart_read();
     rx_reset();
-    rx_append(_chunk, _chunk_len);
+    rx_append_all();
 
     if (rx_find("AT+CACID=0,0")) {
         GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: network context set");
@@ -632,7 +769,7 @@ void AP_LTE::step_CIPMODE()
         _step = Step::NETOPEN;
         return;
     }
-    at_send(_modem->cipmode);
+    data_sendf("%s", _modem->cipmode);
     _cipmode_sent = true;
 }
 
@@ -648,10 +785,10 @@ void AP_LTE::step_NETOPEN()
 
     uart_read();
     rx_reset();
-    rx_append(_chunk, _chunk_len);
+    rx_append_all();
 
     if (rx_find("AT+CNACT=0,1") && rx_find("ERROR") && _modem->netclose != nullptr) {
-        at_send(_modem->netclose);
+        data_sendf("%s", _modem->netclose);
         return;
     }
     if (handle_error()) {
@@ -662,13 +799,14 @@ void AP_LTE::step_NETOPEN()
         _step = onward;
         return;
     }
-    at_send(_modem->netopen);
+    data_sendf("%s", _modem->netopen);
 }
 
 void AP_LTE::step_CIPOPEN()
 {
     uart_read();
-    rx_append(_chunk, _chunk_len);
+    // The open goes out on DLC 2, so CONNECT comes back there.
+    rx_append_all();
 
     // The applet also tried to set _cipopen_preclosed from the previous step
     // here, but run_step latches last_step before dispatching, so that test
@@ -686,7 +824,7 @@ void AP_LTE::step_CIPOPEN()
     if (_rx_len > 0) {
         const bool caopen_ok = rx_find("+CAOPEN: 0,0") && rx_find("OK\r\n");
         if (caopen_ok && _modem->caswitch != nullptr) {
-            at_send(_modem->caswitch);
+            data_sendf("%s", _modem->caswitch);
             rx_reset();
             return;
         }
@@ -696,6 +834,7 @@ void AP_LTE::step_CIPOPEN()
             _cipopen_sent = false;
             _cipopen_retry = 0;
             _hard_reset_strikes = 0;
+            _cmux_cpin_strikes = 0;
             _cipopen_preclosed = false;
             reset_buffers();
             _step = Step::CONNECTED;
@@ -760,7 +899,7 @@ void AP_LTE::step_CIPOPEN()
         _step = Step::HALT;
         return;
     }
-    at_sendf(cipopen, int(ip[0]), int(ip[1]), int(ip[2]), int(ip[3]), int(port));
+    data_sendf(cipopen, int(ip[0]), int(ip[1]), int(ip[2]), int(ip[3]), int(port));
     _cipopen_sent = true;
     _cipopen_sent_ms = AP_HAL::millis();
 }
@@ -771,18 +910,30 @@ void AP_LTE::step_CONNECTED()
     // modem UART is left alone until it has.
     flush_fc();
 
+    const bool muxed = cmux_enabled();
+
     _chunk_len = 0;
+    _dlc2_len = 0;
     if (_fc_len == 0) {
-        const ssize_t r = _uart->read(_chunk, sizeof(_chunk));
+        const ssize_t r = _uart->read(_raw, sizeof(_raw));
         if (r > 0) {
-            _chunk_len = uint16_t(r);
-            _bytes_in += _chunk_len;
+            _raw_len = uint16_t(r);
+            _bytes_in += _raw_len;
             if (option_enabled(OPT_LOGALL)) {
-                log_raw(_chunk, _chunk_len, "<<<");
+                log_raw(_raw, _raw_len, "<<<");
+            }
+            if (muxed) {
+                // splits into _chunk (AT URCs) and _dlc2 (socket bytes)
+                cmux_feed(_raw, _raw_len);
+            } else {
+                memcpy(_chunk, _raw, _raw_len);
+                _chunk_len = _raw_len;
             }
         }
     }
 
+    // Unmuxed, the socket owns the port and these arrive inline. Muxed, a
+    // close shows up on the AT channel instead, which _chunk now holds.
     if (chunk_find("\r\nCLOSED\r\n")) {
         GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: connection closed, reconnecting");
         _cipopen_sent = false;
@@ -790,25 +941,37 @@ void AP_LTE::step_CONNECTED()
         return;
     }
 
+    // PPP drops announce themselves instead of closing a socket. Redial
+    // rather than reopen: there is no socket to reopen in this mode.
+    if (ppp_mode() && chunk_find("PPPD: DISCONNECTED\r\n")) {
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: PPP closed, reconnecting");
+        _step = Step::PPPOPEN;
+        return;
+    }
+
     const uint32_t now_ms = AP_HAL::millis();
 
-    if (_chunk_len > 0) {
-        _last_data_ms = now_ms;
+    // Socket bytes: DLC 2 when multiplexed, the whole stream when not.
+    const uint8_t *downlink = muxed ? _dlc2 : _chunk;
+    const uint16_t downlink_len = muxed ? _dlc2_len : _chunk_len;
 
-        // downlink to the vehicle
-        const size_t written = _port.device_write(_chunk, _chunk_len);
-        if (written < _chunk_len) {
-            const uint16_t left = uint16_t(_chunk_len - written);
-            _fc_len = MIN(left, uint16_t(sizeof(_fc)));
-            memcpy(_fc, &_chunk[written], _fc_len);
+    if (_chunk_len > 0) {
+        // Unmuxed, AT text and socket payload are the same bytes, so anything
+        // arriving counts as the link being alive. Muxed, only DLC 2 does --
+        // otherwise the driver's own signal polling would feed the watchdog
+        // and a dead socket would never time out.
+        if (!muxed) {
+            _last_data_ms = now_ms;
         }
 
-        // Scan the same bytes for AT URCs. In transparent mode the socket
-        // payload and the modem's own notifications share one stream, so this
-        // buffer holds telemetry too and every search over it must be binary
-        // safe.
+        // Every search over this has to be binary safe: unmuxed it holds
+        // telemetry as well as AT text.
         rx_append(_chunk, _chunk_len);
-        if (rx_find("OK\r\n") || rx_find("ERROR\r\n")) {
+        if (muxed) {
+            // A framed AT payload is a complete reply on its own.
+            handle_AT_reply();
+            rx_reset();
+        } else if (rx_find("OK\r\n") || rx_find("ERROR\r\n")) {
             handle_AT_reply();
             if (rx_find("OK\r\n")) {
                 rx_consume_through("OK\r\n");
@@ -828,9 +991,20 @@ void AP_LTE::step_CONNECTED()
                    chunk_find("+CREG: 0,1") || chunk_find("+CREG: 0,5")) {
             _cereg_drop_ms = 0;
         }
+    }
 
-    } else if (pget(_timeout) > 0 &&
-               now_ms - _last_data_ms > uint32_t(pget(_timeout)) * 1000) {
+    if (downlink_len > 0) {
+        _last_data_ms = now_ms;
+        const size_t written = _port.device_write(downlink, downlink_len);
+        if (written < downlink_len) {
+            const uint16_t left = uint16_t(downlink_len - written);
+            _fc_len = MIN(left, uint16_t(sizeof(_fc)));
+            memcpy(_fc, &downlink[written], _fc_len);
+        }
+    }
+
+    if (_chunk_len == 0 && downlink_len == 0 && pget(_timeout) > 0 &&
+        now_ms - _last_data_ms > uint32_t(pget(_timeout)) * 1000) {
         GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "LTE_modem: data timeout");
         if (_disconnect_ms == 0) {
             _disconnect_ms = now_ms - uint32_t(pget(_timeout)) * 1000;
@@ -867,7 +1041,8 @@ void AP_LTE::step_CONNECTED()
             }
             n = MIN(n, uint16_t(quota - sent));
         }
-        if (_txq == nullptr || _txq->space() < n) {
+        // +8 covers the frame header and trailer when multiplexed
+        if (_txq == nullptr || _txq->space() < uint32_t(n) + 8) {
             break;
         }
         uint8_t tmp[100];
@@ -875,7 +1050,7 @@ void AP_LTE::step_CONNECTED()
         if (got <= 0) {
             break;
         }
-        send_raw(tmp, uint16_t(got));
+        data_send(tmp, uint16_t(got));
         sent += uint32_t(got);
         _last_send_data_ms = now_ms;
     }
@@ -884,7 +1059,20 @@ void AP_LTE::step_CONNECTED()
         return;
     }
 
-    if (now_ms - _last_CSQ_ms > 1500) {
+    // Multiplexed, the AT channel is free while the socket runs, so poll three
+    // times as often and alternate the two queries. Unmuxed, every one of
+    // these has to be squeezed into the same stream the telemetry uses.
+    if (muxed) {
+        if (now_ms - _last_CSQ_ms > 500) {
+            _last_CSQ_ms = now_ms;
+            if (_modem->cpsi == nullptr) {
+                at_send("AT+CSQ\r\n");
+            } else {
+                at_send(_csq_toggle ? "AT+CSQ\r\n" : _modem->cpsi);
+                _csq_toggle = !_csq_toggle;
+            }
+        }
+    } else if (now_ms - _last_CSQ_ms > 1500) {
         _last_CSQ_ms = now_ms;
         at_send(_modem->cpsi != nullptr ? _modem->cpsi : "AT+CSQ\r\n");
     }

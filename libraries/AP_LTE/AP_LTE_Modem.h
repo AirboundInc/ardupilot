@@ -40,6 +40,7 @@ struct AP_LTE_HTTP {
 struct AP_LTE_ModemInfo {
     const char *name;               // table key in the Lua original
     const char *banner;             // substring identifying the family in ATI
+    const char *cmux;               // null = this family cannot multiplex
     const char *spn;
     const char *setbaud;            // fmt: baud
     const char *cpsi;
@@ -50,6 +51,8 @@ struct AP_LTE_ModemInfo {
     const char *cipopen_tcp;        // fmt: 4 octets then port
     const char *cipopen_udp;
     const char *cipclose;
+    const char *pppopen;            // dial string for LTE_PROTOCOL=48
+    const char *cgact;              // null = go straight to pppopen
     const char *netopen;
     const char *netclose;
     const char *caswitch;
