@@ -206,6 +206,9 @@ private:
     float backtrans_pilot_throttle = 0;
     float backtrans_blend_throttle = 0;
 
+    // To notify the state
+    bool backtrans_done_reported = false;
+
     // time when the current forward transition began (dual axis tiltrotor),
     // for Q_TILT_FTHLD_MS / Q_TILT_FTBLD_MS
     uint32_t fwd_trans_start_ms = 0;

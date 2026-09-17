@@ -1682,7 +1682,6 @@ void SLT_Transition::update()
         default:
             if (have_airspeed && aspeed > plane.aparm.airspeed_min) {
                 transition_condition_met = true;
-                gcs().send_text(MAV_SEVERITY_INFO, "Transition airspeed reached %.1f", (double)aspeed);
             }
             break;
         }
