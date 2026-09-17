@@ -184,13 +184,17 @@ void AP_TTLServo::init(void)
 }
 
 // Process received Packet from servo
-void AP_TTLServo::process_packet(RESPONSE_TYPE response,const uint8_t *packet, uint8_t length)
+void AP_TTLServo::process_packet(const RESPONSE_TYPE& response,const uint8_t *packet, uint8_t length)
 {
     uint8_t id = packet[PKT_ID];
 
     // Discard servos beyond the maximum permissible number of servo channels
     if (id < 1 || id > NUM_SERVO_CHANNELS) {
         GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "TTLServo: Invalid Servo id:%d",id);
+        for(int i = 0;i<length;i++)
+        {
+            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"Packet:%x",packet[i]);
+        }
         return;
     }
 
@@ -210,9 +214,10 @@ void AP_TTLServo::process_packet(RESPONSE_TYPE response,const uint8_t *packet, u
             {
 #if TTLSERVO_DEBUG_LEVEL > 0
                 _debug.bad_response_count++;
+                GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Invalid Position read response:%d",length);
 #endif
 #if TTLSERVO_DEBUG_LEVEL > 1
-                GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Invalid Position read response");
+
                 for(int i = 0;i<length;i++)
                 {
                     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"Packet:%x",packet[i]);
@@ -278,21 +283,21 @@ void AP_TTLServo::process_packet(RESPONSE_TYPE response,const uint8_t *packet, u
             break;
         }
         default:
+            GCS_SEND_TEXT(MAV_SEVERITY_ERROR,"TTLServo: Invalid response");
             break;
     }
 
 }
 
 // Read the bytes received from responses
-void AP_TTLServo::read_bytes(RESPONSE_TYPE response)
+void AP_TTLServo::read_bytes(const RESPONSE_TYPE& response)
 {
+    /*Each read must start the buffer afresh. 
+    This ensures the command - response remains clean. 
+    */
+    pktbuf_ofs = 0;
     uint32_t n = port->available();
     
-    // if(n>0)
-    // {
-    //     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: UART Readbuffer:%d",n);
-    // }    
-
     // If no bytes received or received less than the required to decode an
     // instruction, return in order to wait for the required number of bytes
     if (n == 0 && pktbuf_ofs < PKT_INSTRUCTION) {
@@ -305,6 +310,7 @@ void AP_TTLServo::read_bytes(RESPONSE_TYPE response)
     }
     for (uint8_t i = 0; i < n; i++) {
         uint8_t byte = port->read();
+        // GCS_SEND_TEXT(MAV_SEVERITY_INFO,"TTLServo:Bytes:%x",byte);
         pktbuf[pktbuf_ofs++] = byte;
     }
 
@@ -321,7 +327,8 @@ void AP_TTLServo::read_bytes(RESPONSE_TYPE response)
 
     // // Check if enough data has been received according to the Packet.
     // // If it hasn't been received, return and wait for the rest of the Packet
-    const uint8_t total_packet_length = pktbuf[PKT_LENGTH] + PKT_INSTRUCTION;
+    //Total Packet length = Value of length byte+ 1(Header 1)+ 1(Header 2)+ 1(ID)+1 (CRC)
+    const uint8_t total_packet_length = pktbuf[PKT_LENGTH] + 4;
     if (total_packet_length > sizeof(pktbuf)) {
         pktbuf_ofs = 0;
         return;
@@ -337,6 +344,7 @@ void AP_TTLServo::read_bytes(RESPONSE_TYPE response)
     const uint8_t calc_crc = calculate_crc(pktbuf, total_packet_length - 1);
     if (calc_crc == crc) {
       // Process full packet
+    //   GCS_SEND_TEXT(MAV_SEVERITY_INFO,"TTLServo: buff offset: %d",pktbuf_ofs);
       process_packet(response, pktbuf, total_packet_length);
     }
 
@@ -553,7 +561,7 @@ void AP_TTLServo::update()
             detect_servos();
             servo_response = RESPONSE_TYPE::PING;
             last_send_us = AP_HAL::micros();
-            delay_time_us = 100 * us_per_byte;
+            delay_time_us = 200 * us_per_byte;
             return;
         }
 
@@ -565,14 +573,13 @@ void AP_TTLServo::update()
     if (auto_detect_complete && servo_id_mask == 0 ) {
         if (!_gcs_announce.empty_servo_bus)
         {    
-            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"Empty Servo bus");
+            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo:Empty Servo bus");
             _gcs_announce.empty_servo_bus = true;
         }
         return;
     }
     
     
-
     switch(servo_comm_state){
         case COMM_STATE::IDLE:
         {
@@ -594,9 +601,10 @@ void AP_TTLServo::update()
         {
             //timeout: change state
             read_bytes(servo_response);
-            if(now - last_send_us > 10000)
+            if(now - last_send_us > 1000)
             {
                 servo_comm_state = COMM_STATE::READ_CURRENT_POSITION;
+                // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "TTLServo:Switching state:%u",uint8_t(servo_comm_state));
             }
             break;
         }
@@ -610,10 +618,11 @@ void AP_TTLServo::update()
         }
         case COMM_STATE::GET_CURRENT_POSITION_RESPONSE:
         {
-            read_bytes(RESPONSE_TYPE::CURRENT_POSITION);
-            if(now - last_send_us > 10000)
+            read_bytes(servo_response);
+            if(now - last_send_us > 1000)
             {
                 servo_comm_state = COMM_STATE::COMMAND_POSITION;
+                // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "TTLServo:Switching state:%u",uint8_t(servo_comm_state));
             }
             break;
         }
@@ -622,7 +631,7 @@ void AP_TTLServo::update()
     }
 
     update_telem();
-#if TTLSERVO_DEBUG_LEVEL > 0
+#if TTLSERVO_DEBUG_LEVEL > 1
         print_debug();
 #endif    
 

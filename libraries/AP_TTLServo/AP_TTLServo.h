@@ -76,8 +76,8 @@ class AP_TTLServo {
     void configure_servos(void);
     void detect_servos(void);
     void init(void);
-    void process_packet(RESPONSE_TYPE response,const uint8_t *packet, uint8_t length);
-    void read_bytes(RESPONSE_TYPE response);
+    void process_packet(const RESPONSE_TYPE& response,const uint8_t *packet, uint8_t length);
+    void read_bytes(const RESPONSE_TYPE& response);
 
     void send_command(uint8_t id, uint8_t reg, uint16_t value, uint8_t len);
     void send_packet(const uint8_t *packet, uint8_t len);
