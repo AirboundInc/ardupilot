@@ -23,6 +23,11 @@ public:
     // init
     void init(motor_frame_class frame_class, motor_frame_type frame_type) override;
 
+    // set the current Axis 1 (elbow) tilt position, as passed by
+    // Tiltrotor::dual_axis_output() (ArduPlane): this is axis1_pos,
+    // -(current_tilt * SERVO_MAX), NOT degrees
+    float set_elbow_tilt_angle(float angle) { return _elbow_tilt_angle = angle; }
+
     // output_to_motors - sends output to named servos
     void output_to_motors() override;
 
@@ -35,4 +40,7 @@ protected:
 
     // spin a motor at the pwm value specified
     void _output_test_seq(uint8_t motor_seq, int16_t pwm) override;
+
+    // most recent Axis 1 (elbow) tilt position; see set_elbow_tilt_angle()
+    float _elbow_tilt_angle = 0.0f;
 };

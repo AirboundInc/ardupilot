@@ -853,7 +853,10 @@ void Tiltrotor::dual_axis_output(void)
     }
 
     const float axis1_pos = -(current_tilt * SERVO_MAX);
-
+    // Set elbow angle to the motor mixer.
+    static_cast<AP_MotorsTiltrotorDualAxis*>(motors)->set_elbow_tilt_angle(radians(-axis1_pos*90.0f/SERVO_MAX));
+    // motors is guaranteed to be an AP_MotorsTiltrotorDualAxis instance here:
+    // quadplane.cpp only allocates that class when type == TILT_TYPE_DUAL_AXIS
     if (quadplane.in_vtol_mode() || quadplane.assisted_flight) {
 
         // the stage and its timers were advanced earlier this tick by

@@ -61,7 +61,88 @@ void AP_MotorsTiltrotorDualAxis::init(motor_frame_class frame_class, motor_frame
 // so the class remains fully functional while the real strategy is written.
 void AP_MotorsTiltrotorDualAxis::output_armed_stabilizing()
 {
-    AP_MotorsTailsitter::output_armed_stabilizing();
+    float   roll_thrust;                // roll thrust input value, +/- 1.0
+    float   pitch_thrust;               // pitch thrust input value, +/- 1.0
+    float   yaw_thrust;                 // yaw thrust input value, +/- 1.0
+    float   throttle_thrust;            // throttle thrust input value, 0.0 - 1.0
+    float   thrust_max;                 // highest motor value
+    float   thrust_min;                 // lowest motor value
+    float   thr_adj = 0.0f;             // the difference between the pilot's desired throttle and throttle_thrust_best_rpy
+
+    // apply voltage and air pressure compensation
+    const float compensation_gain = thr_lin.get_compensation_gain();
+    roll_thrust = (_roll_in + _roll_in_ff) * compensation_gain;
+    pitch_thrust = _pitch_in + _pitch_in_ff;
+    yaw_thrust = _yaw_in + _yaw_in_ff;
+    throttle_thrust = get_throttle() * compensation_gain;
+    const float max_boost_throttle = _throttle_avg_max * compensation_gain;
+
+    // never boost above max, derived from throttle mix params
+    const float min_throttle_out = MIN(_external_min_throttle, max_boost_throttle);
+    const float max_throttle_out = _throttle_thrust_max * compensation_gain;
+
+    // sanity check throttle is above min and below current limited throttle
+    if (throttle_thrust <= min_throttle_out) {
+        throttle_thrust = min_throttle_out;
+        limit.throttle_lower = true;
+    }
+    if (throttle_thrust >= max_throttle_out) {
+        throttle_thrust = max_throttle_out;
+        limit.throttle_upper = true;
+    }
+
+    if (roll_thrust >= 1.0) {
+        // cannot split motor outputs by more than 1
+        roll_thrust = 1;
+        limit.roll = true;
+    }
+    // Global mixer for the dual-axis tiltrotor with roll yaw swaping based on the elbow tilt angle.
+    const float inverse_term = 1.0f / MAX(FLT_EPSILON, cosf(2.0f*_elbow_tilt_angle));
+    const float differential_thrust = (roll_thrust *cosf(_elbow_tilt_angle) + yaw_thrust * -sinf(_elbow_tilt_angle)) * inverse_term;
+    const float differential_TV = (roll_thrust * -sinf(_elbow_tilt_angle) + yaw_thrust * cosf(_elbow_tilt_angle)) * inverse_term;
+
+    // calculate left and right throttle outputs
+    _thrust_left  = throttle_thrust + differential_thrust * 0.5f;
+    _thrust_right = throttle_thrust - differential_thrust * 0.5f;
+
+    thrust_max = MAX(_thrust_right,_thrust_left);
+    thrust_min = MIN(_thrust_right,_thrust_left);
+    if (thrust_max > 1.0f) {
+        // if max thrust is more than one reduce average throttle
+        thr_adj = 1.0f - thrust_max;
+        limit.throttle_upper = true;
+    } else if (thrust_min < 0.0) {
+        // if min thrust is less than 0 increase average throttle
+        // but never above max boost
+        thr_adj = -thrust_min;
+        if ((throttle_thrust + thr_adj) > max_boost_throttle) {
+            thr_adj = MAX(max_boost_throttle - throttle_thrust, 0.0);
+            // in this case we throw away some roll output, it will be uneven
+            // constraining the lower motor more than the upper
+            // this unbalances torque, but motor torque should have significantly less control power than tilts / control surfaces
+            // so its worth keeping the higher roll control power at a minor cost to yaw
+            limit.roll = true;
+        }
+        limit.throttle_lower = true;
+    }
+
+    // Add adjustment to reduce average throttle
+    _thrust_left  = constrain_float(_thrust_left  + thr_adj, 0.0f, 1.0f);
+    _thrust_right = constrain_float(_thrust_right + thr_adj, 0.0f, 1.0f);
+
+    _throttle = throttle_thrust;
+
+    // compensation_gain can never be zero
+    // ensure accurate representation of average throttle output, this value is used for notch tracking and control surface scaling
+    if (_has_diff_thrust) {
+        _throttle_out = (throttle_thrust + thr_adj) / compensation_gain;
+    } else {
+        _throttle_out = throttle_thrust / compensation_gain;
+    }
+
+    // thrust vectoring
+    _tilt_left  = pitch_thrust - differential_TV;
+    _tilt_right = pitch_thrust + differential_TV;
 }
 
 void AP_MotorsTiltrotorDualAxis::output_to_motors()
