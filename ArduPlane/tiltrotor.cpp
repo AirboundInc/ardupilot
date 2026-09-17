@@ -915,6 +915,16 @@ void Tiltrotor::dual_axis_output(void)
 
         tilt_left_adjusted  += extra_elevator;
         tilt_right_adjusted += extra_elevator;
+        if((backtrans_done_reported ^ force_backtrans_hold)){
+            if(force_backtrans_hold){
+                GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Backtransition: Started");
+                backtrans_done_reported = true;
+            }
+            else{
+                GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Backtransition: Completed");
+                backtrans_done_reported = false;
+            }
+        }
         if(force_backtrans_hold){
             // Setpoint updated part need to done at the place where this method is invoked.
             plane.nav_pitch_cd = 0.0f;
