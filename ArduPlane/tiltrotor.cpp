@@ -925,6 +925,7 @@ void Tiltrotor::dual_axis_output(void)
                 backtrans_done_reported = false;
             }
         }
+        quadplane.pos_control->set_dual_axis_tilt_transition(force_backtrans_hold);
         if(force_backtrans_hold){
             // Setpoint updated part need to done at the place where this method is invoked.
             plane.nav_pitch_cd = 0.0f;
@@ -933,7 +934,7 @@ void Tiltrotor::dual_axis_output(void)
             plane.stabilize_roll();
             plane.stabilize_yaw();
             plane.calc_nav_yaw_coordinated();
-            quadplane.attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd, plane.nav_pitch_cd, 0.0f);
+            quadplane.attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd, plane.nav_pitch_cd, quadplane.get_desired_yaw_rate_cds(false));
             // throttle handler.
             quadplane.set_climb_rate_cms(0.0f);
             float plane_throttle = plane.get_throttle_input(true);

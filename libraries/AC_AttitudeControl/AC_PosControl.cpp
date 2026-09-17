@@ -1017,6 +1017,9 @@ void AC_PosControl::update_z_controller()
 
     // add feed forward component
     _vel_target.z += _vel_desired.z + _vel_offset.z + _vel_terrain;
+    if(_dual_axis_tilt_transition){
+        _vel_target.z = 0.0f;
+    }
 
     // Velocity Controller
 
