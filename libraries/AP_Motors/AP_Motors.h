@@ -10,6 +10,7 @@
 #include "AP_MotorsSingle.h"
 #include "AP_MotorsCoax.h"
 #include "AP_MotorsTailsitter.h"
+#include "AP_MotorsTiltrotorDualAxis.h"
 #include "AP_Motors6DOF.h"
 #include "AP_MotorsMatrix_6DoF_Scripting.h"
 #include "AP_MotorsMatrix_Scripting_Dynamic.h"

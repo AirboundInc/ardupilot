@@ -45,8 +45,8 @@ public:
     void bicopter_output();
     void dual_axis_output();
 
-    // most recent k_throttle value written by AP_MotorsTailsitter's mixer
-    // inside dual_axis_output(), before it gets restored, for debug logging
+    // most recent k_throttle value written by AP_MotorsTiltrotorDualAxis's
+    // mixer inside dual_axis_output(), before it gets restored, for debug logging
     float get_last_dual_axis_mixout_throttle() const { return dual_axis_mixout_throttle; }
 
     void tilt_compensate_angle(float *thrust, uint8_t num_motors, float non_tilted_mul, float tilted_mul);
@@ -181,9 +181,9 @@ private:
     // throttle (0 to 1) that was last commanded in fw control mode
     float last_fw_throttle = 0;
 
-    // k_throttle value written by AP_MotorsTailsitter's collective-thrust
-    // actuator output inside dual_axis_output(), before it gets restored
-    // back to the fixed-wing forward-throttle value; for QTHR debug log
+    // k_throttle value written by AP_MotorsTiltrotorDualAxis's collective-
+    // thrust actuator output inside dual_axis_output(), before it gets
+    // restored back to the fixed-wing forward-throttle value; for QTHR debug log
     float dual_axis_mixout_throttle = 0;
 
     // true if the forward transition has progressed far enough that the

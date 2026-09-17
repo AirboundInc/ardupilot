@@ -818,8 +818,14 @@ bool QuadPlane::setup(void)
         motors_var_info = AP_MotorsTri::var_info;
         break;
     case AP_Motors::MOTOR_FRAME_TAILSITTER:
-        // this is a duo-motor tailsitter
-        tailsitter.tailsitter_motors = NEW_NOTHROW AP_MotorsTailsitter(rc_speed);
+        // this is a duo-motor tailsitter, or (with Q_TILT_TYPE=DualAxis) a
+        // duo-motor dual-axis tiltrotor sharing the same diff-thrust mixer,
+        // with its vectoring output redirected to the Axis 2 servos
+        if (tiltrotor.type == Tiltrotor::TILT_TYPE_DUAL_AXIS) {
+            tailsitter.tailsitter_motors = NEW_NOTHROW AP_MotorsTiltrotorDualAxis(rc_speed);
+        } else {
+            tailsitter.tailsitter_motors = NEW_NOTHROW AP_MotorsTailsitter(rc_speed);
+        }
         motors = tailsitter.tailsitter_motors;
         motors_var_info = AP_MotorsTailsitter::var_info;
         break;

@@ -834,6 +834,14 @@ void Tiltrotor::bicopter_output(void)
   control dual-axis tiltrotor. Axis 1 (V22-style 0-90 transition tilt)
   is driven by continuous_update(). This function handles Axis 2
   (independent attitude vectoring servos) called from servos.cpp.
+
+  The base roll/pitch/yaw/throttle mix for the two lift motors, and the
+  raw Axis 2 vectoring demand, are computed by AP_MotorsTiltrotorDualAxis
+  (via quadplane.motors_output() inside update_controllers() above, which
+  writes k_throttleLeft/Right and the raw vectoring signal to
+  k_tiltMotorLeftVec/RightVec). This function reads that raw vectoring
+  signal, layers pitch-error feedback and transition blending on top, and
+  writes the final Axis 2 output.
  */
 void Tiltrotor::dual_axis_output(void)
 {
@@ -858,11 +866,12 @@ void Tiltrotor::dual_axis_output(void)
             ? raw_throttle : plane.get_throttle_input(true);
         const float throttle = dual_axis_transition->update_controllers(raw_throttle, commanded_throttle_pct);
 
-        // AP_MotorsTailsitter::output_to_motors() reuses k_throttle as its
-        // own collective-thrust actuator output (see AP_MotorsTailsitter.cpp).
-        // Capture it for QTHR debug logging, then restore k_throttle so it
-        // keeps its normal fixed-wing-forward-throttle meaning for anything
-        // else that reads it this tick (e.g. AETR logging while hovering).
+        // AP_MotorsTiltrotorDualAxis::output_to_motors() reuses k_throttle as
+        // its own collective-thrust actuator output (see AP_MotorsTailsitter.cpp,
+        // which it inherits this behaviour from). Capture it for QTHR debug
+        // logging, then restore k_throttle so it keeps its normal
+        // fixed-wing-forward-throttle meaning for anything else that reads
+        // it this tick (e.g. AETR logging while hovering).
         dual_axis_mixout_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
         SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, throttle);
 
@@ -878,8 +887,11 @@ void Tiltrotor::dual_axis_output(void)
         }
 
 
-        float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
-        float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
+        // raw attitude-vectoring demand from AP_MotorsTiltrotorDualAxis's
+        // mixer (quadplane.motors_output() above), before this function's
+        // extra pitch feedback/blending is layered on top
+        float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeftVec);
+        float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRightVec);
         float tilt_left_adjusted = tilt_left;
         float tilt_right_adjusted = tilt_right;
 
