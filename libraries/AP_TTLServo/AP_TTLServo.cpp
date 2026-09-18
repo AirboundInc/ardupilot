@@ -161,10 +161,6 @@ void AP_TTLServo::detect_servos(void)
     } tx_packet;
 
     send_packet((const uint8_t *) &tx_packet, tx_packet.length);
-
-    // GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "TTLServo: Detecting servos on the bus");
-    // Give plenty of time to receive replies from all servos
-
 }
 
 // Init the serial port
@@ -178,8 +174,6 @@ void AP_TTLServo::init(void)
         baudrate = serial_manager.find_baudrate(AP_SerialManager::SerialProtocol_TTLServo, 0);
         us_per_byte = 10 * 1e6 / baudrate;
         us_gap = 4 * 1e6 / baudrate;
-        // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "TTLServo: Bytetime: %lu",us_per_byte);
-        // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "TTLServo: Gaptime: %lu",us_gap);
     }
 }
 
@@ -233,14 +227,14 @@ void AP_TTLServo::process_packet(const RESPONSE_TYPE& response,const uint8_t *pa
                 uint16_t raw_magnitude = (raw & 0x7FFF);
                 float position = direction * raw_magnitude * 0.087;
                 int8_t i = id - 1;
+                telem_data[i].angle = position;
+                telem_data[i].last_response_ms = AP_HAL::millis();
+#if TTLSERVO_DEBUG_LEVEL > 0
                 if(!is_equal(telem_data[i].angle, position))
                 {
                     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo:Curr Position:%0.2f",position);
 
                 }
-                telem_data[i].angle = position;
-                telem_data[i].last_response_ms = AP_HAL::millis();
-#if TTLSERVO_DEBUG_LEVEL > 0
                 _debug.read_position_response_count++;
 #endif
             }
@@ -502,15 +496,6 @@ void AP_TTLServo::set_pwm()
         float v = float(pwm - min) / (max - min);
         uint16_t goalPosition = (uint16_t)(pos_min) + (uint16_t)(v * (pos_max - pos_min));
 
-        // GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: i: %d,PWM: %d",i,pwm);
-
-        // Don't send goal position if it is equal to previous
-        // if (servo_position[i] == goalPosition) {
-        //     continue;
-        // } else {
-        //     servo_position[i] = goalPosition;
-        // }
-
         // Send the goal position to the servo
         uint8_t id = i+1;
         send_command(id, GOAL_POSITION_REG, goalPosition, 2);
@@ -622,7 +607,6 @@ void AP_TTLServo::update()
             {
                 servo_comm_state = COMM_STATE::READ_CURRENT_POSITION;
                 rxbytes.clear();
-                // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "TTLServo:Switching state:%u",uint8_t(servo_comm_state));
             }
             break;
         }
@@ -641,7 +625,6 @@ void AP_TTLServo::update()
             {
                 servo_comm_state = COMM_STATE::COMMAND_POSITION;
                 rxbytes.clear();
-                // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "TTLServo:Switching state:%u",uint8_t(servo_comm_state));
             }
             break;
         }
