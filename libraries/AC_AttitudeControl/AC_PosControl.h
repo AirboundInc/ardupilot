@@ -335,6 +335,8 @@ public:
     // get_pos_terrain_cm - returns the current terrain altitude in cm
     float get_pos_terrain_cm() { return _pos_terrain; }
 
+    bool set_dual_axis_tilt_transition(bool enable){return _dual_axis_tilt_transition = enable;}
+
 
     /// Offset
 
@@ -599,4 +601,6 @@ private:
 
     // singleton
     static AC_PosControl *_singleton;
+
+    bool _dual_axis_tilt_transition = false;
 };
