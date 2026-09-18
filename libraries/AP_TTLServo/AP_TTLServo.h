@@ -20,6 +20,7 @@
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Param/AP_Param.h>
 #include <AP_Servo_Telem/AP_Servo_Telem.h>
+#include <AP_HAL/utility/RingBuffer.h>
 
 #ifndef AP_FEETECHSERVO_ENABLED
 #define AP_FEETECHSERVO_ENABLED 0
@@ -119,9 +120,8 @@ class AP_TTLServo {
     int8_t ping_count;
     uint8_t servo_count;
 
-    // Received data buffer
-    uint8_t pktbuf[64];
-    uint8_t pktbuf_ofs;
+    //Receive buffer
+    ByteBuffer rxbytes{64};
 
     // Keep track of the data sent required time
     uint32_t last_send_us;

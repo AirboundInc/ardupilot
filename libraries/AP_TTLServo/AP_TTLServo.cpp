@@ -295,62 +295,79 @@ void AP_TTLServo::read_bytes(const RESPONSE_TYPE& response)
     /*Each read must start the buffer afresh. 
     This ensures the command - response remains clean. 
     */
-    pktbuf_ofs = 0;
     uint32_t n = port->available();
     
-    // If no bytes received or received less than the required to decode an
-    // instruction, return in order to wait for the required number of bytes
-    if (n == 0 && pktbuf_ofs < PKT_INSTRUCTION) {
+    // If no bytes received or return in order to wait for the required number of bytes
+    if (n == 0) {
         return;
     }
 
-    // // Read from serial the maximum number of bytes that would fill the buffer
-    if (n > sizeof(pktbuf) - pktbuf_ofs) {
-        n = sizeof(pktbuf) - pktbuf_ofs;
+    if(n > rxbytes.get_size())
+    {
+        GCS_SEND_TEXT(MAV_SEVERITY_ERROR,"TTLServo: RX Buffer insufficient");
+        return;
     }
+
     for (uint8_t i = 0; i < n; i++) {
         uint8_t byte = port->read();
-        // GCS_SEND_TEXT(MAV_SEVERITY_INFO,"TTLServo:Bytes:%x",byte);
-        pktbuf[pktbuf_ofs++] = byte;
+        rxbytes.write(&byte,1);
     }
 
-    // // Discard bad leading data. This should be rare
-    while (pktbuf_ofs >= 2 && (pktbuf[0] != 0xFF || pktbuf[1] != 0xFF)) {
-        memmove(pktbuf, &pktbuf[1], pktbuf_ofs-1);
-        pktbuf_ofs--;
+    //Discard bad leading bytes
+    uint8_t discard_count = 0;
+    for(uint8_t i =0; i< rxbytes.available()-1;i++)
+    {
+        if((rxbytes.peek(i) == 0xFF && rxbytes.peek(i+1)== 0xFF))
+        {
+           rxbytes.advance(discard_count);
+           break; 
+        } 
+        else if(i == rxbytes.available()-2)
+        {
+            //Clear buffer if no Header bytes found
+            rxbytes.clear();
+            break;
+        }
+        else
+        {
+            discard_count++;
+        }
     }
 
-    // // If enough data hasn't been received, return
-    if (pktbuf_ofs < 5) {
+    //Minimum size of a response is 6
+    if(rxbytes.available()< 6)
+    {
         return;
     }
 
-    // // Check if enough data has been received according to the Packet.
-    // // If it hasn't been received, return and wait for the rest of the Packet
-    //Total Packet length = Value of length byte+ 1(Header 1)+ 1(Header 2)+ 1(ID)+1 (CRC)
-    const uint8_t total_packet_length = pktbuf[PKT_LENGTH] + 4;
-    if (total_packet_length > sizeof(pktbuf)) {
-        pktbuf_ofs = 0;
-        return;
-    }
-    if (pktbuf_ofs < total_packet_length) {
+    const uint8_t total_response_length = rxbytes.peek(PKT_LENGTH)+4;
+    if(total_response_length > rxbytes.available())
+    {
+ 
         return;
     }
 
-    // // Compare the Packet's CRC with the received Packet data. If it is equal,
-    // // the Packet has been received without data errors. Otherwise, just discard
-    // // the received Packet (had errors)
-    const uint8_t crc = pktbuf[total_packet_length - 1];
-    const uint8_t calc_crc = calculate_crc(pktbuf, total_packet_length - 1);
-    if (calc_crc == crc) {
-      // Process full packet
-    //   GCS_SEND_TEXT(MAV_SEVERITY_INFO,"TTLServo: buff offset: %d",pktbuf_ofs);
-      process_packet(response, pktbuf, total_packet_length);
+    if(total_response_length> rxbytes.get_size())
+    {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING,"TTLServo: Response length exceeds max recieve buffer size");
+        return;
     }
 
-    // // Removed the processed Packet data from the buffer
-    memmove(pktbuf, &pktbuf[total_packet_length], pktbuf_ofs - total_packet_length);
-    pktbuf_ofs -= total_packet_length;
+    //Verify CRC of response
+    uint8_t response_packet[total_response_length];
+    //Get response packet
+    uint8_t ret = rxbytes.read(response_packet,total_response_length);
+    if(ret != total_response_length)
+    {
+        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: RX buffer read fail");
+    }
+    const uint8_t CRC = response_packet[total_response_length-1];
+    const uint8_t calculated_crc = calculate_crc(response_packet, total_response_length - 1);
+    
+    if(CRC == calculated_crc)
+    {
+        process_packet(response,response_packet,total_response_length);
+    }
     
 }
 
@@ -604,6 +621,7 @@ void AP_TTLServo::update()
             if(now - last_send_us > 1000)
             {
                 servo_comm_state = COMM_STATE::READ_CURRENT_POSITION;
+                rxbytes.clear();
                 // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "TTLServo:Switching state:%u",uint8_t(servo_comm_state));
             }
             break;
@@ -622,6 +640,7 @@ void AP_TTLServo::update()
             if(now - last_send_us > 1000)
             {
                 servo_comm_state = COMM_STATE::COMMAND_POSITION;
+                rxbytes.clear();
                 // GCS_SEND_TEXT(MAV_SEVERITY_INFO, "TTLServo:Switching state:%u",uint8_t(servo_comm_state));
             }
             break;
