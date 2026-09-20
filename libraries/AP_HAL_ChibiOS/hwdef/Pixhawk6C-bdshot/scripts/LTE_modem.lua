@@ -282,6 +282,7 @@ local cs = {
     last_step = nil,
     step_timer_ms = 0, step_times = {},
     change_baud = nil, ati_sequence = 0,
+    cmux_probe_n = 0, cmux_probe_max = 5,
     cereg_drop_ms = nil,
     disconnect_ms = nil,  
     last_data_ms = millis(),
@@ -500,7 +501,7 @@ local function send_data_reset()
     if modem.reset then
         AT_send(modem.reset)
         if not modem.reset_not_baudrate then uart:begin(P.IBAUD:get()) end
-        found_cmux = false
+        found_cmux = false; cs.cmux_probe_n = 0
         gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: sent reset")
         return
     end
@@ -594,7 +595,7 @@ local function reset_buffers()
 end
 
 local function reset_state()
-    step = "ATI"; modem = default_modem; found_cmux = false
+    step = "ATI"; modem = default_modem; found_cmux = false; cs.cmux_probe_n = 0
     reset_buffers(); buf.uart = ""
     lte_track.band = nil; lte_track.cid = nil
     cs.cops_zero_sent = false; cs.qcsq_tries = 0
@@ -1325,6 +1326,10 @@ local function step_HTTPAUTH()
             if ip and port and port > 0 then   -- port==0 is truthy in Lua but never a valid TCP/UDP port;
                                                 -- treat it as a parse failure rather than a usable address
                 cs.auth_ip = ip; cs.auth_port = port; cs.auth_done = true
+                -- Auth got through, so the one-shot HTTPTERM reset is re-armed:
+                -- the latch exists to stop a reset loop, not to spend the escape
+                -- permanently on the first use.
+                cs.term_reset_done = false
                 gcs:send_text(MAV_SEVERITY.INFO, string.format(
                     'LTE HTTPAUTH: server %d.%d.%d.%d:%d', ip[1],ip[2],ip[3],ip[4], port))
                 apply_auth_identity(body)
@@ -1428,6 +1433,10 @@ local function step_HTTPAUTH()
             if ip and port and port > 0 then   -- port==0 is truthy in Lua but never a valid TCP/UDP port;
                                                 -- treat it as a parse failure rather than a usable address
                 cs.auth_ip = ip; cs.auth_port = port; cs.auth_done = true
+                -- Auth got through, so the one-shot HTTPTERM reset is re-armed:
+                -- the latch exists to stop a reset loop, not to spend the escape
+                -- permanently on the first use.
+                cs.term_reset_done = false
                 gcs:send_text(MAV_SEVERITY.INFO, string.format(
                     'LTE HTTPAUTH: server %d.%d.%d.%d:%d', ip[1],ip[2],ip[3],ip[4], port))
                 apply_auth_identity(b)
@@ -1461,9 +1470,25 @@ local function step_ATI()
     -- on frame edges. Must run before the modem~=default_modem branch below,
     -- which returns first once the banner has matched and would hide a mux
     -- session revealed in that same read.
+    -- The probe budget makes the latch revocable: a loose "0xF9 appeared"
+    -- test also matches the tail of pre-reset traffic while the modem is
+    -- mid-reboot, and only an actual reset refills the budget, so a false
+    -- positive cannot re-arm itself tick after tick.
     if not found_cmux and not option_enabled(OPT.NOMUX) and not cmux_force_disabled
+       and cs.cmux_probe_n < cs.cmux_probe_max
        and s and #s >= 4 and s:find(string.char(cmux.FLAG), 1, true) then
         found_cmux = true; gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: in CMUX mode"); log_data("{INCMUX}", '***')
+    end
+
+    -- An unframed boot banner is the modem stating it came back in plain AT:
+    -- a live mux session could not have emitted those bytes with no FLAG in
+    -- the same read. Drop the latch on the spot.
+    if found_cmux and s and not s:find(string.char(cmux.FLAG), 1, true)
+       and (s:find('RDY', 1, true) or s:find('+CPIN:', 1, true) or s:find('+CFUN:', 1, true)
+            or s:find('+QIND:', 1, true) or s:find('+QUSIM:', 1, true) or s:find('PB DONE', 1, true)) then
+        found_cmux = false; cs.cmux_probe_n = cs.cmux_probe_max
+        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: plain AT banner, left CMUX')
+        log_data("{EXCMUX}", '***')
     end
 
     if s and modem == default_modem then check_modem_banner(s) end
@@ -1471,7 +1496,18 @@ local function step_ATI()
         if not cmux_enabled() then step = "BAUD" else step = "CMUX" end
         return
     end
-    if found_cmux then AT_send('ATI\r'); return end
+    if found_cmux then
+        if cs.cmux_probe_n < cs.cmux_probe_max then
+            cs.cmux_probe_n = cs.cmux_probe_n + 1
+            AT_send('ATI\r'); return
+        end
+        -- Budget spent with no answer, so the session is gone (or never was).
+        -- Falling through costs no coverage: phase 1 of the rotation below
+        -- still sends a framed ATI every third tick.
+        found_cmux = false
+        gcs:send_text(MAV_SEVERITY.WARNING, 'LTE_modem: no CMUX reply, back to plain AT')
+        log_data("{EXCMUX}", '***')
+    end
 
     if cs.ati_sequence % 3 == 2 then uart_write('+++')
     elseif cs.ati_sequence % 3 == 1 and not option_enabled(OPT.NOMUX) then uart_write(cmux.encode_cmux_frame(cmux.DLC_AT, cmux.UIH, "ATI\r"))
@@ -1502,7 +1538,15 @@ local function set_BAND()
     if not modem.setband and not modem.setband_mask then return end
     local band = math.floor(P.BAND:get())
     if band > 0 then
-       if modem.setband_mask then AT_send(string.format(modem.setband_mask, 1<<(band-1)))
+       if modem.setband_mask then
+          -- Lua is built LUA_32BITS here, so 1<<(band-1) silently yields 0 for
+          -- band > 32 -- which includes B40/B41. Build the mask as hex text in
+          -- two 32-bit halves instead of shifting past the integer width.
+          -- Bands above 64 are not representable this way; none are used.
+          local mask
+          if band > 32 then mask = string.format("%x%08x", 1 << (band - 33), 0)
+          else mask = string.format("%x", 1 << (band - 1)) end
+          AT_send((modem.setband_mask:gsub("%%x", mask)))
        else AT_send(string.format(modem.setband, band)) end
     elseif band == 0 then AT_send(modem.setband_all) end
     last_band = band
@@ -2353,6 +2397,16 @@ local function run_step()
             gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE: %s timeout after %ds", step, P.STUCK_T:get()))
             reset_to_ATI(); return 1000
         end
+    end
+
+    -- ATI is excluded from the STUCK_T sweep above because a genuine modem
+    -- reboot takes 10-19s and must not be cut short, which left it with no
+    -- escape timer at all. 60s is far past any real boot, so treat it as a
+    -- wedged AT channel. reset_state() re-stamps step_timer_ms, so this
+    -- cannot retrigger every tick while step stays "ATI".
+    if not step_changed and step == "ATI" and time_in_step > 60 then
+        gcs:send_text(MAV_SEVERITY.WARNING, "LTE: ATI silent 60s, hard reset")
+        reset_to_ATI(); return 1000
     end
 
     if not step_changed and (step == "CPIN" or step == "CREG" or step == "CMUX") then
