@@ -1540,13 +1540,17 @@ local function set_BAND()
     if band > 0 then
        if modem.setband_mask then
           -- Lua is built LUA_32BITS here, so 1<<(band-1) silently yields 0 for
-          -- band > 32 -- which includes B40/B41. Build the mask as hex text in
-          -- two 32-bit halves instead of shifting past the integer width.
-          -- Bands above 64 are not representable this way; none are used.
-          local mask
-          if band > 32 then mask = string.format("%x%08x", 1 << (band - 33), 0)
-          else mask = string.format("%x", 1 << (band - 1)) end
-          AT_send((modem.setband_mask:gsub("%%x", mask)))
+          -- any band above 32 -- B40/B41 among them. Build the mask as hex text
+          -- one 32-bit word at a time so the integer width sets no band ceiling
+          -- (SimCom's AT+CNBP mask is 272 bits wide).
+          if band > 128 then
+             gcs:send_text(MAV_SEVERITY.ERROR,
+                 string.format('LTE: BAND %d out of range, not set', band))
+          else
+             local mask = string.format("%x", 1 << ((band - 1) % 32))
+                          .. string.rep("00000000", (band - 1) // 32)
+             AT_send((modem.setband_mask:gsub("%%x", mask)))
+          end
        else AT_send(string.format(modem.setband, band)) end
     elseif band == 0 then AT_send(modem.setband_all) end
     last_band = band
