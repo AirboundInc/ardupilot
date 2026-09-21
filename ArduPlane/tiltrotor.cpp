@@ -834,29 +834,37 @@ void Tiltrotor::dual_axis_output(void)
         // Q_TILT_BTDLY_MS after a backtransition, in every VTOL mode & suspends vertical controller
         const bool force_backtrans_hold = in_vtol_transition(now);
 
-        
-        //const float throttle = force_backtrans_hold
-        //     ? get_backtrans_throttle(now, raw_throttle * 0.01f) * 100.0f
-        //     : raw_throttle;
         const float raw_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
-        if (!force_backtrans_hold) {
-            if (quadplane.in_vtol_mode()) {
-                // rate controller already run by quadplane.update(); this only
-                // re-emits the motor PWM that servos_twin_engine_mix() cleared
-                quadplane.motors_output(false);
-            } else {
-                quadplane.hold_stabilize(raw_throttle * 0.01f);
-                quadplane.motors_output(true);
-            }
+
+        const float throttle = force_backtrans_hold
+            ? get_backtrans_throttle(now, raw_throttle * 0.01f) * 100.0f
+            : raw_throttle;
+
+        if (quadplane.assisted_flight || force_backtrans_hold) {
+            quadplane.hold_stabilize(throttle * 0.01f);
+            quadplane.motors_output(true);
+        } else {
+            quadplane.motors_output(false);
         }
+
+        // if (!force_backtrans_hold) {
+        //     if (quadplane.in_vtol_mode()) {
+        //         // rate controller already run by quadplane.update(); this only
+        //         // re-emits the motor PWM that servos_twin_engine_mix() cleared
+        //         quadplane.motors_output(false);
+        //     } else {
+        //         quadplane.hold_stabilize(raw_throttle * 0.01f);
+        //         quadplane.motors_output(true);
+        //     }
+        // }
 
         // AP_MotorsTailsitter::output_to_motors() reuses k_throttle as its
         // own collective-thrust actuator output (see AP_MotorsTailsitter.cpp).
         // Capture it for QTHR debug logging, then restore k_throttle so it
         // keeps its normal fixed-wing-forward-throttle meaning for anything
         // else that reads it this tick (e.g. AETR logging while hovering).
-        // dual_axis_mixout_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
-        // SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, throttle);
+        dual_axis_mixout_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
+        SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, throttle);
 
         if (!quadplane.in_vtol_mode()) {
             // in FW transition: limit/blend the commanded throttle over
@@ -942,20 +950,23 @@ void Tiltrotor::dual_axis_output(void)
             plane.calc_nav_yaw_coordinated();
             quadplane.attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd, plane.nav_pitch_cd, quadplane.get_desired_yaw_rate_cds(false));
             // throttle handler.
-            quadplane.set_climb_rate_cms(0.0f);
-            float plane_throttle = plane.get_throttle_input(true);
-            if((plane.TECS_controller.get_throttle_demand()) > 0.0f){
-                plane_throttle = plane.TECS_controller.get_throttle_demand();
-            }
-            float vtol_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
-            float alpha =  constrain_float(-axis1_pos / SERVO_MAX, 0.0f, 1.0f);
-            float throttle_blend = constrain_float((1.0f - alpha) * vtol_throttle + alpha * plane_throttle, 0, 100);
-            SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, throttle_blend);
+
+            // quadplane.set_climb_rate_cms(0.0f);
+            // float plane_throttle = plane.get_throttle_input(true);
+            // if((plane.TECS_controller.get_throttle_demand()) > 0.0f){
+            //     plane_throttle = plane.TECS_controller.get_throttle_demand();
+            // }
+            // float vtol_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
+            // float throttle_blend = constrain_float((1.0f - alpha) * vtol_throttle + alpha * plane_throttle, 0, 100);
+            // SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, throttle_blend);
+
             // FW rudder command
-            const float rud_gain_fw  = float(plane.g2.rudd_dt_gain) * 0.01f;
-            const float rudder_dt_fw = rud_gain_fw * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
-            const float rudder_left = constrain_float(throttle_blend + 50.0f * rudder_dt_fw, 0, 100);
-            const float rudder_right = constrain_float(throttle_blend - 50.0f * rudder_dt_fw, 0, 100);
+            float alpha =  constrain_float(-axis1_pos / SERVO_MAX, 0.0f, 1.0f);
+ 
+            // const float rud_gain_fw  = float(plane.g2.rudd_dt_gain) * 0.01f;
+            // const float rudder_dt_fw = rud_gain_fw * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
+            // const float rudder_left = constrain_float(throttle_blend + 50.0f * rudder_dt_fw, 0, 100);
+            // const float rudder_right = constrain_float(throttle_blend - 50.0f * rudder_dt_fw, 0, 100);
 
             // FW tilt command
             const float scaler_fw = (plane.control_mode == &plane.mode_manual) ? 1.0f :
@@ -970,19 +981,20 @@ void Tiltrotor::dual_axis_output(void)
             // Blend the tilt commands based on the axis1_pos
             tilt_left_adjusted  = (1.0f - alpha) * tilt_left_adjusted + alpha * tilt_left_fw;
             tilt_right_adjusted = (1.0f - alpha) * tilt_right_adjusted + alpha * tilt_right_fw;
+            
             // Blend the throttle commands based on the axis1_pos
-            float throttle_left = SRV_Channels::get_output_scaled(SRV_Channel::k_throttleLeft);
-            float throttle_right = SRV_Channels::get_output_scaled(SRV_Channel::k_throttleRight);
-            float blended_throttle_left = (1.0f - alpha) * throttle_left + alpha * rudder_left;
-            float blended_throttle_right = (1.0f - alpha) * throttle_right + alpha * rudder_right;
-            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(blended_throttle_left, 0, 100));
-            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(blended_throttle_right, 0, 100));
-            AP::logger().WriteStreaming("BLND", "TimeUS,Alpha,plnTr,vtTr,blTr",
-                "s----", // seconds, degrees
-                "F0000", // micro (1e-6), no mult (1e0)
-                "Qffff", // uint64_t, float
-                AP_HAL::micros64(), alpha, plane_throttle, vtol_throttle,
-                throttle_blend);
+            // float throttle_left = SRV_Channels::get_output_scaled(SRV_Channel::k_throttleLeft);
+            // float throttle_right = SRV_Channels::get_output_scaled(SRV_Channel::k_throttleRight);
+            // float blended_throttle_left = (1.0f - alpha) * throttle_left + alpha * rudder_left;
+            // float blended_throttle_right = (1.0f - alpha) * throttle_right + alpha * rudder_right;
+            // SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(blended_throttle_left, 0, 100));
+            // SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(blended_throttle_right, 0, 100));
+            // AP::logger().WriteStreaming("BLND", "TimeUS,Alpha,plnTr,vtTr,blTr",
+            //     "s----", // seconds, degrees
+            //     "F0000", // micro (1e-6), no mult (1e0)
+            //     "Qffff", // uint64_t, float
+            //     AP_HAL::micros64(), alpha, plane_throttle, vtol_throttle,
+            //     throttle_blend);
         }
 
 #if HAL_LOGGING_ENABLED
