@@ -838,10 +838,14 @@ void Tiltrotor::dual_axis_output(void)
         //const float throttle = force_backtrans_hold
         //     ? get_backtrans_throttle(now, raw_throttle * 0.01f) * 100.0f
         //     : raw_throttle;
-
-        quadplane.run_z_controller();
-        quadplane.run_xy_controller();
-        quadplane.motors_output(true);
+        const float raw_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
+        if (!force_backtrans_hold) {
+            quadplane.hold_stabilize(raw_throttle * 0.01f);
+            quadplane.motors_output(true);
+        }
+        // quadplane.run_z_controller();
+        // quadplane.run_xy_controller();
+        // quadplane.motors_output(true);
 
         // // AP_MotorsTailsitter::output_to_motors() reuses k_throttle as its
         // // own collective-thrust actuator output (see AP_MotorsTailsitter.cpp).
