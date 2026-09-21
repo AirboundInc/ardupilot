@@ -840,18 +840,21 @@ void Tiltrotor::dual_axis_output(void)
         //     : raw_throttle;
         const float raw_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
         if (!force_backtrans_hold) {
-            quadplane.hold_stabilize(raw_throttle * 0.01f);
-            quadplane.motors_output(true);
+            if (quadplane.in_vtol_mode()) {
+                // rate controller already run by quadplane.update(); this only
+                // re-emits the motor PWM that servos_twin_engine_mix() cleared
+                quadplane.motors_output(false);
+            } else {
+                quadplane.hold_stabilize(raw_throttle * 0.01f);
+                quadplane.motors_output(true);
+            }
         }
-        // quadplane.run_z_controller();
-        // quadplane.run_xy_controller();
-        // quadplane.motors_output(true);
 
-        // // AP_MotorsTailsitter::output_to_motors() reuses k_throttle as its
-        // // own collective-thrust actuator output (see AP_MotorsTailsitter.cpp).
-        // // Capture it for QTHR debug logging, then restore k_throttle so it
-        // // keeps its normal fixed-wing-forward-throttle meaning for anything
-        // // else that reads it this tick (e.g. AETR logging while hovering).
+        // AP_MotorsTailsitter::output_to_motors() reuses k_throttle as its
+        // own collective-thrust actuator output (see AP_MotorsTailsitter.cpp).
+        // Capture it for QTHR debug logging, then restore k_throttle so it
+        // keeps its normal fixed-wing-forward-throttle meaning for anything
+        // else that reads it this tick (e.g. AETR logging while hovering).
         // dual_axis_mixout_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
         // SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, throttle);
 
@@ -889,7 +892,6 @@ void Tiltrotor::dual_axis_output(void)
             fwd_trans_start_ms = 0;
         }
 
-        
         float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
         float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
         float tilt_left_adjusted = tilt_left;
