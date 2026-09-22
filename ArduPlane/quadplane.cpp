@@ -1094,10 +1094,16 @@ void QuadPlane::multicopter_attitude_rate_update(float yaw_rate_cds)
 }
 
 // hold in stabilize with given throttle
-void QuadPlane::hold_stabilize(float throttle_in)
+void QuadPlane::hold_stabilize(float throttle_in, bool update_attitude_target)
 {    
-    // call attitude controller
-    multicopter_attitude_rate_update(get_desired_yaw_rate_cds(false));
+    // call attitude controller, unless the caller has already had the
+    // attitude target stepped this tick (a VTOL mode's run() inside
+    // QuadPlane::update()) and only wants the collective overridden.
+    // Stepping the input shaper twice per loop advances the attitude
+    // target at double the commanded slew rate.
+    if (update_attitude_target) {
+        multicopter_attitude_rate_update(get_desired_yaw_rate_cds(false));
+    }
 
     if ((throttle_in <= 0) && !air_mode_active()) {
         set_desired_spool_state(AP_Motors::DesiredSpoolState::GROUND_IDLE);

@@ -252,7 +252,10 @@ private:
     void hold_hover(float target_climb_rate_cms);
 
     // hold stabilize (for transition)
-    void hold_stabilize(float throttle_in);
+    // set the VTOL collective. update_attitude_target=false skips the
+    // attitude target step for callers that run after the target has
+    // already been stepped this tick and only need the collective.
+    void hold_stabilize(float throttle_in, bool update_attitude_target = true);
 
     // set climb rate in position controller
     void set_climb_rate_cms(float target_climb_rate_cms);
