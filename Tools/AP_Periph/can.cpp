@@ -1996,6 +1996,10 @@ void AP_Periph_FW::can_update()
     #if AP_PERIPH_RC_OUT_ENABLED
         rcout_update();
     #endif
+    #if AP_FEETECHSERVO_ENABLED
+    // Give TTLServo library a chance to update
+    feetechservo.update();
+    #endif
     #if AP_PERIPH_EFI_ENABLED
         can_efi_update();
     #endif

@@ -515,12 +515,13 @@ void AP_TTLServo::set_pwm()
     }
 }
 
-#if TTLSERVO_DEBUG_LEVEL > 0
+#if TTLSERVO_DEBUG_LEVEL > 1
 void AP_TTLServo::print_debug()
 {
     uint32_t now = AP_HAL::millis();
     if(now - _debug.last_gcs_announce_time > 5000)
     {
+        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: looptime:%lu",deltat); 
         GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: PositionCommandCount:%d",_debug.position_command_count); 
         GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: positioncommandresponsecount:%d",_debug.position_command_response_count);  
         GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: badresponsecount:%d",_debug.bad_response_count); 
@@ -538,7 +539,6 @@ void AP_TTLServo::update()
 {
     // Initialize the serial port
     if (!initialised) {
-        memset(servo_position, 0xFF, sizeof(servo_position));
         init();
         if (servo_auto_det_en) {
             servo_id_mask.set_and_save(0);
@@ -594,33 +594,29 @@ void AP_TTLServo::update()
     
     switch(servo_comm_state){
         case COMM_STATE::IDLE:
-        
             if(servo_id_mask>0)
             {
                 servo_comm_state = COMM_STATE::COMMAND_POSITION;
             }
-            FALLTHROUGH;
+            break;
         
         case COMM_STATE::COMMAND_POSITION:
-        
             set_pwm();
-
             servo_comm_state = COMM_STATE::GET_COMMAND_POSITION_RESPONSE;
             last_send_us = AP_HAL::micros();
             servo_response = RESPONSE_TYPE::POSITION_COMMAND;
             FALLTHROUGH;
         
         case COMM_STATE::GET_COMMAND_POSITION_RESPONSE:
-            //timeout: change state
             read_bytes(servo_response);
-            if(AP_HAL::micros() - last_send_us > 1000)
+            if(AP_HAL::micros() - last_send_us > 800)
             {
                 servo_comm_state = COMM_STATE::READ_CURRENT_POSITION;
                 rxbytes.clear();
             }
-            FALLTHROUGH;
+            break;
+
         case COMM_STATE::READ_CURRENT_POSITION:
-        
             send_position_read_command();
             servo_comm_state = COMM_STATE::GET_CURRENT_POSITION_RESPONSE;
             last_send_us = AP_HAL::micros();
@@ -630,7 +626,7 @@ void AP_TTLServo::update()
         case COMM_STATE::GET_CURRENT_POSITION_RESPONSE:
         {
             read_bytes(servo_response);
-            if(AP_HAL::micros() - last_send_us > 1000)
+            if(AP_HAL::micros() - last_send_us > 800)
             {
                 servo_comm_state = COMM_STATE::COMMAND_POSITION;
                 rxbytes.clear();
@@ -645,7 +641,14 @@ void AP_TTLServo::update()
 #if TTLSERVO_DEBUG_LEVEL > 1
     print_debug();
 #endif    
+    deltat = AP_HAL::millis() - last_update_time;
+    last_update_time = AP_HAL::millis();
 
+    // if(AP_HAL::millis()-last_gcs_announce_t > 5000)
+    // {
+    //     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo:Looptime:%lu",deltat);
+    //     last_gcs_announce_t = AP_HAL::millis();
+    // }
 }
 
 void AP_TTLServo::update_telem()

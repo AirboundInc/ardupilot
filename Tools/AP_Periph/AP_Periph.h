@@ -34,6 +34,9 @@
 #if HAL_WITH_ESC_TELEM
 #include <AP_ESC_Telem/AP_ESC_Telem.h>
 #endif
+#if AP_FEETECHSERVO_ENABLED
+#include <AP_TTLServo/AP_TTLServo.h>
+#endif
 #if AP_PERIPH_RTC_ENABLED
 #include <AP_RTC/AP_RTC.h>
 #endif
@@ -175,7 +178,8 @@ public:
     void update();
 
     Parameters g;
-
+    uint32_t deltat;
+    uint32_t last_can_update_call_ms;
     void can_start();
     void can_update();
     void can_mag_update();
@@ -395,7 +399,10 @@ public:
         uint8_t last_send_index;
     } servo_telem;
 #endif
-
+#if AP_FEETECHSERVO_ENABLED
+    // Give TTLServo library a chance to update
+    AP_TTLServo feetechservo;
+#endif
 #if AP_PERIPH_RCIN_ENABLED
     void rcin_init();
     void rcin_update();

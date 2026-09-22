@@ -471,7 +471,7 @@ void AP_Periph_FW::update()
 #if AP_DAC_ENABLED
         dac.update();
 #endif
-
+        // GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Deltat:%lu",deltat);
         GCS_SEND_MESSAGE(MSG_HEARTBEAT);
         GCS_SEND_MESSAGE(MSG_SYS_STATUS);
     }
@@ -550,7 +550,8 @@ void AP_Periph_FW::update()
 #endif
 
     can_update();
-
+    deltat = AP_HAL::millis() - last_can_update_call_ms;
+    last_can_update_call_ms = AP_HAL::millis();
 #if AP_PERIPH_NETWORKING_ENABLED
     networking_periph.update();
 #endif

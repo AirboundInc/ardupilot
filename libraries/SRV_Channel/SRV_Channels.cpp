@@ -199,11 +199,11 @@ const AP_Param::GroupInfo SRV_Channels::var_info[] = {
     AP_SUBGROUPINFO(fetteconwire, "_FTW_",  25, SRV_Channels, AP_FETtecOneWire),
 #endif
     
-#if AP_FEETECHSERVO_ENABLED
-    // @Group: _TTL_
-    // @Path: ../AP_TTLServo/AP_TTLServo.cpp
-    AP_SUBGROUPINFO(feetechservo,"_TTL_",  45, SRV_Channels, AP_TTLServo),
-#endif
+// #if AP_FEETECHSERVO_ENABLED
+//     // @Group: _TTL_
+//     // @Path: ../AP_TTLServo/AP_TTLServo.cpp
+//     AP_SUBGROUPINFO(feetechservo,"_TTL_",  45, SRV_Channels, AP_TTLServo),
+// #endif
 
     // @Param: _DSHOT_RATE
     // @DisplayName: Servo DShot output rate
@@ -508,10 +508,10 @@ void SRV_Channels::push()
     robotis.update();
 #endif
 
-#if AP_FEETECHSERVO_ENABLED
-    // Give TTLServo library a chance to update
-    feetechservo.update();
-#endif
+// #if AP_FEETECHSERVO_ENABLED
+//     // Give TTLServo library a chance to update
+//     feetechservo.update();
+// #endif
     
 #if HAL_SUPPORT_RCOUT_SERIAL
     // give blheli telemetry a chance to update

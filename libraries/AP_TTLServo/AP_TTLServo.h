@@ -26,7 +26,7 @@
 #define AP_FEETECHSERVO_ENABLED 0
 #endif
 
-#define TTLSERVO_DEBUG_LEVEL 0
+#define TTLSERVO_DEBUG_LEVEL 1
 
 #define MAX_NUM_OF_SERVOS 8
 
@@ -127,9 +127,6 @@ class AP_TTLServo {
     uint32_t last_send_us;
     uint32_t delay_time_us;
     
-    // Keep track of the servo positions
-    uint16_t servo_position[32];
-
     // PARAMETERS
     // Servo position limits
     AP_Int16 pos_min;
@@ -168,9 +165,11 @@ class AP_TTLServo {
     debug _debug;
     debug _prev_debug; 
     void print_debug();
-
 #endif
-
+    //Performance metrics
+    uint32_t deltat;
+    uint32_t last_update_time;
+    uint32_t last_gcs_announce_t;
 };
 
 #endif //AP_FEETECHSERVO_ENABLED
