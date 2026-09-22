@@ -762,6 +762,11 @@ const AP_Param::Info AP_Periph_FW::var_info[] = {
     GSCALAR(servo_telem_msg_rate, "SRV_TLM_MSG_RATE", 20),
 #endif
 
+#if AP_FEETECHSERVO_ENABLED
+    // @Group: TTL
+    // @Path: ../libraries/AP_TTLServo/AP_TTLServo.cpp
+    GOBJECT(feetechservo,"TTL_",  AP_TTLServo),
+#endif
     AP_VAREND
 };
 
