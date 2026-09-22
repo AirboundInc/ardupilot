@@ -180,6 +180,11 @@ void AP_TTLServo::init(void)
 // Process received Packet from servo
 void AP_TTLServo::process_packet(const RESPONSE_TYPE& response,const uint8_t *packet, uint8_t length)
 {
+    if(length < 6)
+    {
+        return;
+    }
+    
     uint8_t id = packet[PKT_ID];
 
     // Discard servos beyond the maximum permissible number of servo channels
@@ -347,6 +352,12 @@ void AP_TTLServo::read_bytes(const RESPONSE_TYPE& response)
         return;
     }
 
+    //Minimun size of response is 6
+    if(total_response_length < 6)
+    {
+        return;
+    }
+
     //Verify CRC of response
     uint8_t response_packet[total_response_length];
     //Get response packet
@@ -364,7 +375,6 @@ void AP_TTLServo::read_bytes(const RESPONSE_TYPE& response)
     }
     
 }
-
 
 void AP_TTLServo::send_position_read_command()
 {
