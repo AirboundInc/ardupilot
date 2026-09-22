@@ -840,7 +840,12 @@ void Tiltrotor::dual_axis_output(void)
         //     : raw_throttle;
 
         quadplane.run_z_controller();
-        quadplane.motors_output(true);
+        if(quadplane.assisted_flight){
+            quadplane.motors_output(true);
+        }
+        else{
+            quadplane.motors_output(false);
+        }
 
         // // AP_MotorsTailsitter::output_to_motors() reuses k_throttle as its
         // // own collective-thrust actuator output (see AP_MotorsTailsitter.cpp).
@@ -922,6 +927,7 @@ void Tiltrotor::dual_axis_output(void)
             else{
                 GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Backtransition: Completed");
                 backtrans_done_reported = false;
+                quadplane.pos_control->init_z_controller();
             }
         }
         quadplane.pos_control->set_dual_axis_tilt_transition(force_backtrans_hold);
