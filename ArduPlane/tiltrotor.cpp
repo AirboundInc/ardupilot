@@ -154,6 +154,14 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @Increment: 0.1
     AP_GROUPINFO("HVPOW", 20, Tiltrotor, vectored_hover_power, 1.0),
 
+    // @Param: THR_MIN
+    // @DisplayName: Dual axis minimum VTOL collective
+    // @Description: Minimum VTOL collective thrust percentage at and above Q_ASSIST_SPEED, scaled below that by the square of airspeed over Q_ASSIST_SPEED. Thrust vectoring produces a pitch moment proportional to collective, so this sets the floor below which pitch authority is lost while the wing is still lifting. Zero disables the floor. The scaling falls to zero at zero airspeed, so hover descents and landings are unaffected.
+    // @Units: %
+    // @Range: 0 50
+    // @User: Standard
+    AP_GROUPINFO("THR_MIN", 21, Tiltrotor, min_vtol_throttle, 20),
+
     AP_GROUPEND
 };
 
@@ -848,9 +856,29 @@ void Tiltrotor::dual_axis_output(void)
             // already run this tick, so only override the collective
             quadplane.hold_stabilize(throttle * 0.01f, false);
             quadplane.motors_output(false);
+            // stop the vertical controller integrating while its output is discarded
+            motors->limit.throttle_lower = true;
+            motors->limit.throttle_upper = true;
         } else {
+            // floor the collective in proportion to dynamic pressure, so
+            // thrust vectoring keeps pitch authority while the wing lifts
+            float aspeed;
+            float floor_thr = 0;
+            if (is_positive(min_vtol_throttle) && is_positive(quadplane.assist.speed) &&
+                quadplane.ahrs.airspeed_estimate(aspeed)) {
+                const float q_ratio = sq(aspeed / quadplane.assist.speed);
+                floor_thr = min_vtol_throttle * 0.01f * constrain_float(q_ratio, 0.0f, 1.0f);
+            }
+            const bool apply_floor = is_positive(floor_thr) &&
+                                     quadplane.attitude_control->get_throttle_in() < floor_thr;
+            if (apply_floor) {
+                quadplane.attitude_control->set_throttle_out(floor_thr, true, 0);
+            }
             // re-emit the motor PWM cleared by servos_twin_engine_mix()
             quadplane.motors_output(false);
+            if (apply_floor) {
+                motors->limit.throttle_lower = true;
+            }
         }
 
         // AP_MotorsTailsitter::output_to_motors() reuses k_throttle as its
@@ -1069,6 +1097,30 @@ bool Tiltrotor_Transition::update_yaw_target(float& yaw_target_cd)
     tiltrotor.update_yaw_target();
     yaw_target_cd = tiltrotor.transition_yaw_cd;
     return true;
+}
+
+/*
+  limit the VTOL roll and pitch demand
+ */
+bool Tiltrotor_Transition::set_VTOL_roll_pitch_limit(int32_t& nav_roll_cd, int32_t& nav_pitch_cd)
+{
+    bool ret = SLT_Transition::set_VTOL_roll_pitch_limit(nav_roll_cd, nav_pitch_cd);
+
+    // a nose up demand produces lift rather than braking while the wing is
+    // flying, so limit it until the airspeed has decayed
+    float airspeed;
+    if (nav_pitch_cd > 0 && is_positive(quadplane.assist.speed) &&
+        quadplane.ahrs.airspeed_estimate(airspeed)) {
+        const float max_pitch_cd = linear_interpolate(quadplane.aparm.angle_max, 0,
+                                                      airspeed,
+                                                      0, quadplane.assist.speed);
+        if (nav_pitch_cd > max_pitch_cd) {
+            nav_pitch_cd = max_pitch_cd;
+            ret = true;
+        }
+    }
+
+    return ret;
 }
 
 // return true if we should show VTOL view

@@ -144,6 +144,10 @@ public:
     // during a forward transition (dual axis tiltrotor)
     AP_Float fwd_trans_blend_ms;
 
+    // Minimum VTOL collective thrust (percent) at Q_ASSIST_SPEED, scaled
+    // below that by the square of airspeed over Q_ASSIST_SPEED
+    AP_Float min_vtol_throttle;
+
     float current_tilt;
     float current_throttle;
     bool _motors_active:1;
@@ -237,6 +241,8 @@ public:
     bool show_vtol_view() const override;
 
     bool use_multirotor_control_in_fwd_transition() const override;
+
+    bool set_VTOL_roll_pitch_limit(int32_t& nav_roll_cd, int32_t& nav_pitch_cd) override;
 
 private:
 
