@@ -839,8 +839,8 @@ void Tiltrotor::dual_axis_output(void)
         //     ? get_backtrans_throttle(now, raw_throttle * 0.01f) * 100.0f
         //     : raw_throttle;
 
-        quadplane.run_z_controller();
         if(quadplane.assisted_flight){
+            quadplane.run_z_controller();
             quadplane.motors_output(true);
         }
         else{
