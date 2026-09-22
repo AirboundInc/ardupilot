@@ -28,7 +28,7 @@
 
 #define TTLSERVO_DEBUG_LEVEL 0
 
-#define MAX_NUM_SERVOS 8
+#define MAX_NUM_OF_SERVOS 8
 
 #if AP_FEETECHSERVO_ENABLED
 
@@ -108,7 +108,7 @@ class AP_TTLServo {
       // float current;
       // float voltage;
       uint8_t error_flags;
-    } telem_data[MAX_NUM_SERVOS];
+    } telem_data[MAX_NUM_OF_SERVOS];
   
 
     bool initialised;
