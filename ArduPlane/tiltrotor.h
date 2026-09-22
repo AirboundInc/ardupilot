@@ -220,10 +220,6 @@ private:
     // back to the fixed-wing forward-throttle value; for QTHR debug log
     float dual_axis_mixout_throttle = 0;
 
-    // value of the dual-axis backtransition throttle hold on the previous
-    // tick, so its falling edge can re-initialise the Z controller
-    bool backtrans_hold_active = false;
-
     Tiltrotor_Transition* transition;
 
 };

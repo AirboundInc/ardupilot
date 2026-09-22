@@ -838,41 +838,18 @@ void Tiltrotor::dual_axis_output(void)
         const float throttle = force_backtrans_hold
             ? get_backtrans_throttle(now, raw_throttle * 0.01f) * 100.0f
             : raw_throttle;
-        // falling edge of the hold, evaluated below
-        const bool backtrans_hold_ending = backtrans_hold_active && !force_backtrans_hold;
-        backtrans_hold_active = force_backtrans_hold;
-
         if (quadplane.assisted_flight) {
-            // fixed-wing mode with Q_ASSIST: quadplane.update() took the
-            // transition->update() branch, so nothing has run the copter
-            // attitude/rate controllers or the motors this tick.
+            // in fixed wing mode the copter attitude and rate controllers
+            // have not run this tick, so run them here
             quadplane.hold_stabilize(throttle * 0.01f);
             quadplane.motors_output(true);
         } else if (force_backtrans_hold) {
-            // in_vtol_transition() is only ever true in a VTOL mode, so
-            // quadplane.update() has already stepped the attitude target and
-            // run the rate controller this tick. Only the collective needs
-            // overriding with the open-loop backtransition throttle: running
-            // either again would advance the attitude target at 2x the
-            // commanded slew rate and integrate the rate PID I-terms twice
-            // per loop, and the second rate_controller_run() would see an
-            // unchanged gyro sample and wash out the D-terms.
+            // in a VTOL mode the attitude target and rate controller have
+            // already run this tick, so only override the collective
             quadplane.hold_stabilize(throttle * 0.01f, false);
             quadplane.motors_output(false);
         } else {
-            if (backtrans_hold_ending) {
-                // run_z_controller() has been running every tick throughout
-                // the hold (it refreshes last_pidz_active_ms, so the >20ms
-                // re-init guard never fires) while hold_stabilize() discarded
-                // its output, leaving its accel integrator wound up against a
-                // collective that never reached the motors. Re-seed it from
-                // the throttle actually being applied: init_z_controller()
-                // sets the accel PID integrator from
-                // attitude_control->get_throttle_in(), so writing the final
-                // blended hold throttle first makes the handover bumpless.
-                quadplane.attitude_control->set_throttle_out(backtrans_blend_throttle, true, 0);
-                quadplane.pos_control->init_z_controller();
-            }
+            // re-emit the motor PWM cleared by servos_twin_engine_mix()
             quadplane.motors_output(false);
         }
 
@@ -987,9 +964,6 @@ void Tiltrotor::dual_axis_output(void)
     last_fw_mode_ms = now;
     transition->backtrans_start_ms = 0;
     fwd_trans_start_ms = 0;
-    // clear the hold edge-detect too, so leaving VTOL mid-hold can't make the
-    // next VTOL entry look like a hold that just ended
-    backtrans_hold_active = false;
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
