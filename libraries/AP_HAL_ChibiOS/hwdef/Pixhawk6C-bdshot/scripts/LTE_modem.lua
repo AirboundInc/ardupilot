@@ -499,7 +499,14 @@ end
 
 local function send_data_reset()
     if modem.reset then
-        AT_send(modem.reset)
+        -- Send both framings. From here we cannot tell whether the modem is in
+        -- plain AT or still muxed: a muxed modem drops unframed bytes at its
+        -- frame parser, and a plain-AT modem treats the frame as one garbled
+        -- line. Plain goes first so it gets a clean line of its own -- framed
+        -- first would leave its trailing FLAG on the line and the real command
+        -- would be swallowed as part of that garbage.
+        uart_write(modem.reset)
+        uart_write(cmux.encode_cmux_frame(cmux.DLC_AT, cmux.UIH, modem.reset))
         if not modem.reset_not_baudrate then uart:begin(P.IBAUD:get()) end
         found_cmux = false; cs.cmux_probe_n = 0
         gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: sent reset")
@@ -1489,6 +1496,20 @@ local function step_ATI()
         found_cmux = false; cs.cmux_probe_n = cs.cmux_probe_max
         gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: plain AT banner, left CMUX')
         log_data("{EXCMUX}", '***')
+    end
+
+    -- A PDP deactivation leaves the modem pushing framed URCs while it stops
+    -- answering commands: across 19 flight logs, 161 of 162 SABMs sent after
+    -- one of these URCs went unacknowledged, along with the framed AT+CPIN?
+    -- probes that followed. Reusing that session costs ~30s before the CPIN
+    -- timeout resets anyway, so reset now instead of talking into it. The
+    -- modem does still execute what it will not answer, so the reset lands.
+    if s and (s:find('pdpdeact', 1, true) or s:find('NO CARRIER', 1, true)
+              or s:find('NETWORK CLOSED', 1, true)) then
+        gcs:send_text(MAV_SEVERITY.WARNING, 'LTE_modem: PDP deactivated, resetting')
+        log_data("{PDPDEACT}", '***')
+        reset_to_ATI()
+        return
     end
 
     if s and modem == default_modem then check_modem_banner(s) end
