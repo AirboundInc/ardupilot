@@ -522,6 +522,8 @@ void AP_TTLServo::print_debug()
 }
 #endif
 
+
+
 void AP_TTLServo::update()
 {
     // Initialize the serial port
@@ -542,8 +544,6 @@ void AP_TTLServo::update()
         return;
     }
 
-    uint32_t now = AP_HAL::micros();
-
     // If auto-detection of servo IDs is enabled, we need send a Ping Packet in
     // order to receive servo IDs and check the data received to determine those
     // IDs
@@ -553,7 +553,7 @@ void AP_TTLServo::update()
         read_bytes(servo_response);
 
         // Waiting for last send to complete
-        if (last_send_us != 0 && now - last_send_us < delay_time_us) {
+        if (last_send_us != 0 && AP_HAL::micros() - last_send_us < delay_time_us) {
             return;
         }
 
@@ -584,44 +584,43 @@ void AP_TTLServo::update()
     
     switch(servo_comm_state){
         case COMM_STATE::IDLE:
-        {
+        
             if(servo_id_mask>0)
             {
                 servo_comm_state = COMM_STATE::COMMAND_POSITION;
             }
-            break;
-        }
+            FALLTHROUGH;
+        
         case COMM_STATE::COMMAND_POSITION:
-        {
+        
             set_pwm();
+
             servo_comm_state = COMM_STATE::GET_COMMAND_POSITION_RESPONSE;
             last_send_us = AP_HAL::micros();
             servo_response = RESPONSE_TYPE::POSITION_COMMAND;
-            break;
-        }
+            FALLTHROUGH;
+        
         case COMM_STATE::GET_COMMAND_POSITION_RESPONSE:
-        {
             //timeout: change state
             read_bytes(servo_response);
-            if(now - last_send_us > 1000)
+            if(AP_HAL::micros() - last_send_us > 1000)
             {
                 servo_comm_state = COMM_STATE::READ_CURRENT_POSITION;
                 rxbytes.clear();
             }
-            break;
-        }
+            FALLTHROUGH;
         case COMM_STATE::READ_CURRENT_POSITION:
-        {
+        
             send_position_read_command();
             servo_comm_state = COMM_STATE::GET_CURRENT_POSITION_RESPONSE;
             last_send_us = AP_HAL::micros();
             servo_response = RESPONSE_TYPE::CURRENT_POSITION; 
-            break;
-        }
+            FALLTHROUGH;
+        
         case COMM_STATE::GET_CURRENT_POSITION_RESPONSE:
         {
             read_bytes(servo_response);
-            if(now - last_send_us > 1000)
+            if(AP_HAL::micros() - last_send_us > 1000)
             {
                 servo_comm_state = COMM_STATE::COMMAND_POSITION;
                 rxbytes.clear();
@@ -634,7 +633,7 @@ void AP_TTLServo::update()
 
     update_telem();
 #if TTLSERVO_DEBUG_LEVEL > 1
-        print_debug();
+    print_debug();
 #endif    
 
 }
