@@ -840,7 +840,6 @@ void Tiltrotor::dual_axis_output(void)
         //     : raw_throttle;
 
         quadplane.run_z_controller();
-        quadplane.run_xy_controller();
         quadplane.motors_output(true);
 
         // // AP_MotorsTailsitter::output_to_motors() reuses k_throttle as its
@@ -928,6 +927,7 @@ void Tiltrotor::dual_axis_output(void)
         quadplane.pos_control->set_dual_axis_tilt_transition(force_backtrans_hold);
         if(force_backtrans_hold){
             // Setpoint updated part need to done at the place where this method is invoked.
+            quadplane.pos_control->relax_velocity_controller_xy();
             plane.nav_pitch_cd = 0.0f;
             plane.nav_roll_cd = 0.0f;
             plane.stabilize_pitch();

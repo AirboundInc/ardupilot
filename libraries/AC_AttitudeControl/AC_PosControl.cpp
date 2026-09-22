@@ -1005,6 +1005,11 @@ void AC_PosControl::update_z_controller()
     update_offsets_z();
     update_terrain();
     _pos_target.z = _pos_desired.z + _pos_offset.z + _pos_terrain;
+    
+    if (_dual_axis_tilt_transition) {
+        // during dual axis tilt transition, we want to hold the current altitude
+        _pos_target.z = _inav.get_position_z_up_cm();
+    }
 
     // calculate the target velocity correction
     float pos_target_zf = _pos_target.z;
@@ -1019,6 +1024,7 @@ void AC_PosControl::update_z_controller()
     _vel_target.z += _vel_desired.z + _vel_offset.z + _vel_terrain;
     if(_dual_axis_tilt_transition){
         _vel_target.z = 0.0f;
+        _vel_desired.z = 0.0f;
     }
 
     // Velocity Controller
