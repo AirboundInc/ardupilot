@@ -149,11 +149,11 @@ class AP_TTLServo {
 
 #if TTLSERVO_DEBUG_LEVEL > 0
     struct debug{
-      uint16_t position_command_count;
-      uint16_t position_command_response_count;
-      uint16_t read_position_count;
-      uint16_t read_position_response_count;
-      uint16_t bad_response_count;
+      uint32_t position_command_count;
+      uint32_t position_command_response_count;
+      uint32_t read_position_count;
+      uint32_t read_position_response_count;
+      uint32_t bad_response_count;
       bool operator!=(const debug& other) const{return position_command_count != other.position_command_count 
                                                 ||position_command_response_count != other.position_command_response_count 
                                                 || bad_response_count != other.bad_response_count

@@ -515,7 +515,7 @@ void AP_TTLServo::set_pwm()
     }
 }
 
-#if TTLSERVO_DEBUG_LEVEL > 1
+#if TTLSERVO_DEBUG_LEVEL > 0
 void AP_TTLServo::print_debug()
 {
     uint32_t now = AP_HAL::millis();
@@ -638,7 +638,7 @@ void AP_TTLServo::update()
     }
 
     update_telem();
-#if TTLSERVO_DEBUG_LEVEL > 1
+#if TTLSERVO_DEBUG_LEVEL > 0
     print_debug();
 #endif    
     deltat = AP_HAL::millis() - last_update_time;
