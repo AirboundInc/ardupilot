@@ -166,9 +166,6 @@ class AP_TTLServo {
     debug _prev_debug; 
     void print_debug();
 #endif
-    //Performance metrics
-    uint32_t deltat;
-    uint32_t last_update_time;
     uint32_t last_gcs_announce_t;
 };
 

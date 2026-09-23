@@ -521,13 +521,16 @@ void AP_TTLServo::print_debug()
     uint32_t now = AP_HAL::millis();
     if(now - _debug.last_gcs_announce_time > 5000)
     {
-        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: looptime:%lu",deltat); 
-        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: PositionCommandCount:%d",_debug.position_command_count); 
-        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: positioncommandresponsecount:%d",_debug.position_command_response_count);  
+        float time_delta = (now - _debug.last_gcs_announce_time)*0.001f;
+        float command_rate = (_debug.position_command_response_count-_prev_debug.position_command_response_count)/time_delta;
+        float position_feedback_rate = (_debug.read_position_response_count-_prev_debug.read_position_response_count)/time_delta;
+        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: PositionCommanddiff:%d",_debug.position_command_count-_debug.position_command_response_count);  
+        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: ReadPosCountdiff:%d",_debug.read_position_count-_debug.read_position_response_count);
         GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: badresponsecount:%d",_debug.bad_response_count); 
-        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: ReadPosCount:%d",_debug.read_position_count); 
-        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: ReadPosCountResponse:%d",_debug.read_position_response_count); 
+        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Command rate:%.2f",command_rate); 
+        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Feedback rate:%.2f",position_feedback_rate); 
         _debug.last_gcs_announce_time = AP_HAL::millis();
+        _prev_debug = _debug;
     }
 
 }
@@ -642,8 +645,6 @@ void AP_TTLServo::update()
 #if TTLSERVO_DEBUG_LEVEL > 0
     print_debug();
 #endif    
-    deltat = AP_HAL::millis() - last_update_time;
-    last_update_time = AP_HAL::millis();
 
     // if(AP_HAL::millis()-last_gcs_announce_t > 5000)
     // {
