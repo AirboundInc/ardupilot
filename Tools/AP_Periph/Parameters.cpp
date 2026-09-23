@@ -765,7 +765,7 @@ const AP_Param::Info AP_Periph_FW::var_info[] = {
 #if AP_FEETECHSERVO_ENABLED
     // @Group: TTL
     // @Path: ../libraries/AP_TTLServo/AP_TTLServo.cpp
-    GOBJECT(feetechservo,"TTL_",  AP_TTLServo),
+    GOBJECT(feetechservo,"SLSRV_",  AP_TTLServo),
 #endif
     AP_VAREND
 };

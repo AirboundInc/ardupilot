@@ -85,12 +85,12 @@ extern const AP_HAL::HAL& hal;
 
 const AP_Param::GroupInfo AP_TTLServo::var_info[] = {
 
-    // @Param: DET_EN
-    // @DisplayName: TTL servo auto-detection
-    // @Description: Enables or disables the auto-detection of the connected servo IDs. When servo bitmask isn't used or when auto-detection of the IDs of the connected servos is desired, enable this option. If disabled, set SERVO_TTL_ID_BM
+    // @Param: EN
+    // @DisplayName: TTL servo Enable
+    // @Description: Enables or disables the serial servo
     // @Values: 0:Auto-detection disabled, 1:Auto-detection enabled
     // @User: Advanced
-    AP_GROUPINFO("DET_EN", 1, AP_TTLServo, servo_auto_det_en, 1),
+    AP_GROUPINFO("EN", 1, AP_TTLServo,enabled, 1),
 
     // @Param: POSMIN
     // @DisplayName: TTL servo min position
@@ -106,19 +106,18 @@ const AP_Param::GroupInfo AP_TTLServo::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("POSMAX", 3, AP_TTLServo, pos_max, 4095),
 
-    // @Param: DESSPD
-    // @DisplayName: Servo desired running speed
-    // @Description: Value of the desired running speed of the servo. Value and units are servo dependent, see servo datasheet
-    // @Range: 0 65535
-    // @User: Standard
-    AP_GROUPINFO("DESSPD", 4, AP_TTLServo, servo_des_run_speed, RUNNING_SPEED),
-
     // @Param: ID_BM
     // @DisplayName: Servo IDs bitmask
     // @Description: Bitmask of the servo IDs connected. Enable the servo in the corresponding servo_channel slot. Servo ID 0 corresponds to servo1_channel
     // @Bitmask: 0:ID 0, 1:ID 1, 2:ID 2, 3:ID 3, 4:ID 4, 5:ID 5, 6:ID 6, 7:ID 7, 8:ID 8, 9:ID 9, 10:ID 10, 11:ID 11, 12:ID 12, 13:ID 13, 14:ID 14, 15:ID 15, 16:ID 16, 17:ID 17, 18:ID 18, 19:ID 19, 20:ID 20, 21:ID 21, 22:ID 22, 23:ID 23, 24:ID 24, 25:ID 25, 26:ID 26, 27:ID 27, 28:ID 28, 29:ID 29, 30:ID 30, 31:ID 31
     // @User: Advanced
-    AP_GROUPINFO("ID_BM", 5, AP_TTLServo, servo_id_mask, 0),
+    AP_GROUPINFO("ID_BM", 4, AP_TTLServo, servo_id_mask, 0),
+
+    // @Param: DEBUG
+    // @DisplayName: DEBUG
+    // @Description: Enables Debug prints
+    // @User: Advanced
+    AP_GROUPINFO("DBG_LVL", 5, AP_TTLServo, debug_level , 0),
 
     AP_GROUPEND
 };
@@ -141,14 +140,6 @@ uint8_t AP_TTLServo::calculate_crc(uint8_t *tx_packet, uint8_t len)
 
     return(~checkSum);
 
-}
-
-// Use a broadcast to set the speed of all servos.
-// Without speed configuration, servos will not run!
-void AP_TTLServo::configure_servos(void)
-{
-    GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"Configuring servo");
-    send_command(BROADCAST_ID, RUNNING_SPEED_REG, servo_des_run_speed, 2);
 }
 
 // Use a broadcast ping to find attached servos
@@ -211,17 +202,19 @@ void AP_TTLServo::process_packet(const RESPONSE_TYPE& response,const uint8_t *pa
         {
             if(length != 8)
             {
-#if TTLSERVO_DEBUG_LEVEL > 0
-                _debug.bad_response_count++;
-                GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Invalid Position read response:%d",length);
-#endif
-#if TTLSERVO_DEBUG_LEVEL > 1
-
-                for(int i = 0;i<length;i++)
+                if (debug_level > 0)
                 {
-                    GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"Packet:%x",packet[i]);
+                    _debug.bad_response_count++;
+                    GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Invalid Position read response:%d",length);
                 }
-#endif
+
+                if (debug_level > 1)
+                {
+                    for(int i = 0;i<length;i++)
+                    {
+                        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"Packet:%x",packet[i]);
+                    }
+                }
             }
             else
             {
@@ -234,14 +227,19 @@ void AP_TTLServo::process_packet(const RESPONSE_TYPE& response,const uint8_t *pa
                 int8_t i = id - 1;
                 telem_data[i].angle = position;
                 telem_data[i].last_response_ms = AP_HAL::millis();
-#if TTLSERVO_DEBUG_LEVEL > 0
-                if(!is_equal(telem_data[i].angle, position))
+                
+                if(debug_level > 0)
                 {
-                    GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo:Curr Position:%0.2f",position);
-
+                    _debug.read_position_response_count++;
                 }
-                _debug.read_position_response_count++;
-#endif
+
+                if(debug_level > 1) { 
+                    if(!is_equal(telem_data[i].angle, position))
+                    {
+                        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo:Curr Position:%0.2f",position);
+
+                    }
+                }
             }
             break;
         }
@@ -249,16 +247,19 @@ void AP_TTLServo::process_packet(const RESPONSE_TYPE& response,const uint8_t *pa
         {
             if(length != 6)
             {
-#if TTLSERVO_DEBUG_LEVEL > 0
-                GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Invalid Position command response:%d",length);
-                _debug.bad_response_count++;
-#endif
-#if TTLSERVO_DEBUG_LEVEL > 1
-                for(int i = 0;i<length;i++)
+                if(debug_level > 0)
                 {
-                    GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"Packet:%x",packet[i]);
+                    GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Invalid Position command response:%d",length);
+                    _debug.bad_response_count++;
                 }
-#endif
+
+                if(debug_level > 1)
+                {
+                    for(int i = 0;i<length;i++)
+                    {
+                        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"Packet:%x",packet[i]);
+                    }
+                }
             }
             else
             {
@@ -270,9 +271,10 @@ void AP_TTLServo::process_packet(const RESPONSE_TYPE& response,const uint8_t *pa
                 int8_t i = id - 1;
                 telem_data[i].error_flags = error_status;
                 telem_data[i].last_response_ms = AP_HAL::millis();
-#if TTLSERVO_DEBUG_LEVEL > 0
-                _debug.position_command_response_count++;
-#endif
+                if(debug_level > 0)
+                {
+                    _debug.position_command_response_count++;
+                }
             }
             break;
         }
@@ -382,9 +384,9 @@ void AP_TTLServo::send_position_read_command()
     uint8_t reg_address = 0x38;
     uint8_t len = 2;
     send_read_register_instruction(id,reg_address,len);
-#if TTLSERVO_DEBUG_LEVEL > 0    
-    _debug.read_position_count++;
-#endif
+    if(debug_level > 0){
+        _debug.read_position_count++;
+    }
 }
 
 void AP_TTLServo::send_read_baudrate_command()
@@ -469,17 +471,14 @@ void AP_TTLServo::send_packet(const uint8_t *packet, uint8_t len)
             // Calculate CRC
             crc += tx_packet;
             packet++;
-            // hal.scheduler->delay_microseconds(us_per_byte);
         } else {
             // Communication error
             GCS_SEND_TEXT(MAV_SEVERITY_INFO,"TTLServo: comm error");
-            // hal.scheduler->delay_microseconds(100);
             return;
         }
     }
     // Finally, transmit the CRC
     port->write(~crc);
-    // hal.scheduler->delay_microseconds(us_per_byte*total_packet_length+3*us_per_byte + us_gap);
 }
 
 void AP_TTLServo::set_pwm()
@@ -509,13 +508,12 @@ void AP_TTLServo::set_pwm()
         // Send the goal position to the servo
         uint8_t id = i+1;
         send_command(id, GOAL_POSITION_REG, goalPosition, 2);
-#if TTLSERVO_DEBUG_LEVEL > 0
-                _debug.position_command_count++;
-#endif
+        if(debug_level > 0) {
+            _debug.position_command_count++;
+        }    
     }
 }
 
-#if TTLSERVO_DEBUG_LEVEL > 0
 void AP_TTLServo::print_debug()
 {
     uint32_t now = AP_HAL::millis();
@@ -534,12 +532,14 @@ void AP_TTLServo::print_debug()
     }
 
 }
-#endif
-
 
 
 void AP_TTLServo::update()
 {
+    if(!enabled)
+    {
+        return;
+    }
     // Initialize the serial port
     if (!initialised) {
         init();
@@ -642,15 +642,11 @@ void AP_TTLServo::update()
     }
 
     update_telem();
-#if TTLSERVO_DEBUG_LEVEL > 0
-    print_debug();
-#endif    
 
-    // if(AP_HAL::millis()-last_gcs_announce_t > 5000)
-    // {
-    //     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo:Looptime:%lu",deltat);
-    //     last_gcs_announce_t = AP_HAL::millis();
-    // }
+    if(debug_level > 0)
+    {
+        print_debug();
+    }
 }
 
 void AP_TTLServo::update_telem()

@@ -26,8 +26,6 @@
 #define AP_FEETECHSERVO_ENABLED 0
 #endif
 
-#define TTLSERVO_DEBUG_LEVEL 1
-
 #define MAX_NUM_OF_SERVOS 8
 
 #if AP_FEETECHSERVO_ENABLED
@@ -74,7 +72,6 @@ class AP_TTLServo {
 
 
     uint8_t calculate_crc(uint8_t *txpacket, uint8_t len);
-    void configure_servos(void);
     void detect_servos(void);
     void init(void);
     void process_packet(const RESPONSE_TYPE& response,const uint8_t *packet, uint8_t length);
@@ -104,9 +101,6 @@ class AP_TTLServo {
       uint32_t last_response_ms;
       uint8_t id;
       float angle;
-      // float desired_angle;
-      // float current;
-      // float voltage;
       uint8_t error_flags;
     } telem_data[MAX_NUM_OF_SERVOS];
   
@@ -128,26 +122,19 @@ class AP_TTLServo {
     uint32_t delay_time_us;
     
     // PARAMETERS
+    AP_Int8 enabled;
     // Servo position limits
     AP_Int16 pos_min;
     AP_Int16 pos_max;
 
-    // Enable servo auto-detection
-    AP_Int8 servo_auto_det_en;
-
-    // Servo desired running speed
-    AP_Int16 servo_des_run_speed;
-
-    // Servo desired running speed register address
-    AP_Int8 servo_des_run_speed_reg;
-
     // Servo ID mask
     AP_Int32 servo_id_mask;
 
-    // Servo goal position register adress
-    AP_Int8 servo_goal_pos_reg;
+    //Debug level
+    AP_Int8 debug_level;
+      // Enable servo auto-detection
+    bool servo_auto_det_en = true;
 
-#if TTLSERVO_DEBUG_LEVEL > 0
     struct debug{
       uint32_t position_command_count;
       uint32_t position_command_response_count;
@@ -164,9 +151,8 @@ class AP_TTLServo {
 
     debug _debug;
     debug _prev_debug; 
+
     void print_debug();
-#endif
-    uint32_t last_gcs_announce_t;
 };
 
 #endif //AP_FEETECHSERVO_ENABLED
