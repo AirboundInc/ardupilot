@@ -545,6 +545,7 @@ void AP_TTLServo::update()
         }
         initialised = true;
         last_send_us = AP_HAL::micros();
+        delay_time_us = 7*1e6;
         return;
     }
 
