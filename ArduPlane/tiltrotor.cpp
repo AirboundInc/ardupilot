@@ -847,13 +847,12 @@ void Tiltrotor::dual_axis_output(void)
             quadplane.motors_output(false);
         }
 
-        // // AP_MotorsTailsitter::output_to_motors() reuses k_throttle as its
-        // // own collective-thrust actuator output (see AP_MotorsTailsitter.cpp).
-        // // Capture it for QTHR debug logging, then restore k_throttle so it
-        // // keeps its normal fixed-wing-forward-throttle meaning for anything
-        // // else that reads it this tick (e.g. AETR logging while hovering).
-        // dual_axis_mixout_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
-        // SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, throttle);
+        // AP_MotorsTailsitter::output_to_motors() reuses k_throttle as its
+        // own collective-thrust actuator output (see AP_MotorsTailsitter.cpp).
+        // Capture it for QTHR debug logging, then restore k_throttle so it
+        // keeps its normal fixed-wing-forward-throttle meaning for anything
+        // else that reads it this tick (e.g. AETR logging while hovering).
+        dual_axis_mixout_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
 
         if (!quadplane.in_vtol_mode()) {
             // in FW transition: limit/blend the commanded throttle over
