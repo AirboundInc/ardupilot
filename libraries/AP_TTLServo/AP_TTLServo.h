@@ -98,6 +98,7 @@ class AP_TTLServo {
     struct gcs_announce{
       bool empty_servo_bus = false;
       bool servo_not_responding = false;
+      uint32_t last_servo_responsding_error_ms;
       uint32_t servo_reponding_error_clear_ms;
     }_gcs_announce;
 

@@ -703,6 +703,7 @@ void AP_TTLServo::is_servo_alive()
         if( !_gcs_announce.servo_not_responding && servo_not_responding) {
             GCS_SEND_TEXT(MAV_SEVERITY_ERROR,"TTLServo: Servo %d not responding", i+1);
             _gcs_announce.servo_not_responding = true;
+            _gcs_announce.last_servo_responsding_error_ms = AP_HAL::millis();
         }
         else if(_gcs_announce.servo_not_responding) {
             if(servo_not_responding) {
@@ -720,6 +721,13 @@ void AP_TTLServo::is_servo_alive()
                 GCS_SEND_TEXT(MAV_SEVERITY_INFO,"TTLServo: Servo %d responding again", i+1);
                 _gcs_announce.servo_not_responding = false;
                 _gcs_announce.servo_reponding_error_clear_ms = 0;
+                return;
+            }
+            
+            if(AP_HAL::millis() - _gcs_announce.last_servo_responsding_error_ms > 30000)
+            {
+                _gcs_announce.servo_not_responding = false;
+                return;
             }
         }
 
