@@ -951,8 +951,8 @@ void Tiltrotor::dual_axis_output(void)
             // FW rudder command
             const float rud_gain_fw  = float(plane.g2.rudd_dt_gain) * 0.01f;
             const float rudder_dt_fw = rud_gain_fw * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
-            const float rudder_left = constrain_float(throttle_blend + 50.0f * rudder_dt_fw, 0, 100);
-            const float rudder_right = constrain_float(throttle_blend - 50.0f * rudder_dt_fw, 0, 100);
+            const float rudder_left = constrain_float(plane_throttle + 50.0f * rudder_dt_fw, 0, 100);
+            const float rudder_right = constrain_float(plane_throttle - 50.0f * rudder_dt_fw, 0, 100);
 
             // FW tilt command
             const float scaler_fw = (plane.control_mode == &plane.mode_manual) ? 1.0f :
@@ -968,8 +968,8 @@ void Tiltrotor::dual_axis_output(void)
             tilt_left_adjusted  = (1.0f - alpha) * tilt_left_adjusted + alpha * tilt_left_fw;
             tilt_right_adjusted = (1.0f - alpha) * tilt_right_adjusted + alpha * tilt_right_fw;
             // Blend the throttle commands based on the axis1_pos
-            float throttle_left = quadplane.motors->get_throttle_out_left();
-            float throttle_right = quadplane.motors->get_throttle_out_right();
+            float throttle_left = quadplane.motors->get_throttle_out_left()*100.0f;
+            float throttle_right = quadplane.motors->get_throttle_out_right()*100.0f;
             float blended_throttle_left = (1.0f - alpha) * throttle_left + alpha * rudder_left;
             float blended_throttle_right = (1.0f - alpha) * throttle_right + alpha * rudder_right;
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(blended_throttle_left, 0, 100));
