@@ -968,8 +968,8 @@ void Tiltrotor::dual_axis_output(void)
             tilt_left_adjusted  = (1.0f - alpha) * tilt_left_adjusted + alpha * tilt_left_fw;
             tilt_right_adjusted = (1.0f - alpha) * tilt_right_adjusted + alpha * tilt_right_fw;
             // Blend the throttle commands based on the axis1_pos
-            float throttle_left = SRV_Channels::get_output_scaled(SRV_Channel::k_throttleLeft);
-            float throttle_right = SRV_Channels::get_output_scaled(SRV_Channel::k_throttleRight);
+            float throttle_left = quadplane.motors->get_throttle_out_left();
+            float throttle_right = quadplane.motors->get_throttle_out_right();
             float blended_throttle_left = (1.0f - alpha) * throttle_left + alpha * rudder_left;
             float blended_throttle_right = (1.0f - alpha) * throttle_right + alpha * rudder_right;
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(blended_throttle_left, 0, 100));
@@ -980,6 +980,13 @@ void Tiltrotor::dual_axis_output(void)
                 "Qffff", // uint64_t, float
                 AP_HAL::micros64(), alpha, plane_throttle, vtol_throttle,
                 throttle_blend);
+            AP::logger().WriteStreaming("BLNE", "TimeUS,thrL,thrR,blThL,blThR",
+                "s----", // seconds, degrees
+                "F0000", // micro (1e-6), no mult (1e0)
+                "Qffff", // uint64_t, float
+                AP_HAL::micros64(), throttle_left, throttle_right,
+                blended_throttle_left, blended_throttle_right);
+                
         }
 
 #if HAL_LOGGING_ENABLED
@@ -1040,6 +1047,7 @@ void Tiltrotor::dual_axis_output(void)
 
     const float rud_gain  = float(plane.g2.rudd_dt_gain) * 0.01f;
     const float rudder_dt = rud_gain * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
+
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle + 50.0f * rudder_dt, 0, 100));
     SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle - 50.0f * rudder_dt, 0, 100));

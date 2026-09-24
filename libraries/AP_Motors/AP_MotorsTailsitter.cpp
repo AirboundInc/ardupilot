@@ -23,6 +23,7 @@
 #include "AP_MotorsTailsitter.h"
 #include <GCS_MAVLink/GCS.h>
 #include <SRV_Channel/SRV_Channel.h>
+#include <AP_Logger/AP_Logger.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -103,6 +104,13 @@ void AP_MotorsTailsitter::output_to_motors()
 
     SRV_Channels::set_output_pwm(SRV_Channel::k_throttleLeft, output_to_pwm(_actuator[0]));
     SRV_Channels::set_output_pwm(SRV_Channel::k_throttleRight, output_to_pwm(_actuator[1]));
+    _PWM_LEFT = output_to_pwm(_actuator[0]);
+    _PWM_RIGHT = output_to_pwm(_actuator[1]);
+     AP::logger().WriteStreaming("MTR", "TimeUS,ThrL,ThrR",
+                "s--", // seconds, degrees
+                "F00", // micro (1e-6), no mult (1e0)
+                "Qff", // uint64_t, float
+                AP_HAL::micros64(), _PWM_LEFT, _PWM_RIGHT);
 
     // use set scaled to allow a different PWM range on plane forward throttle, throttle range is 0 to 100
     SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, _actuator[2]*100);
