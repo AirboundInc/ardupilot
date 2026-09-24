@@ -91,10 +91,14 @@ class AP_TTLServo {
     //Servo
     void set_pwm();
 
+    void is_servo_alive();
+
     COMM_STATE servo_comm_state=COMM_STATE::IDLE;
     
     struct gcs_announce{
       bool empty_servo_bus = false;
+      bool servo_not_responding = false;
+      uint32_t servo_reponding_error_clear_ms;
     }_gcs_announce;
 
     struct {
@@ -120,6 +124,7 @@ class AP_TTLServo {
     // Keep track of the data sent required time
     uint32_t last_send_us;
     uint32_t delay_time_us;
+
     
     // PARAMETERS
     AP_Int8 enabled;

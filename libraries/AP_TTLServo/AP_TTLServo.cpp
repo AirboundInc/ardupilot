@@ -202,9 +202,9 @@ void AP_TTLServo::process_packet(const RESPONSE_TYPE& response,const uint8_t *pa
         {
             if(length != 8)
             {
+                _debug.bad_response_count++;
                 if (debug_level > 0)
                 {
-                    _debug.bad_response_count++;
                     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Invalid Position read response:%d",length);
                 }
 
@@ -228,10 +228,7 @@ void AP_TTLServo::process_packet(const RESPONSE_TYPE& response,const uint8_t *pa
                 telem_data[i].angle = position;
                 telem_data[i].last_response_ms = AP_HAL::millis();
                 
-                if(debug_level > 0)
-                {
-                    _debug.read_position_response_count++;
-                }
+                _debug.read_position_response_count++;
 
                 if(debug_level > 1) { 
                     if(!is_equal(telem_data[i].angle, position))
@@ -247,10 +244,10 @@ void AP_TTLServo::process_packet(const RESPONSE_TYPE& response,const uint8_t *pa
         {
             if(length != 6)
             {
+                _debug.bad_response_count++;
                 if(debug_level > 0)
                 {
                     GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Invalid Position command response:%d",length);
-                    _debug.bad_response_count++;
                 }
 
                 if(debug_level > 1)
@@ -261,8 +258,7 @@ void AP_TTLServo::process_packet(const RESPONSE_TYPE& response,const uint8_t *pa
                     }
                 }
             }
-            else
-            {
+            else {
                 uint8_t error_status = packet[4];
                 if(error_status != 0)
                 {
@@ -271,16 +267,19 @@ void AP_TTLServo::process_packet(const RESPONSE_TYPE& response,const uint8_t *pa
                 int8_t i = id - 1;
                 telem_data[i].error_flags = error_status;
                 telem_data[i].last_response_ms = AP_HAL::millis();
-                if(debug_level > 0)
-                {
-                    _debug.position_command_response_count++;
-                }
+                _debug.position_command_response_count++;
+                
             }
             break;
         }
         case RESPONSE_TYPE::PING:
         {
-            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "TTLServo:Recieved ping response");
+            if(length != 6) {
+                GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "TTLServo:Invalid ping response");
+            }
+            else {
+                GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "TTLServo:Received ping response");
+            }
             break;
         }
         default:
@@ -384,9 +383,7 @@ void AP_TTLServo::send_position_read_command()
     uint8_t reg_address = 0x38;
     uint8_t len = 2;
     send_read_register_instruction(id,reg_address,len);
-    if(debug_level > 0){
-        _debug.read_position_count++;
-    }
+    _debug.read_position_count++;
 }
 
 void AP_TTLServo::send_read_baudrate_command()
@@ -508,9 +505,7 @@ void AP_TTLServo::set_pwm()
         // Send the goal position to the servo
         uint8_t id = i+1;
         send_command(id, GOAL_POSITION_REG, goalPosition, 2);
-        if(debug_level > 0) {
-            _debug.position_command_count++;
-        }    
+        _debug.position_command_count++;    
     }
 }
 
@@ -522,9 +517,11 @@ void AP_TTLServo::print_debug()
         float time_delta = (now - _debug.last_gcs_announce_time)*0.001f;
         float command_rate = (_debug.position_command_response_count-_prev_debug.position_command_response_count)/time_delta;
         float position_feedback_rate = (_debug.read_position_response_count-_prev_debug.read_position_response_count)/time_delta;
-        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: PositionCommanddiff:%d",_debug.position_command_count-_debug.position_command_response_count);  
-        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: ReadPosCountdiff:%d",_debug.read_position_count-_debug.read_position_response_count);
-        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: badresponsecount:%d",_debug.bad_response_count); 
+        float percent_command_loss = ((_debug.position_command_count-_debug.position_command_response_count)*100.0f)/(_debug.position_command_count); 
+        float percent_position_read_loss = ((_debug.read_position_count-_debug.read_position_response_count)*100.0f)/(_debug.read_position_count);
+        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Command Loss:%.2f",percent_command_loss);  
+        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Position Read Loss:%.2f",percent_position_read_loss);
+        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: badresponsecount:%lu",_debug.bad_response_count); 
         GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Command rate:%.2f",command_rate); 
         GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo: Feedback rate:%.2f",position_feedback_rate); 
         _debug.last_gcs_announce_time = AP_HAL::millis();
@@ -548,7 +545,7 @@ void AP_TTLServo::update()
         }
         initialised = true;
         last_send_us = AP_HAL::micros();
-        delay_time_us = 7*1e6;
+        delay_time_us = 10*1e6;
         return;
     }
 
@@ -643,6 +640,8 @@ void AP_TTLServo::update()
 
     update_telem();
 
+    is_servo_alive();
+
     if(debug_level > 0)
     {
         print_debug();
@@ -680,6 +679,41 @@ void AP_TTLServo::update_telem()
 
 }
 
+void AP_TTLServo::is_servo_alive()
+{
+    for (uint8_t i = 0; i < NUM_SERVO_CHANNELS; i++) {
+        // If this channel doesn't correspond to a servo ID, skip it
+        if (((1U << i) & servo_id_mask) == 0) {
+            continue;
+        }
+        
+        bool servo_not_responding = telem_data[i].last_response_ms != 0 && (AP_HAL::millis() - telem_data[i].last_response_ms) > 5000;
+        //1. Immediately announce if no response was identified
+        if( !_gcs_announce.servo_not_responding && servo_not_responding) {
+            GCS_SEND_TEXT(MAV_SEVERITY_ERROR,"TTLServo: Servo %d not responding", i+1);
+            _gcs_announce.servo_not_responding = true;
+        }
+        else if(_gcs_announce.servo_not_responding) {
+            if(servo_not_responding) {
+                _gcs_announce.servo_reponding_error_clear_ms = 0;
+            }
+            else {
+                if(_gcs_announce.servo_reponding_error_clear_ms == 0 ) {
+                    _gcs_announce.servo_reponding_error_clear_ms = AP_HAL::millis();
+                }
+            }
+
+            //Servo is considered responding only if response is consistent for 10s
+            if(_gcs_announce.servo_reponding_error_clear_ms !=0 && AP_HAL::millis() - _gcs_announce.servo_reponding_error_clear_ms > 10000) {
+                //for 10s data is up then inform the user
+                GCS_SEND_TEXT(MAV_SEVERITY_INFO,"TTLServo: Servo %d responding again", i+1);
+                _gcs_announce.servo_not_responding = false;
+                _gcs_announce.servo_reponding_error_clear_ms = 0;
+            }
+        }
+
+    }
+}
 #endif //NUM_SERVO_CHANNELS
 
 #endif //AP_FEETECHSERVO_ENABLED
