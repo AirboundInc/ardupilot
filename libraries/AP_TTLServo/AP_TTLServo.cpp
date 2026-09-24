@@ -386,27 +386,50 @@ void AP_TTLServo::read_bytes(const RESPONSE_TYPE& response)
 
 void AP_TTLServo::send_position_read_command()
 {
-    uint8_t id = 1; 
-    uint8_t reg_address = 0x38;
-    uint8_t len = 2;
-    send_read_register_instruction(id,reg_address,len);
-    _debug.read_position_count++;
+    for (uint8_t i = 0; i < NUM_SERVO_CHANNELS; i++) {
+
+        // If this channel doesn't correspond to a servo ID, skip it
+        if (((1U << i) & servo_id_mask) == 0) {
+            continue;
+        }
+        uint8_t id = i+1; 
+        uint8_t reg_address = 0x38;
+        uint8_t len = 2;
+        send_read_register_instruction(id,reg_address,len);
+        _debug.read_position_count++;
+
+    }
 }
 
 void AP_TTLServo::send_read_baudrate_command()
 {
-    uint8_t id = 1; 
-    uint8_t reg_address = 0x06;
-    uint8_t len = 1;
-    send_read_register_instruction(id,reg_address,len);
+    for (uint8_t i = 0; i < NUM_SERVO_CHANNELS; i++) {
+
+        // If this channel doesn't correspond to a servo ID, skip it
+        if (((1U << i) & servo_id_mask) == 0) {
+            continue;
+        }
+        uint8_t id = i+1; 
+        uint8_t reg_address = 0x06;
+        uint8_t len = 1;
+        send_read_register_instruction(id,reg_address,len);
+    }
 }
 
 void AP_TTLServo::send_read_voltage_command()
 {
-    uint8_t id = 1; 
-    uint8_t reg_address = 0x3E;
-    uint8_t len = 1;
-    send_read_register_instruction(id,reg_address,len);
+    for (uint8_t i = 0; i < NUM_SERVO_CHANNELS; i++) {
+
+        // If this channel doesn't correspond to a servo ID, skip it
+        if (((1U << i) & servo_id_mask) == 0) {
+            continue;
+        }
+        uint8_t id = i+1; 
+        uint8_t reg_address = 0x3E;
+        uint8_t len = 1;
+        send_read_register_instruction(id,reg_address,len);
+
+    }
 }
 
 void AP_TTLServo::send_read_register_instruction(uint8_t id, uint8_t reg,uint8_t readlen)
