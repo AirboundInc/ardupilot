@@ -970,6 +970,13 @@ void Tiltrotor::dual_axis_output(void)
             // Blend the throttle commands based on the axis1_pos
             float throttle_left = quadplane.motors->get_throttle_out_left()*100.0f;
             float throttle_right = quadplane.motors->get_throttle_out_right()*100.0f;
+            if(back_trans_hold_throttle > 0.0f){
+                float thrust_bt = (throttle_left + throttle_right)*0.5f;
+                float roll_bt = (throttle_left - throttle_right)*0.5f;
+                thrust_bt = MAX(back_trans_hold_throttle, thrust_bt);
+                throttle_left = constrain_float(thrust_bt + roll_bt, 0, 100);
+                throttle_right = constrain_float(thrust_bt - roll_bt, 0, 100);
+            }
             float blended_throttle_left = (1.0f - alpha) * throttle_left + alpha * rudder_left;
             float blended_throttle_right = (1.0f - alpha) * throttle_right + alpha * rudder_right;
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(blended_throttle_left, 0, 100));
