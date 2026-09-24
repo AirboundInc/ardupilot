@@ -75,6 +75,13 @@ extern const AP_HAL::HAL& hal;
 // Define the desired running speed
 #define RUNNING_SPEED 2500
 
+//Min Angle 0 deg
+#define MIN_ANGLE_VALUE 0 
+
+
+//Max angle 360deg
+#define MAX_ANGLE_VALUE 4095 
+
 // How many times to broadcast messages to configure the servos
 #define CONFIGURE_SERVO_COUNT 1
 
@@ -104,7 +111,7 @@ const AP_Param::GroupInfo AP_TTLServo::var_info[] = {
     // @Description: Maximum position of servo at its maximum value. This should be within the position control range of the servos, normally 0 to 4095
     // @Range: 0 4095
     // @User: Standard
-    AP_GROUPINFO("POSMAX", 3, AP_TTLServo, pos_max, 4095),
+    AP_GROUPINFO("POSMAX", 3, AP_TTLServo, pos_max, 360),
 
     // @Param: ID_BM
     // @DisplayName: Servo IDs bitmask
@@ -499,8 +506,12 @@ void AP_TTLServo::set_pwm()
         const uint16_t pwm = c->get_output_pwm();
         const uint16_t min = c->get_output_min();
         const uint16_t max = c->get_output_max();
+        uint16_t min_angle_limit = static_cast<uint16_t>(pos_min/0.087);
+        min_angle_limit = MAX(MIN_ANGLE_VALUE, min_angle_limit);
+        uint16_t max_angle_limit = static_cast<uint16_t>(pos_max/0.087);
+        max_angle_limit = MIN(MAX_ANGLE_VALUE,max_angle_limit);
         float v = float(pwm - min) / (max - min);
-        uint16_t goalPosition = (uint16_t)(pos_min) + (uint16_t)(v * (pos_max - pos_min));
+        uint16_t goalPosition = (uint16_t)(min_angle_limit) + (uint16_t)(v * (max_angle_limit - min_angle_limit));
 
         // Send the goal position to the servo
         uint8_t id = i+1;
