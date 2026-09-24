@@ -104,8 +104,8 @@ void AP_MotorsTailsitter::output_to_motors()
 
     SRV_Channels::set_output_pwm(SRV_Channel::k_throttleLeft, output_to_pwm(_actuator[0]));
     SRV_Channels::set_output_pwm(SRV_Channel::k_throttleRight, output_to_pwm(_actuator[1]));
-    _PWM_LEFT = output_to_pwm(_actuator[0]);
-    _PWM_RIGHT = output_to_pwm(_actuator[1]);
+    _PWM_LEFT = _actuator[0];
+    _PWM_RIGHT = _actuator[1];
      AP::logger().WriteStreaming("MTR", "TimeUS,ThrL,ThrR",
                 "s--", // seconds, degrees
                 "F00", // micro (1e-6), no mult (1e0)
