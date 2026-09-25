@@ -111,10 +111,10 @@ public:
     static const struct AP_Param::GroupInfo        var_info[];
 
     // to set the left motor output
-    float get_throttle_out_left() const { return _PWM_LEFT; }
+    float get_throttle_out_left() const { return _left_motor_throttle; }
 
     // to set the right motor output
-    float get_throttle_out_right() const { return _PWM_RIGHT; }
+    float get_throttle_out_right() const { return _right_motor_throttle; }
 
 protected:
 
@@ -211,6 +211,6 @@ protected:
 
     // mask of overridden motors (used by quadplane tiltrotors)
     uint16_t _motor_mask_override;
-    float _PWM_LEFT;
-    float _PWM_RIGHT;
+    float _left_motor_throttle;  // left motor throttle for dual axis tiltrotors
+    float _right_motor_throttle; // right motor throttle for dual axis tiltrotors
 };

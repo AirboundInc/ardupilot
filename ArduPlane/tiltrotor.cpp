@@ -981,6 +981,13 @@ void Tiltrotor::dual_axis_output(void)
             float blended_throttle_right = (1.0f - alpha) * throttle_right + alpha * rudder_right;
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(blended_throttle_left, 0, 100));
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(blended_throttle_right, 0, 100));
+#if HAL_LOGGING_ENABLED
+            AP::logger().WriteStreaming("BLND", "TimeUS,alpha,TrL,TrR",
+                "sddd", // seconds, degrees
+                "F000", // micro (1e-6), no mult (1e0)
+                "Qfff", // uint64_t, float
+                AP_HAL::micros64(), alpha, blended_throttle_left, blended_throttle_right);
+#endif
                 
         }
 
