@@ -331,7 +331,7 @@ local cs = {
     http_retry_count = 0,
     auth_done = false,
     creg_search_ms = nil,
-    siminfo_sent = false,
+    siminfo_n = 0,             -- SIMINFO queries sent so far (one at a time)
     siminfo_printed = false,
     -- Last AUTHKEY value acted on, so the signing-disable write in update() is
     -- edge-triggered instead of firing every tick. Deliberately NOT reset by
@@ -1849,7 +1849,7 @@ local function step_CREG()
             -- Registered. SIMINFO prints the identity block and then makes
             -- this same HTTPAUTH-or-not decision, so the routing lives in one
             -- place rather than both.
-            step = "SIMINFO"; cs.siminfo_sent = false
+            step = "SIMINFO"; cs.siminfo_n = 0
             return
             
         elseif reg == "0" or reg == "3" then
@@ -1903,10 +1903,17 @@ local function step_SIMINFO()
     if raw and #raw > 0 then buf.setup = buf.setup .. raw end
     if #buf.setup > 2048 then buf.setup = "" end
 
-    if not cs.siminfo_sent then
-        AT_send('AT+COPS=3,0\r\n'); AT_send('AT+COPS?\r\n')
-        if modem.spn then AT_send(modem.spn) end
-        cs.siminfo_sent = true
+    -- One query at a time: a modem still answering one drops the next (EC25,
+    -- 0043-0045: three sent together, only the first answered, SIM "unknown").
+    -- The next goes out after a new OK/ERROR, or after 1 s.
+    local q = { 'AT+COPS=3,0\r\n', 'AT+COPS?\r\n', modem.spn }
+    local _, n_ok = buf.setup:gsub('\r\nOK\r\n', '')
+    local _, n_err = buf.setup:gsub('ERROR', '')
+    local now = millis():tofloat()
+    if cs.siminfo_n < #q and (cs.siminfo_n == 0 or n_ok + n_err > cs.siminfo_acks
+                              or now - cs.siminfo_ms > 1000) then
+        cs.siminfo_n = cs.siminfo_n + 1; cs.siminfo_ms = now; cs.siminfo_acks = n_ok + n_err
+        AT_send(q[cs.siminfo_n])
         return
     end
 
@@ -1929,16 +1936,13 @@ local function step_SIMINFO()
                      or buf.setup:find('ERROR')
     -- Re-queried each registration so a network change is picked up. Revisits
     -- get a shorter budget: restoring the link outranks naming the operator.
-    local waited = (millis():tofloat() - cs.step_timer_ms) / 1000
+    local waited = (now - cs.step_timer_ms) / 1000
     if not (oper and spn_done) and waited < (cs.siminfo_printed and 0.8 or 1.5) then return end
-    -- HTTPAUTH takes a bare OK as an answer, so before it every query must
-    -- have replied, or a late one is read as its CERT_LIST reply. At most 3 s,
-    -- and only once per session (auth is cached).
-    if waited < 3 and P.HTTPAUTH:get() == 1 and modem.http and (AUTH_EVERY_RECONNECT or not cs.auth_done) then
-        local _, n_ok = buf.setup:gsub('\r\nOK\r\n', '')
-        local _, n_err = buf.setup:gsub('ERROR', '')
-        if n_ok + n_err < (modem.spn and 3 or 2) then return end
-    end
+    -- HTTPAUTH takes a bare OK as an answer, so before it every query must be
+    -- sent and the last one answered, or a late reply is read as its CERT_LIST
+    -- answer. At most 3 s, and only once per session (auth is cached).
+    if waited < 3 and P.HTTPAUTH:get() == 1 and modem.http and (AUTH_EVERY_RECONNECT or not cs.auth_done)
+       and (cs.siminfo_n < #q or n_ok + n_err <= cs.siminfo_acks) then return end
 
     -- Each field updated only from its own answer -- a partial reply must not
     -- blank the half that didn't arrive, which is the common case at 0.8s.
