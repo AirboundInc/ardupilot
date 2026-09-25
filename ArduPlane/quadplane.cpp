@@ -2986,27 +2986,6 @@ void QuadPlane::vtol_position_controller(void)
             float zero = 0;
             float target_z = target_altitude_cm;
             pos_control->input_pos_vel_accel_z(target_z, zero, 0);
-        /*    
-        } else if (plane.control_mode == &plane.mode_qrtl) {
-            if (tailsitter.enabled()){
-                set_climb_rate_cms(0);
-                last_pos2_ms = now_ms;
-                weathervane->set_gain(tailsitter.wvane_max_gain/3);
-            }else{
-                Location loc2 = loc;
-                loc2.change_alt_frame(Location::AltFrame::ABOVE_ORIGIN);
-                float target_z = loc2.alt;
-                float zero = 0;
-                pos_control->input_pos_vel_accel_z(target_z, zero, 0);
-            }
-        } else {
-            if(tailsitter.enabled()){
-                last_pos2_ms = now_ms;
-                weathervane->set_gain(tailsitter.wvane_max_gain/3);
-            }
-            set_climb_rate_cms(0);
-        }
-        */
         } else if (plane.control_mode == &plane.mode_qrtl) {
             if (vtol_alt_freeze) {
                 set_climb_rate_cms(0);
@@ -3036,10 +3015,7 @@ void QuadPlane::vtol_position_controller(void)
 
     case QPOS_LAND_DESCEND:
     case QPOS_LAND_ABORT:
-    case QPOS_LAND_FINAL: {
-        /*
-        if (tailsitter.enabled() && now_ms - last_pos2_ms < q_land_freeze_time * 1000) {
-        */  
+    case QPOS_LAND_FINAL: { 
         if (vtol_alt_freeze && now_ms - last_pos2_ms < q_land_freeze_time * 1000) {  
             set_climb_rate_cms(0);
             static uint32_t last_log_ms = 0;
