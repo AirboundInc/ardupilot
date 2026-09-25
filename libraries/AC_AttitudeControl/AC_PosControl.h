@@ -337,7 +337,6 @@ public:
 
     bool set_dual_axis_tilt_transition(bool enable){return _dual_axis_tilt_transition = enable;}
 
-
     /// Offset
 
 #if AP_SCRIPTING_ENABLED
@@ -601,6 +600,6 @@ private:
 
     // singleton
     static AC_PosControl *_singleton;
-
+    // true when dual axis tilt transition is enabled
     bool _dual_axis_tilt_transition = false;
 };
