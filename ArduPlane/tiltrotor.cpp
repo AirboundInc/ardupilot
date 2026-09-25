@@ -923,10 +923,7 @@ void Tiltrotor::dual_axis_output(void)
             if((plane.TECS_controller.get_throttle_demand()) > 0.0f){
                 plane_throttle = plane.TECS_controller.get_throttle_demand();
             }
-            float vtol_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
             float alpha =  constrain_float(-axis1_pos / SERVO_MAX, 0.0f, 1.0f);
-            float throttle_blend = constrain_float((1.0f - alpha) * vtol_throttle + alpha * plane_throttle, 0, 100);
-            SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, throttle_blend);
             // FW rudder command
             const float rud_gain_fw  = float(plane.g2.rudd_dt_gain) * 0.01f;
             const float rudder_dt_fw = rud_gain_fw * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
@@ -949,8 +946,8 @@ void Tiltrotor::dual_axis_output(void)
             // Blend the throttle commands based on the axis1_pos
             float throttle_left = quadplane.motors->get_throttle_out_left()*100.0f;
             float throttle_right = quadplane.motors->get_throttle_out_right()*100.0f;
+            float thrust_bt = (throttle_left + throttle_right)*0.5f;
             if(back_trans_hold_throttle > 0.0f){
-                float thrust_bt = (throttle_left + throttle_right)*0.5f;
                 float roll_bt = (throttle_left - throttle_right)*0.5f;
                 thrust_bt = MAX(back_trans_hold_throttle, thrust_bt);
                 throttle_left = constrain_float(thrust_bt + roll_bt, 0, 100);
@@ -960,6 +957,8 @@ void Tiltrotor::dual_axis_output(void)
             float blended_throttle_right = (1.0f - alpha) * throttle_right + alpha * rudder_right;
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(blended_throttle_left, 0, 100));
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(blended_throttle_right, 0, 100));
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, thrust_bt);
+
 #if HAL_LOGGING_ENABLED
             AP::logger().WriteStreaming("BLND", "TimeUS,alpha,TrL,TrR",
                 "s---", // seconds, no units
@@ -1149,7 +1148,7 @@ bool Tiltrotor::in_vtol_transition(uint32_t now) const
     // smoothen throttle transition for Q_TILT_FWHLD_MS + Q_TILT_BTDLY_MS after backtransition
     const uint32_t total_ms = (uint32_t)(back_trans_time_ms);
     if (total_ms > 0 && transition->backtrans_start_ms != 0 &&
-        (now - transition->backtrans_start_ms) < total_ms) {
+        (now - transition->backtrans_start_ms) < total_ms && quadplane.motors->armed()) {
         return true;
     }
 
