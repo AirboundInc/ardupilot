@@ -100,7 +100,7 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @DisplayName: Back transition delay for running fixed wing controller
     // @Description: How long, after the Q_TILT_FWHLD_MS throttle hold period ends, to blend from the held fixed wing throttle to the active VTOL controller's commanded throttle following a backtransition into any VTOL mode    // @Range: 0 10000
     // @User: Standard
-    AP_GROUPINFO("BTTIM_MS", 13, Tiltrotor, back_trans_time_ms, 1000),
+    AP_GROUPINFO("BTTIM_MS", 13, Tiltrotor, back_trans_time_ms, 4000),
 
     // @Param: THR_BT
     // @DisplayName: Backtransition hold throttle
@@ -108,7 +108,7 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @Units: %
     // @Range: 0 100
     // @User: Standard
-    AP_GROUPINFO("TRBT_MIN", 14, Tiltrotor, back_trans_hold_throttle, 30),
+    AP_GROUPINFO("TRBT_MIN", 14, Tiltrotor, back_trans_hold_throttle, 0),
 
     // @Param: THR_FT
     // @DisplayName: Forward transition hold throttle

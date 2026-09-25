@@ -2946,8 +2946,7 @@ void QuadPlane::vtol_position_controller(void)
     case QPOS_POSITION1:
         if (tailsitter.in_vtol_transition(now_ms) ||
             (tiltrotor.type == Tiltrotor::TILT_TYPE_DUAL_AXIS &&
-             tiltrotor.in_vtol_transition(now_ms) &&
-             tiltrotor.in_fw_throttle_hold(now_ms))) {
+             tiltrotor.in_vtol_transition(now_ms))) {
             pos_control->relax_z_controller(0);
             break;
         }

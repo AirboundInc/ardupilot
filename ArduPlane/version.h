@@ -6,7 +6,7 @@
 
 #include "ap_version.h"
 
-#define THISFIRMWARE "AB ArduPlane V4.6.3.1 dev - Blend Cntrl"
+#define THISFIRMWARE "AB ArduPlane V4.6.3.1 dev - Blend Cntrl_v1"
 
 // the following line is parsed by the autotest scripts
 #define FIRMWARE_VERSION 4,6,3,FIRMWARE_VERSION_TYPE_DEV
