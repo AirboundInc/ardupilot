@@ -242,7 +242,6 @@ private:
 
     // time when we entered VTOL mode from FW (for Q_BTDELAY_MS)
     uint32_t backtrans_start_ms;
-
     Tiltrotor& tiltrotor;
 
 };
