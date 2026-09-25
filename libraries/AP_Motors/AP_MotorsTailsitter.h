@@ -31,7 +31,7 @@ public:
 
     // Set by tailsitters using diskloading minumum outflow velocity limit
     void set_min_throttle(float val) {_external_min_throttle = val;}
-    
+
 protected:
     // calculate motor outputs
     void output_armed_stabilizing() override;
@@ -53,7 +53,5 @@ protected:
 
     // true if differential thrust is available
     bool _has_diff_thrust;
-
-    
 
 };
