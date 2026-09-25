@@ -51,9 +51,7 @@ void ModeQStabilize::run()
 
     // backtransition throttle hold/blend is now applied generically for
     // every VTOL mode in Tiltrotor::dual_axis_output()
-    if (quadplane.tiltrotor.in_vtol_transition(now) &&
-        quadplane.tiltrotor.is_hold_fw_ctrl_enabled() &&
-        quadplane.tiltrotor.in_fw_throttle_hold(now)) {
+    if (quadplane.tiltrotor.in_vtol_transition(now)) {
         Mode::run();
         return;
     }

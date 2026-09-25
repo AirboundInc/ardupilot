@@ -44,15 +44,6 @@ public:
     void dual_axis_output();
     bool in_vtol_transition(uint32_t now) const;
 
-    // true only during the Q_TILT_FWHLD_MS hold sub-window immediately
-    // after a backtransition (before the Q_TILT_BTDLY_MS blend starts)
-    bool in_fw_throttle_hold(uint32_t now) const;
-
-    // hold the Q_TILT_THR_BT throttle steady for Q_TILT_FWHLD_MS, then
-    // linearly blend to the pilot's vertical throttle demand over the
-    // following Q_TILT_BTDLY_MS
-    float get_backtrans_throttle(uint32_t now, float pilot_throttle);
-
     // hold the Q_TILT_THR_FT throttle steady for Q_TILT_FTHLD_MS, then
     // linearly blend to the FBWA/commanded throttle over the following
     // Q_TILT_FTBLD_MS, during a forward transition (dual axis tiltrotor)
@@ -94,9 +85,6 @@ public:
     // Write tiltrotor specific log
     void write_log();
 
-    // Fixed wing controller hold enabled for back transition
-    bool is_hold_fw_ctrl_enabled() const { return fw_control_hold_en > 0; }
-
     AP_Int8 enable;
     AP_Int16 tilt_mask;
     AP_Int16 max_rate_up_dps;
@@ -110,20 +98,12 @@ public:
     AP_Float vectoring_gain_hvr;
     AP_Float vectored_hover_power;
     AP_Float vectoring_gain_fw;
-    AP_Float back_trans_angle;  // TODO: Implement this
 
     // Time to blend from held FW throttle to pilot throttle after the
     // fw_throttle_hold_ms hold period, following a backtransition into
     // VTOL mode (dual axis tiltrotor)
-    AP_Float back_trans_delay_ms;
+    AP_Float back_trans_time_ms;
 
-    // Time to hold the last FW throttle steady after backtransition into
-    // VTOL mode, before blending to pilot throttle over back_trans_delay_ms
-    // (dual axis tiltrotor)
-    AP_Float fw_throttle_hold_ms;
-
-    // Enable/Disable to hold fixed wing controller during fw_throttle_hold_ms in back transition
-    AP_Int8 fw_control_hold_en;
 
     // Fixed throttle (percent) to hold during fw_throttle_hold_ms after a
     // backtransition, instead of the last fixed wing throttle
@@ -170,10 +150,7 @@ private:
         float current_tilt;
         float front_left_tilt;
         float front_right_tilt;
-        uint32_t backtrans_elapsed_ms;
         float fw_throttle;
-        float pilot_throttle;
-        float blend_throttle;
         uint32_t fwdtrans_elapsed_ms;
         float fwdtrans_commanded_throttle;
         float fwdtrans_blend_throttle;
@@ -200,11 +177,6 @@ private:
 
     // throttle (0 to 1) that was last commanded in fw control mode
     float last_fw_throttle = 0;
-
-    // debug state from the last get_backtrans_throttle() call, for TILT log
-    uint32_t backtrans_elapsed_ms = 0;
-    float backtrans_pilot_throttle = 0;
-    float backtrans_blend_throttle = 0;
 
     // To notify the state
     bool backtrans_done_reported = false;
