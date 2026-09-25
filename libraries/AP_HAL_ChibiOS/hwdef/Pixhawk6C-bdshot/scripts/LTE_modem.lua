@@ -1896,7 +1896,8 @@ end
 -- HTTPAUTH. Sits here because AT+COPS? only answers once registered.
 -- AT+COPS=3,0 pins the read to long alphanumeric -- set_MCCMNC may have left
 -- it numeric (AT+COPS=4,2), giving "40410" instead of "airtel".
--- Capped at 1.5s and never calls handle_error, so it can't hold up a connect.
+-- Capped at 1.5s (3s before HTTPAUTH) and never calls handle_error, so it
+-- can't hold up a connect.
 local function step_SIMINFO()
     local raw = uart_read()
     if raw and #raw > 0 then buf.setup = buf.setup .. raw end
@@ -1930,6 +1931,14 @@ local function step_SIMINFO()
     -- get a shorter budget: restoring the link outranks naming the operator.
     local waited = (millis():tofloat() - cs.step_timer_ms) / 1000
     if not (oper and spn_done) and waited < (cs.siminfo_printed and 0.8 or 1.5) then return end
+    -- HTTPAUTH takes a bare OK as an answer, so before it every query must
+    -- have replied, or a late one is read as its CERT_LIST reply. At most 3 s,
+    -- and only once per session (auth is cached).
+    if waited < 3 and P.HTTPAUTH:get() == 1 and modem.http and (AUTH_EVERY_RECONNECT or not cs.auth_done) then
+        local _, n_ok = buf.setup:gsub('\r\nOK\r\n', '')
+        local _, n_err = buf.setup:gsub('ERROR', '')
+        if n_ok + n_err < (modem.spn and 3 or 2) then return end
+    end
 
     -- Each field updated only from its own answer -- a partial reply must not
     -- blank the half that didn't arrive, which is the common case at 0.8s.
@@ -2474,8 +2483,10 @@ local function step_CONNECTED()
     if #buf.modem > 10240 then buf.modem = "" end
     if #buf.fc > 10240 then buf.fc = "" end
 
-    -- Uplink (vehicle -> modem -> GCS). Held: drop it, nothing can carry it.
-    -- DLC2 flow-stopped: keep it queued (buf.modem is capped above).
+    -- Uplink (vehicle -> modem -> GCS). Held (no service, or flow-stopped past
+    -- LTE_GRACE): drop it -- it is stale by the time the link returns, and
+    -- flushing a backlog on release broke SCR_VM_I_COUNT (0102-0104). A shorter
+    -- flow-stop keeps it queued (buf.modem is capped above).
     if holding or cs.nocarrier_ms then
         buf.modem = ""
     elseif cmux_enabled() and cs.fc_on_ms and not cs.test_ignore_fc then
@@ -2634,7 +2645,10 @@ local function run_step()
             reset_to_ATI(); return 1000
         end
     end
-    if not step_changed and step ~= "ATI" and step ~= "CMUX" and step ~= "CPIN" and step ~= "CREG" and step ~= "HALT" and step ~= "HTTPAUTH" then
+    -- RESET times itself (<= ~6.5 s); under a short STUCK_T this sweep would
+    -- restart it mid-settle and reboot the modem again.
+    if not step_changed and step ~= "ATI" and step ~= "CMUX" and step ~= "CPIN" and step ~= "CREG" and step ~= "HALT" and step ~= "HTTPAUTH"
+       and step ~= "RESET" then
         if time_in_step > P.STUCK_T:get() then
             gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE: %s timeout after %ds", step, P.STUCK_T:get()))
             reset_to_ATI(); return 1000
