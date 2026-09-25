@@ -668,6 +668,9 @@ private:
     AP_Float takeoff_yaw_align_timeout;
     AP_Int8 takeoff_yaw_align_enable;
 
+    // enable yawing to face the landing point when POSITION1 detects an overshoot
+    AP_Int8 pos1_yaw_to_target_en;
+
     // oneshot with duration ARMING_DELAY_MS used by quadplane to delay spoolup after arming:
     // ignored unless OPTION_DELAY_ARMING or OPTION_TILT_DISARMED is set
     bool delay_arming;
