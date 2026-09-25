@@ -118,8 +118,30 @@ jobs:
           sed -i 's/step = "CMUX"/step = "CPIN"/g' ArduPlane/scripts/LTE_modem.lua
           sed -i "s/step = 'CMUX'/step = 'CPIN'/g" ArduPlane/scripts/LTE_modem.lua
 
+          # The sed above only skips the CMUX negotiation step; cmux_enabled()
+          # is still true via "modem.cmux and not NOMUX", so the script keeps
+          # CMUX-framing every write while the mock speaks plain AT. LTE_OPTIONS
+          # in lte_test.parm cannot fix that: script-declared params do not exist
+          # when the defaults file is parsed, so the value is silently dropped.
+          # Force NOMUX in the script's own default. STEPS brings back the
+          # "LTE_modem: step X" GCS lines the step check below reads (off by
+          # default in flight). 70 = SIGNALS(2) | NOMUX(4) | STEPS(64).
+          for f in scripts/LTE_modem.lua ArduPlane/scripts/LTE_modem.lua; do
+            sed -i "s/bind_add_param('OPTIONS', 12, 2)/bind_add_param('OPTIONS', 12, 70)/" "$f"
+            grep -q "bind_add_param('OPTIONS', 12, 70)" "$f" || { echo "OPTIONS sed did not apply to $f"; exit 1; }
+          done
+
+          # SCR_HEAP_SIZE must match Pixhawk6C-bdshot defaults.parm: the 200KB SITL
+          # default is too small for the Lua parser to compile LTE_modem.lua.
+          # NOTE: only the SCR_* / SERIAL* lines below actually take effect. The
+          # LTE_* ones are declared by the Lua script at runtime, so they do not
+          # exist when this file is parsed and their values are discarded -- they
+          # happen to match the script's own defaults. To really change an LTE_*
+          # param, sed the script default (as above) or PARAM_SET it after boot
+          # (as Lte_modem_test.py does for LTE_SERVER_*).
           cat <<'EOF' > lte_test.parm
           SCR_ENABLE 1
+          SCR_HEAP_SIZE 300000
           LTE_ENABLE 1
           LTE_SERPORT 0
           SERIAL1_PROTOCOL 28
