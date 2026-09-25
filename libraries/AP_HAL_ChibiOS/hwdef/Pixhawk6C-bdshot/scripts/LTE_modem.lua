@@ -61,7 +61,8 @@ local P = {
                                                         -- to SYSID_THISMAV. mavlink_system.sysid is one
                                                         -- global across every link, so changing it
                                                         -- mid-session drops any GCS on the old id.
-    AUTHKEY     = bind_add_param('AUTHKEY', 28, 1)     -- 1 = self-apply the mavlinkSigningKey.
+    TEST        = bind_add_param('TEST', 29, 0),       -- bench fault injection, see dp.test_start(); self-clears
+    AUTHKEY     = bind_add_param('AUTHKEY', 28, 0)     -- 1 = self-apply the mavlinkSigningKey.
                                                         -- 0 = signing OFF: the stored key is erased
                                                         -- (see update()), not just left unapplied -- it
                                                         -- lives in FRAM, not a parameter. Never logged.
@@ -135,7 +136,7 @@ if supports_routing then
     P_ROUTE.MASK = bind_add_param('ROUTE_MASK',  19, 32)
 end
 
-local OPT = { LOGALL=(1<<0), SIGNALS=(1<<1), NOMUX=(1<<2), NOSIGQUERY=(1<<3), TCP=(1<<4), DPUSH=(1<<5) }
+local OPT = { LOGALL=(1<<0), SIGNALS=(1<<1), NOMUX=(1<<2), NOSIGQUERY=(1<<3), TCP=(1<<4), DPUSH=(1<<5), STEPS=(1<<6) }
 
 local modem_list = {
     ["SimCom"] = { spn = 'AT+CSPN?\r\n', banner = 'SIMCOM', cmux = 'AT+CMUX=0\r\n', setbaud = 'AT+IPR=%u\r\n', pppopen = 'ATD*99#\r', cpin = 'AT+CPIN?\r\n', cpsi = 'AT+CPSI?\r\n', reset = 'AT+CFUN=1,1\r\n', cipmode = 'AT+CIPMODE=1\r\n', cipopen_udp = 'AT+CIPOPEN=0,"UDP","%d.%d.%d.%d",%d,6001\r\n', cipopen_tcp = 'AT+CIPOPEN=0,"TCP","%d.%d.%d.%d",%d\r\n', cipclose = 'AT+CIPCLOSE=0\r\n', cgerep = 'AT+CGEREP=1,1\r\n', netopen = 'AT+NETOPEN\r\n', mccmnc = 'AT+COPS=1,2,"%u"\r\n', setband_mask = 'AT+CNBP=,0x%x\r\n', setband_all = 'AT+CNBP=,0x480000000000000000000000000000000000000000000042000007FFFFDF3FFF\r\n', config_extra = 'ATH\r\n', fast_connect = true, sim_probe = 'AT+CICCID\r\n', csq_gate = 'AT+CPSI?\r\n', socket_state = 'AT+CIPOPEN?\r\n' },
@@ -269,7 +270,13 @@ local log_file = io.open(next_log_filename(), 'w')
 
 local function log_data(s, marker)
     if s and #s > 0 and log_file then
-        log_file:write(marker .. '[' .. s .. ']\n')
+        -- Seconds since boot, matching the timebase of the dataflash messages,
+        -- so a line here can be lined up against the GCS text in the .BIN.
+        -- Entries also become parseable: modem replies contain embedded
+        -- newlines, so "starts with >>>[" does not identify an entry, but
+        -- "starts with a timestamp" does.
+        log_file:write(string.format('%10.3f ', millis():tofloat() / 1000)
+                       .. marker .. '[' .. s .. ']\n')
         log_file:flush()
     end
 end
@@ -286,6 +293,7 @@ local cs = {
     cereg_drop_ms = nil,
     disconnect_ms = nil,  
     last_data_ms = millis(),
+    at_rx_ms = millis(),       -- last DLC1 frame seen in CONNECTED
     last_CSQ_ms = millis(),
     last_CSQ_reply_ms = uint32_t(0),
     last_parse_ms = uint32_t(0),
@@ -346,6 +354,13 @@ local function uart_write_pending()
     if #buf.uart > 0 then
         local n = uart:writestring(buf.uart)
         buf.uart = buf.uart:sub(n+1)
+        -- ">>>" lines are logged when queued, not sent; a backlog means the UART
+        -- is not draining (CTS held off by the modem?). Log it and bound it.
+        if #buf.uart > 1024 and (not cs.txq_ms or (millis() - cs.txq_ms):tofloat() > 1000) then
+            cs.txq_ms = millis()
+            log_data(string.format('{TXQ=%d}', #buf.uart), '***')
+            if #buf.uart > 16384 then buf.uart = "" end
+        end
     end
 end
 
@@ -497,27 +512,12 @@ local function AT_send(atcmd)
     return true
 end
 
-local function send_data_reset()
-    if modem.reset then
-        -- Send both framings. From here we cannot tell whether the modem is in
-        -- plain AT or still muxed: a muxed modem drops unframed bytes at its
-        -- frame parser, and a plain-AT modem treats the frame as one garbled
-        -- line. Plain goes first so it gets a clean line of its own -- framed
-        -- first would leave its trailing FLAG on the line and the real command
-        -- would be swallowed as part of that garbage.
-        uart_write(modem.reset)
-        uart_write(cmux.encode_cmux_frame(cmux.DLC_AT, cmux.UIH, modem.reset))
-        if not modem.reset_not_baudrate then uart:begin(P.IBAUD:get()) end
-        found_cmux = false; cs.cmux_probe_n = 0
-        gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: sent reset")
-        return
-    end
-end
-
+-- reset_to_ATI is defined below; reached via cs rather than a forward-declared
+-- local because the main chunk is at the 100-local cap.
 local function handle_error(s)
     if s and s:find('\nERROR\r\n') then
         gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: error response from modem')
-        send_data_reset(); step = "ATI"
+        cs.reset_to_ATI()
         return true
     end
     return false
@@ -576,7 +576,17 @@ function cmux.feed_uart_in(raw)
             if err == "short" then return raw end
             return ""
         end
-        if cmux.buffers[dlc] then cmux.buffers[dlc] = cmux.buffers[dlc] .. data end
+        if dlc == 0 then
+            -- MSC for DLC2: the FC bit (0x02) is the modem telling us to stop
+            -- sending there. Ignoring it pushed 144 KB into a stopped DLC2 in
+            -- 0097 and the AT channel died.
+            if #data >= 4 and data:byte(1) == 0xE3 and (data:byte(3) >> 2) == cmux.DLC_DATA then
+                if (data:byte(4) & 0x02) ~= 0 then cs.fc_on_ms = cs.fc_on_ms or millis()
+                else cs.fc_on_ms = nil end
+            end
+        elseif cmux.buffers[dlc] then
+            cmux.buffers[dlc] = cmux.buffers[dlc] .. data
+        end
         raw = rest
     end
     return raw
@@ -595,7 +605,10 @@ local function data_send_connected(data)
 end
 
 local function reset_buffers()
-    cs.last_data_ms = millis()
+    cs.last_data_ms = millis(); cs.at_rx_ms = millis()
+    cs.fc_on_ms = nil; cs.nosvc_ms = nil; cs.hold_ms = nil; cs.at_dead_warned = false
+    cs.cereg_drop_ms = nil   -- a drop seen before this (re)connect must not close the new socket
+    cs.nocarrier_ms = nil
     buf.modem = ""; buf.fc = ""; buf.parse = ""; buf.setup = ""; buf.at_scan = ""
     cmux.buffers[cmux.DLC_AT] = ""; cmux.buffers[cmux.DLC_DATA] = ""
     while ser_device:available() > 0 do ser_device:readstring(512) end
@@ -614,7 +627,8 @@ local function reset_state()
     cs.step_times = {}; cs.step_timer_ms = millis():tofloat()
     cs.post_reset = true
     cs.cipopen_preclosed = false
-    cs.cipmode_sent = false
+    cs.cipmode_sent = false; cs.cipmode_ok = false
+    cs.test_ignore_fc = nil; cs.netreopen_n = 0; cs.netopen_fail = 0
     cmux_was_set = false  -- per-attempt marker; cmux_force_disabled stays sticky
     cs.ati_dbg_ms = nil
     cs.consec_stall = 0
@@ -631,9 +645,54 @@ end
 local function reset_to_ATI()
     local timed_out_step = step
     local elapsed_ms = math.floor(millis():tofloat() - cs.step_timer_ms)
-    send_data_reset(); uart_write_pending(); reset_state()
+    local cmd, keep_baud = modem.reset or default_modem.reset, modem.reset_not_baudrate
+    reset_state()
     table.insert(cs.step_times, {name = timed_out_step, ms = elapsed_ms})
     cs.reset_recorded = true   -- tells the next step_changed check not to re-log this same transition
+    cs.rst_cmd = cmd; cs.rst_keep_baud = keep_baud; cs.rst_phase = nil; cs.rst_buf = ""
+    step = "RESET"
+end
+cs.reset_to_ATI = reset_to_ATI
+
+-- Modem reset that does not rely on DLC1, run over several ticks: CFUN framed
+-- on DLC1 and plain; if neither is answered, "+++" and CFUN framed on DLC2
+-- (0097: DLC1 dead but DLC2 answered +++). No CLD: an acked CLD left the
+-- SIM7600 silent until power-cycled, whatever the CFUN timing (0096, 0098).
+function cmux.reset_step()
+    local s = uart_read()
+    cs.rst_buf = (cs.rst_buf .. s):sub(-256)
+    local t = millis():tofloat() - cs.step_timer_ms
+    local ph = cs.rst_phase
+    if ph == nil then
+        uart_write(cmux.encode_cmux_frame(cmux.DLC_AT, cmux.UIH, cs.rst_cmd))
+        uart_write('\r' .. cs.rst_cmd)
+        cs.rst_buf = ""; cs.rst_phase = "GUARD"; cs.rst_ms = t
+    elseif ph == "GUARD" then
+        if cs.rst_buf:find('\r\nOK\r\n', 1, true) then
+            -- Answered, but the SIM7600 keeps replying for ~2.5 s before it goes
+            -- down (0107); starting ATI in that window read it as already back
+            -- and rebooted it a second time.
+            gcs:send_text(MAV_SEVERITY.INFO, "LTE_modem: sent reset (answered)")
+            cs.rst_phase = "SETTLE"; cs.rst_ms = t
+        elseif t - cs.rst_ms > 1200 then   -- +++ needs >1 s of silence before it
+            uart_write('+++'); cs.rst_buf = ""; cs.rst_phase = "ESC"; cs.rst_ms = t
+        end
+    elseif ph == "ESC" then
+        local ok = cs.rst_buf:find('\r\nOK\r\n', 1, true)
+        if ok or t - cs.rst_ms > 2500 then
+            uart_write(cmux.encode_cmux_frame(cmux.DLC_DATA, cmux.UIH, cs.rst_cmd))
+            uart_write('\r' .. cs.rst_cmd)
+            gcs:send_text(MAV_SEVERITY.INFO, ok and "LTE_modem: sent reset (DLC2, +++ answered)"
+                                                or "LTE_modem: sent reset (DLC2, no answer)")
+            cs.rst_phase = "DONE"
+        end
+    elseif ph == "SETTLE" then
+        if t - cs.rst_ms > 5000 then cs.rst_phase = "DONE" end
+    else
+        -- the CFUN was flushed at the end of the previous tick, so the baud can change now
+        if not cs.rst_keep_baud then uart:begin(P.IBAUD:get()) end
+        step = "ATI"
+    end
 end
 
 -- Extract firmware revision from ATI response and check against broken list.
@@ -742,11 +801,11 @@ local function check_CPSI(s)
         end
         if lte_track.cid == nil then lte_track.cid = tower_id end
         if lte_track.band ~= nil and band_num ~= lte_track.band then
-            gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE WARNING: band switch %d -> %d (%s)", lte_track.band, band_num, earfcn_band))
+            gcs:send_text(MAV_SEVERITY.INFO, string.format("LTE WARNING: band switch %d -> %d (%s)", lte_track.band, band_num, earfcn_band))
             lte_track.band = band_num
         end
         if lte_track.cid ~= nil and tower_id ~= lte_track.cid then
-            gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE WARNING: cell tower switch CID %d -> %d", lte_track.cid, tower_id))
+            gcs:send_text(MAV_SEVERITY.INFO, string.format("LTE WARNING: cell tower switch CID %d -> %d", lte_track.cid, tower_id))
             lte_track.cid = tower_id
         end
         return true
@@ -778,6 +837,10 @@ local function check_QENG(s)
         local rsrq = tonumber(t[tac_idx+2]) or 0
         local rssi = tonumber(t[tac_idx+3]) or 0
         local sinr = tonumber(t[tac_idx+4]) or 0
+        -- EC25 while searching (0134): LIMSRV, or NOCONN with MCC 65535, CID
+        -- FFFFFFFF, EARFCN -1. Not a cell: it ended a hold early and logged
+        -- bogus band/tower switches.
+        if t[1] == "LIMSRV" or mcc == 65535 or earfcn < 0 then return false end
 
         logger:write("LTES", 'MCC,MNC,TAC,CID,PID,EF,RSRP,RSRQ,RSSI,SINR', 'iiiiiiiiii', mcc, mnc, tac, cid, tonumber(t[7]) or 0, earfcn, rsrp, rsrq, rssi, sinr)
         local tower_id = cid >> 8
@@ -788,11 +851,11 @@ local function check_QENG(s)
         if lte_track.cid == nil then lte_track.cid = tower_id end
 
         if lte_track.band ~= nil and band ~= lte_track.band then
-            gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE WARNING: band switch %d -> %d (EARFCN %d)", lte_track.band, band, earfcn))
+            gcs:send_text(MAV_SEVERITY.INFO, string.format("LTE WARNING: band switch %d -> %d (EARFCN %d)", lte_track.band, band, earfcn))
             lte_track.band = band
         end
         if lte_track.cid ~= nil and tower_id ~= lte_track.cid then
-            gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE WARNING: cell tower switch CID %d -> %d", lte_track.cid, tower_id))
+            gcs:send_text(MAV_SEVERITY.INFO, string.format("LTE WARNING: cell tower switch CID %d -> %d", lte_track.cid, tower_id))
             lte_track.cid = tower_id
         end
         return true
@@ -963,13 +1026,73 @@ end
 
 local function handle_AT_reply(s)
     check_CSQ(s)
-    if check_CPSI(s) then return end
-    if check_QENG(s) then return end
+    -- No serving cell: CPSI NO SERVICE or with its cell fields gone, CSQ 99,
+    -- QENG SEARCH/LIMSRV or placeholder MCC 65535. CEREG is not trusted here:
+    -- it stayed 1 through this.
+    if s:find('NO SERVICE', 1, true) or s:find('+CSQ: 99,99', 1, true)
+       or s:find('"SEARCH"', 1, true) or s:find('"LIMSRV"', 1, true)
+       or s:find(',65535,65535,', 1, true)
+       or s:find('%+CPSI:%s*[^,\r]+,[^,\r]+\r') then
+        cs.nosvc_ms = cs.nosvc_ms or millis()
+    end
+    if check_CPSI(s) or check_QENG(s) then cs.nosvc_ms = nil; return end
     if check_CGACT(s) then return end
     if s:find("PPPD: DISCONNECTED") then step = "PPPOPEN" end
 end
 
 local dp = {}
+
+-- Downlink proves the bearer: end any no-service hold and close the outage
+-- figure here, at the first real data, not at socket open (0097 said 30.7 s
+-- when the link stayed dead another 43 s).
+function dp.on_downlink(now_ms)
+    cs.last_data_ms = now_ms; cs.nosvc_ms = nil
+    -- FC still set with data flowing for 5 s means we missed its release
+    if cs.fc_on_ms and (now_ms - cs.fc_on_ms):tofloat() > 5000 then cs.fc_on_ms = nil end
+    if cs.disconnect_ms then
+        gcs:send_text(MAV_SEVERITY.WARNING, string.format('LTE: total outage %.1fs',
+            (now_ms:tofloat() - cs.disconnect_ms) / 1000))
+        cs.disconnect_ms = nil
+    end
+end
+
+-- Bench fault injection on a real module (any vendor): set LTE_TEST from the
+-- GCS while connected; it clears itself.
+--   1 reset modem   2 deregister (COPS=2, undone after 20 s)
+--   3 radio off (CFUN=4, undone after 60 s)   4 close the socket
+--   9 ignore flow control and hold until the next reset: with a shielded
+--     antenna this reproduces the 0097 AT-channel wedge. Bench only.
+-- 2 and 3 detach, so they test re-registration; only real coverage loss
+-- (antenna in a metal tin) exercises the no-service hold.
+function dp.test_start(id)
+    if arming:is_armed() then
+        gcs:send_text(MAV_SEVERITY.WARNING, 'LTE TEST: refused while armed'); return
+    end
+    if id ~= 1 and step ~= "CONNECTED" then
+        gcs:send_text(MAV_SEVERITY.WARNING, 'LTE TEST: only while connected'); return
+    end
+    local timed = { [2] = {'AT+COPS=2\r\n', 'AT+COPS=0\r\n', 20},
+                    [3] = {'AT+CFUN=4\r\n', 'AT+CFUN=1\r\n', 60} }
+    gcs:send_text(MAV_SEVERITY.WARNING, string.format('LTE TEST %d: start', id))
+    log_data(string.format('{TEST %d}', id), '***')
+    if id == 1 then reset_to_ATI()
+    elseif timed[id] then
+        AT_send(timed[id][1])
+        cs.test_undo = timed[id][2]; cs.test_until = millis():tofloat() + timed[id][3] * 1000
+    elseif id == 4 and modem.cipclose then AT_send(modem.cipclose)
+    elseif id == 9 then cs.test_ignore_fc = true
+    else gcs:send_text(MAV_SEVERITY.WARNING, 'LTE TEST: unknown value') end
+end
+
+function dp.test_tick()
+    if cs.test_undo and millis():tofloat() > cs.test_until then
+        -- skipped while the modem is rebooting: a reboot has already undone it
+        if step ~= "RESET" and step ~= "ATI" then AT_send(cs.test_undo) end
+        gcs:send_text(MAV_SEVERITY.WARNING, 'LTE TEST: restored')
+        log_data('{TEST restore}', '***')
+        cs.test_undo = nil
+    end
+end
 
 -- Receive parser. buf.dp carries AT-mode bytes interleaving:
 --   +QIURC: "recv",<id>,<len>\r\n<len raw bytes>  -> downlink payload (opaque)
@@ -988,7 +1111,7 @@ function dp.process_rx(now_ms)
             buf.fc = buf.fc .. buf.dp:sub(1, take)
             buf.dp = buf.dp:sub(take + 1)
             cs.rx_need = cs.rx_need - take
-            cs.last_data_ms = now_ms
+            dp.on_downlink(now_ms)
             if cs.rx_need > 0 then return end
         end
 
@@ -1029,7 +1152,8 @@ function dp.process_rx(now_ms)
                 end
                 cs.dbg_recv = cs.dbg_recv + 1
             elseif line:find('+QCSQ:', 1, true) then
-                check_QCSQ(line)
+                if check_QCSQ(line) then cs.nosvc_ms = nil
+                elseif line:find('NOSERVICE', 1, true) then cs.nosvc_ms = cs.nosvc_ms or now_ms end
             elseif line:find('"closed"', 1, true) then
                 cs.dp_closed = true
             elseif line:find('SEND OK', 1, true) then
@@ -1468,7 +1592,7 @@ local function step_ATI()
     -- past 2s (modem mid-reboot after a reset), chirp every 5s so the recovery
     -- window is no longer a black hole in the messages tab.
     local ati_s = (millis():tofloat() - cs.step_timer_ms) / 1000
-    if ati_s > 2 and (not cs.ati_dbg_ms or (millis() - cs.ati_dbg_ms) > 5000) then
+    if ati_s > 2 and (not cs.ati_dbg_ms or (millis() - cs.ati_dbg_ms) > 15000) then
         cs.ati_dbg_ms = millis()
         gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE: waiting for modem (ATI, %ds)', math.floor(ati_s)))
     end
@@ -1496,20 +1620,6 @@ local function step_ATI()
         found_cmux = false; cs.cmux_probe_n = cs.cmux_probe_max
         gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: plain AT banner, left CMUX')
         log_data("{EXCMUX}", '***')
-    end
-
-    -- A PDP deactivation leaves the modem pushing framed URCs while it stops
-    -- answering commands: across 19 flight logs, 161 of 162 SABMs sent after
-    -- one of these URCs went unacknowledged, along with the framed AT+CPIN?
-    -- probes that followed. Reusing that session costs ~30s before the CPIN
-    -- timeout resets anyway, so reset now instead of talking into it. The
-    -- modem does still execute what it will not answer, so the reset lands.
-    if s and (s:find('pdpdeact', 1, true) or s:find('NO CARRIER', 1, true)
-              or s:find('NETWORK CLOSED', 1, true)) then
-        gcs:send_text(MAV_SEVERITY.WARNING, 'LTE_modem: PDP deactivated, resetting')
-        log_data("{PDPDEACT}", '***')
-        reset_to_ATI()
-        return
     end
 
     if s and modem == default_modem then check_modem_banner(s) end
@@ -1907,6 +2017,7 @@ local function step_SOCKET_STATE()
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: socket open, closing first')
             step = "CIPCLOSE"
         else
+            cs.cipopen_preclosed = true   -- known closed: CIPOPEN must not pre-close again
             step = "CIPOPEN"
         end
         return
@@ -1929,7 +2040,7 @@ end
 local function step_CMUX()
     if found_cmux then
         cmux.send_sabm()
-        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CMUX mode set')
+        log_data('{CMUX mode set}', '***')
         cmux_was_set = true  -- marker for CPIN-failure fallback
         step = "BAUD"
         return
@@ -1938,7 +2049,7 @@ local function step_CMUX()
     if s then
         if s:find("CME ERROR") then AT_send('AT+CFUN=1\r\n')
         elseif #s >= 4 and (cmux.parse_cmux_frame(s) or s:find('CMUX=0\r\r\nOK\r') or s == string.char(cmux.FLAG,cmux.FLAG,cmux.FLAG,cmux.FLAG)) then
-            gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CMUX mode set')
+            log_data('{CMUX mode set}', '***')
             cmux_was_set = true  -- marker for CPIN-failure fallback
             cmux.send_sabm(); step = "BAUD"; return
         end
@@ -1948,8 +2059,8 @@ end
 
 local function step_PPPOPEN()
     local s = uart_read()
-    if s and modem.cgact and s:find("\r\nNO CARRIER\r\n") then send_data_reset(); step = "ATI"; return end
-    if s and s:find("CME ERROR:") then send_data_reset(); step = "ATI"; return end
+    if s and modem.cgact and s:find("\r\nNO CARRIER\r\n") then reset_to_ATI(); return end
+    if s and s:find("CME ERROR:") then reset_to_ATI(); return end
     if handle_error(s) then return end
     if s and s:find('CONNECT') then
         gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: connected')
@@ -1961,7 +2072,8 @@ end
 local function step_CIPCLOSE()
     local s = uart_read()
     if s and (s:find('\r\nOK\r\n') or s:find('\nERROR\r\n') or s:find('+QICLOSE') or s:find('+CIPCLOSE')) then
-        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: socket closed, opening')
+        log_data('{socket closed, opening}', '***')
+        cs.cipopen_preclosed = true
         step = "CIPOPEN"; return
     end
     AT_send(modem.cipclose)
@@ -1969,7 +2081,7 @@ end
 
 local function step_SIGNAL_GATE()
     if cs.post_reset then
-        gcs:send_text(MAV_SEVERITY.INFO, 'LTE: Skipping signal gate post-reset')
+        log_data('{signal gate skipped post-reset}', '***')
         if P.PROTOCOL:get() == PPP then
             step = modem.cgact and "CGACT" or "PPPOPEN"
         elseif modem.cipmode then step = "CIPMODE"
@@ -2022,6 +2134,9 @@ local function step_SIGNAL_GATE()
 end
 
 local function step_CIPMODE()
+    -- SIM7600 rejects CIPMODE while the network is open, and the setting holds
+    -- until reboot; re-sending it on a reconnect caused 0096's reset.
+    if cs.cipmode_ok then step = "NETOPEN"; return end
     local s = uart_read()
     if s:find('AT+CACID=0,0') then gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: network context set'); step = "NETOPEN"; return end
     if handle_error(s) then return end
@@ -2032,7 +2147,8 @@ local function step_CIPMODE()
     -- the real command entirely and leaving the socket in non-transparent
     -- mode with no error ever raised.
     if cs.cipmode_sent and (s:find('\r\r\nOK\r') or s:find('\r\nOK\r\n')) then
-        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: transparent mode set'); step = "NETOPEN"; return
+        log_data('{transparent mode set}', '***')
+        cs.cipmode_ok = true; step = "NETOPEN"; return
     end
     data_send(modem.cipmode)
     cs.cipmode_sent = true
@@ -2047,23 +2163,37 @@ local function step_NETOPEN()
     end
     local s = uart_read()
     if s:find("AT+CNACT=0,1") and s:find("ERROR") and modem.netclose then data_send(modem.netclose); return end
-    if handle_error(s) then return end
-    if s and (s:find('NETOPEN\r') or s:find('ACTIVE\r') or s:find('OK\r')) then
-        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: network opened')
-        if modem.preflight then step = "QENG"
-        elseif modem.fast_connect then step = "SOCKET_STATE"
-        else step = "CIPOPEN" end
-        return
+    local now = millis():tofloat()
+    -- Only a reply to our own NETOPEN counts: a stray OK from an earlier query
+    -- was taken as "opened" without NETOPEN ever being sent (flight 222).
+    if cs.netopen_ms then
+        -- "already opened" when the network survived a reconnect
+        if s:find('+NETOPEN: 0', 1, true) or s:find('already opened', 1, true) or s:find('ACTIVE\r') then
+            log_data('{network opened}', '***')
+            if modem.preflight then step = "QENG"
+            elseif modem.fast_connect then step = "SOCKET_STATE"
+            else step = "CIPOPEN" end
+            return
+        end
+        -- +NETOPEN: 1 = no bearer yet (cell change, re-registering: 0107/0113).
+        -- Retry in 2 s; every second failure re-check registration, since CREG
+        -- waits out a deregistered modem (test 2) where STUCK_T here would reset.
+        if s:find('+NETOPEN: 1', 1, true) then
+            cs.netopen_fail = (cs.netopen_fail or 0) + 1
+            if cs.netopen_fail >= 8 then
+                gcs:send_text(MAV_SEVERITY.WARNING, 'LTE: NETOPEN keeps failing - resetting modem')
+                reset_to_ATI(); return
+            end
+            if cs.netopen_fail % 2 == 0 then step = "CREG"; return end
+            cs.netopen_ms = now - 1000
+        end
+        if now - cs.netopen_ms < 3000 then return end
     end
-    data_send(modem.netopen)
+    data_send(modem.netopen); cs.netopen_ms = now
 end
 
 local function step_CIPOPEN()
     local raw = uart_read()
-
-    if cs.last_step == "CIPCLOSE" or cs.last_step == "SOCKET_STATE" then
-        cs.cipopen_preclosed = true
-    end
 
     if raw and #raw > 0 then buf.setup = buf.setup .. raw end
     
@@ -2074,7 +2204,7 @@ local function step_CIPOPEN()
 
     -- Pre-close stale socket on first entry only
     if s == "" and modem.cipclose and not cs.cipopen_sent and not cs.cipopen_preclosed then
-        gcs:send_text(MAV_SEVERITY.INFO, "LTE: pre-close stale socket")
+        log_data('{pre-close stale socket}', '***')
         cs.cipopen_preclosed = true
         step = "CIPCLOSE"
         return
@@ -2088,11 +2218,20 @@ local function step_CIPOPEN()
         if s:find('CONNECT') or s:find('+QIOPEN: 0,0') or s:find('+CIPOPEN: 0,0') or (s:find('+CAOPEN: 0,0') and s:find('OK\r\n')) then
             gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: connected')
             cs.cipopen_sent = false; cs.cipopen_retry = 0
-            cs.hard_reset_strikes = 0 
+            cs.hard_reset_strikes = 0
             cs.consec_stall = 0
-            cs.cipopen_preclosed = false
+            cs.cipopen_preclosed = false; cs.netreopen_n = 0; cs.netopen_fail = 0
             reset_buffers(); step = "CONNECTED"; return
         end
+    end
+
+    -- "network not opened" after NETWORK CLOSED UNEXPECTEDLY: reopen the network,
+    -- not the socket; once registered NETOPEN answers in ~0.2 s (0122). Capped so
+    -- a modem that keeps contradicting itself still reaches the reset below.
+    if modem.netopen and s:find('+CIPOPEN: 0,2\r', 1, true) and (cs.netreopen_n or 0) < 3 then
+        cs.netreopen_n = (cs.netreopen_n or 0) + 1
+        gcs:send_text(MAV_SEVERITY.INFO, 'LTE: network closed - reopening it')
+        buf.setup = ""; cs.cipopen_sent = false; step = "NETOPEN"; return
     end
 
     local is_error = s and s:find('\nERROR\r\n')
@@ -2178,6 +2317,40 @@ local function step_CONNECTED()
         gcs:send_text(MAV_SEVERITY.INFO, 'LTE: enabled +QCSQ push (direct mode)')
     end
 
+    -- Outage hold: no serving cell, or DLC2 flow-stopped, for longer than
+    -- LTE_GRACE. The UDP socket survives outages (0096/0097 both recovered on
+    -- their own), so pause uplink and the data timeout instead of reopening.
+    -- FC alone holds at most LTE_TIMEOUT, then normal recovery takes over.
+    local grace_ms = P.GRACE:get() * 1000
+    local fc_for = cs.fc_on_ms and (now_ms - cs.fc_on_ms):tofloat() or 0
+    local nosvc = cs.nosvc_ms and (now_ms - cs.nosvc_ms):tofloat() > grace_ms
+    local holding = not cs.test_ignore_fc
+                    and (nosvc or (fc_for > grace_ms and fc_for < P.TIMEOUT:get() * 1000))
+    if holding and not cs.hold_ms then
+        cs.hold_ms = now_ms
+        if not cs.disconnect_ms and (now_ms - cs.last_data_ms):tofloat() > grace_ms then
+            cs.disconnect_ms = cs.last_data_ms:tofloat()
+        end
+        gcs:send_text(MAV_SEVERITY.WARNING, nosvc and 'LTE: no service - holding link'
+                                                   or 'LTE: modem flow-stopped - holding link')
+    elseif not holding and cs.hold_ms then
+        gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE: hold ended after %.0fs',
+            (now_ms - cs.hold_ms):tofloat() / 1000))
+        cs.hold_ms = nil
+        -- service is back: give the socket a full TIMEOUT to carry data again
+        if not cs.fc_on_ms then cs.last_data_ms = now_ms end
+    end
+    if cs.hold_ms and (now_ms - cs.hold_ms):tofloat() > 60000 then
+        gcs:send_text(MAV_SEVERITY.ERROR, 'LTE: no service for 60s - resetting modem')
+        reset_to_ATI(); return
+    end
+    -- Reopen after NO CARRIER once the polls (every 0.5 s) show service; while
+    -- there is none the hold above applies, as for any outage.
+    if cs.nocarrier_ms and not cs.nosvc_ms and (now_ms - cs.nocarrier_ms):tofloat() > 1500 then
+        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: NO CARRIER - reopening socket')
+        cs.cipopen_sent = false; step = "CIPOPEN"; return
+    end
+
     if s and #s > 0 then
         if cmux_enabled() then
             buf.parse = buf.parse .. s
@@ -2186,6 +2359,7 @@ local function step_CONNECTED()
             if #cmux.buffers[cmux.DLC_AT] > 0 then
                 local at_text = cmux.buffers[cmux.DLC_AT]
                 cmux.buffers[cmux.DLC_AT] = ""; cs.last_parse_ms = now_ms
+                cs.at_rx_ms = now_ms; cs.at_dead_warned = false
                 if at_text:find('+CEREG: 0') or at_text:find('+CEREG: 2') or
                    at_text:find('+CREG: 0,0') or at_text:find('+CREG: 0,2') then
                     if not cs.cereg_drop_ms then
@@ -2199,8 +2373,18 @@ local function step_CONNECTED()
                 handle_AT_reply(at_text)
             end
             if #cmux.buffers[cmux.DLC_DATA] > 0 then
-                cs.last_data_ms = now_ms; cs.last_parse_ms = now_ms
-                buf.fc = buf.fc .. cmux.buffers[cmux.DLC_DATA]; cmux.buffers[cmux.DLC_DATA] = ""
+                local d = cmux.buffers[cmux.DLC_DATA]; cmux.buffers[cmux.DLC_DATA] = ""
+                cs.last_parse_ms = now_ms
+                -- Quectel leaves transparent mode with NO CARRIER (socket closed or
+                -- pdpdeact) and DLC2 then runs AT commands: in 0128/0130 it executed
+                -- our MAVLink as ATI, and its replies passed for downlink.
+                if d:find('\r\nNO CARRIER\r\n', 1, true) and not cs.nocarrier_ms then
+                    cs.nocarrier_ms = now_ms
+                    log_data('{NO CARRIER}', '***')
+                end
+                if not cs.nocarrier_ms then
+                    dp.on_downlink(now_ms); buf.fc = buf.fc .. d
+                end
             end
 
         elseif cs.direct_push then
@@ -2215,7 +2399,7 @@ local function step_CONNECTED()
 
         else
             -- plain transparent no-CMUX (unchanged behaviour)
-            buf.fc = buf.fc .. s; cs.last_data_ms = now_ms
+            buf.fc = buf.fc .. s; dp.on_downlink(now_ms)
             buf.at_scan = (buf.at_scan or "") .. s
             if #buf.at_scan > 4096 then buf.at_scan = buf.at_scan:sub(-2048) end
             if buf.at_scan:find('OK\r\n') or buf.at_scan:find('ERROR\r\n') then
@@ -2235,12 +2419,25 @@ local function step_CONNECTED()
             end
         end
 
-    elseif P.TIMEOUT:get() > 0 and now_ms - cs.last_data_ms > uint32_t(P.TIMEOUT:get() * 1000) then
-        if cs.direct_push then
-            -- Modem is registered and healthy; only the socket/return-path died.
-            -- Reopen the socket (~1-2s) instead of a full AT+CFUN=1,1 reboot
-            -- (~120s cold re-registration). Mirrors the CLOSED-URC reconnect path.
-            gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: data timeout - reopening socket')
+    elseif not holding and P.TIMEOUT:get() > 0 and now_ms - cs.last_data_ms > uint32_t(P.TIMEOUT:get() * 1000) then
+        -- DLC1 silent too (0097): CEREG_CHECK would only wait for a reply that
+        -- cannot come, so reset straight away via the DLC1-independent path.
+        if cmux_enabled() and not option_enabled(OPT.NOSIGQUERY)
+           and (now_ms - cs.at_rx_ms):tofloat() > 5000 then
+            gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: data timeout, AT channel dead - resetting')
+            if not cs.disconnect_ms then cs.disconnect_ms = cs.last_data_ms:tofloat() end
+            reset_to_ATI(); return
+        end
+        do
+            -- Ask the modem what is actually wrong before rebooting it.
+            -- step_CEREG_CHECK reads CEREG: registered means only the socket
+            -- died, so reopen it (~1-2s); not registered means re-register
+            -- (no reboot). A reboot discards the cached PLMN and frequency
+            -- list and restarts the scan cold, which costs ~50s minimum and
+            -- makes the next registration slower, not faster. If the modem
+            -- does not answer at all, STUCK_T resets us from CEREG_CHECK
+            -- anyway, so the reboot is still there as the last resort.
+            gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: data timeout - checking link')
             if not cs.disconnect_ms then cs.disconnect_ms = millis():tofloat() - (P.TIMEOUT:get() * 1000) end
             cs.last_data_ms = now_ms
             cs.cipopen_sent = false
@@ -2248,15 +2445,10 @@ local function step_CONNECTED()
             cs.consec_stall = 0
             buf.setup = ""
             step = "CEREG_CHECK"; return
-        else
-            gcs:send_text(MAV_SEVERITY.ERROR, 'LTE_modem: data timeout')
-            if not cs.disconnect_ms then cs.disconnect_ms = millis():tofloat() - (P.TIMEOUT:get() * 1000) end
-            reset_to_ATI(); return
         end
     end
 
-    local grace_ms = P.GRACE:get() * 1000
-    if cs.cereg_drop_ms and (now_ms - cs.cereg_drop_ms > grace_ms) then
+    if not holding and cs.cereg_drop_ms and (now_ms - cs.cereg_drop_ms > grace_ms) then
         gcs:send_text(MAV_SEVERITY.WARNING, 'LTE: network lost — fast reconnect')
         if not cs.disconnect_ms then cs.disconnect_ms = cs.cereg_drop_ms:tofloat() end
         cs.cereg_drop_ms = nil; cs.cipopen_sent = false; cs.hard_reset_strikes = 0
@@ -2270,8 +2462,13 @@ local function step_CONNECTED()
     if #buf.modem > 10240 then buf.modem = "" end
     if #buf.fc > 10240 then buf.fc = "" end
 
-    -- Uplink (vehicle -> modem -> GCS)
-    if cs.direct_push then
+    -- Uplink (vehicle -> modem -> GCS). Held: drop it, nothing can carry it.
+    -- DLC2 flow-stopped: keep it queued (buf.modem is capped above).
+    if holding or cs.nocarrier_ms then
+        buf.modem = ""
+    elseif cmux_enabled() and cs.fc_on_ms and not cs.test_ignore_fc then
+        -- honour MSC flow control
+    elseif cs.direct_push then
         local budget = 1024
         if P.TX_RATE:get() > 0 then
             budget = math.floor((now_ms - cs.last_send_data_ms):tofloat()*0.001 * P.TX_RATE:get())
@@ -2280,8 +2477,12 @@ local function step_CONNECTED()
     else
         local quota = 0
         if P.TX_RATE:get() > 0 then quota = math.floor((now_ms - cs.last_send_data_ms):tofloat()*0.001 * P.TX_RATE:get()) end
-        local data_sent = 0
-        while #buf.modem > 0 do
+        -- At most 6 frames per run: more than the 512 B read per tick, so the
+        -- queue still drains, but a backlog released by FC is spread over
+        -- ticks. Flushing it in one run broke SCR_VM_I_COUNT and got the
+        -- script killed (logs 0102-0104).
+        local data_sent, frames = 0, 0
+        while #buf.modem > 0 and frames < 6 do
             local n = #buf.modem
             if n > 100 then n = 100 end
             if quota > 0 and quota - data_sent < n then n = quota - data_sent end
@@ -2289,6 +2490,7 @@ local function step_CONNECTED()
             data_sent = data_sent + #data; cs.last_send_data_ms = now_ms
             if not data_send_connected(data) then break end
             buf.modem = buf.modem:sub(n + 1)
+            frames = frames + 1
             if quota > 0 and data_sent >= quota then break end
         end
     end
@@ -2315,6 +2517,14 @@ local function step_CONNECTED()
                     if cs.csq_toggle then AT_send("AT+CSQ\r\n") else AT_send(modem.cpsi) end
                     cs.csq_toggle = not cs.csq_toggle
                 end
+            end
+            -- Polls go out every 500 ms, so 5 s of silence means DLC1 is wedged.
+            -- The data link may still work, so only report it; the data timeout
+            -- resets via the DLC1-independent path if data stops too.
+            if not cs.at_dead_warned and (now_ms - cs.at_rx_ms):tofloat() > 5000 then
+                cs.at_dead_warned = true
+                gcs:send_text(MAV_SEVERITY.WARNING, 'LTE: AT channel silent, keeping data link')
+                log_data('{DLC1 SILENT}', '***')
             end
         else
             if now_ms - cs.last_CSQ_ms > 1500 then
@@ -2355,11 +2565,10 @@ local function run_step()
     local now_ms = millis()
 
     if step_changed then
-    -- SIMINFO is silent here: it announces itself with the module/firmware/sim
-    -- lines it prints, so a step line ahead of them says nothing extra.
-    if step ~= "SIMINFO" then
-        gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE_modem: step %s', step))
-    end
+    -- Step changes go to the BIN (LTET) and the SD log; to the GCS only with
+    -- LTE_OPTIONS STEPS (64), since one reconnect printed ~10 of them.
+    logger:write('LTET', 'Step', 'N', step:sub(1, 16)); log_data('{step ' .. step .. '}', '***')
+    if option_enabled(OPT.STEPS) then gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: step ' .. step) end
     if cs.last_step and cs.last_step ~= "ATI" and not cs.reset_recorded then
         table.insert(cs.step_times, {name=cs.last_step, ms=math.floor(now_ms:tofloat()-cs.step_timer_ms)})
     end
@@ -2371,6 +2580,7 @@ local function run_step()
         -- that is still in flight can't be mistaken for the CIPMODE reply
         -- before AT+CIPMODE=1 has actually been sent.
         if step == "CIPMODE" then cs.cipmode_sent = false end
+        if step == "NETOPEN" then cs.netopen_ms = nil end   -- each entry sends its own NETOPEN
         
         -- Diagnostic Timing Dump
         if step == "CONNECTED" and #cs.step_times > 0 then
@@ -2387,14 +2597,8 @@ local function run_step()
             end
             
             gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE longest step: %s (%dms)', max_name, max_ms))
-            gcs:send_text(MAV_SEVERITY.INFO, 'LTE timing: '..table.concat(parts,' ')..' total:'..total..'ms')
-            
-            if cs.disconnect_ms then
-                local outage_s = (now_ms:tofloat() - cs.disconnect_ms) / 1000
-                gcs:send_text(MAV_SEVERITY.WARNING,
-                    string.format('LTE: total outage %.1fs', outage_s))
-                cs.disconnect_ms = nil
-            end
+            log_data('LTE timing: '..table.concat(parts,' ')..' total:'..total..'ms', '***')
+            -- total outage is reported by dp.on_downlink at the first real data
             cs.step_times = {}
         end
     end
@@ -2406,11 +2610,12 @@ local function run_step()
     if step == "CONNECTED" then step_CONNECTED(); return 20 end
 
     local time_in_step = (now_ms:tofloat() - cs.step_timer_ms) / 1000
-    -- DP fast-recovery steps talk to an already-up modem that answers in <1s.
+    -- Fast-recovery steps talk to an already-up modem that answers in <1s.
     -- If one goes silent past SOCK_T the AT channel is wedged; hard reset now
-    -- instead of waiting the full 15s STUCK_T (~11s saved per silent reboot).
-    if not step_changed and cs.direct_push
-       and (step == "CEREG_CHECK" or step == "SOCKET_STATE" or step == "CIPCLOSE") then
+    -- instead of waiting the full 15s STUCK_T. CEREG_CHECK in CMUX mode too
+    -- (0097 waited the full 15s on a dead DLC1).
+    if not step_changed and (step == "CEREG_CHECK"
+       or (cs.direct_push and (step == "SOCKET_STATE" or step == "CIPCLOSE"))) then
         local sock_t = P.SOCK_T:get()
         if sock_t > 0 and time_in_step > sock_t then
             gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE: %s silent %ds - hard reset", step, math.floor(time_in_step)))
@@ -2450,6 +2655,7 @@ local function run_step()
         end
         return 5000
     end
+    if step == "RESET" then cmux.reset_step(); return 50 end
     if step == "ATI" then step_ATI(); return 1100 end
     if step == "BAUD" then step_BAUD(); return 50 end
     if step == "CREG" then step_CREG(); return 150 end 
@@ -2492,6 +2698,10 @@ local function update()
     end
 
     if P.ENABLE:get() == 0 then return 500 end
+    local test_id = math.floor(P.TEST:get())
+    -- saved, or a value set from the GCS comes back on every reboot
+    if test_id ~= 0 then P.TEST:set_and_save(0); dp.test_start(test_id) end
+    dp.test_tick()
 
     -- Modem/SIM identity into the dataflash log: Mdl/FW name the module, Sim
     -- is the brand token and Net the raw network name -- they differ under

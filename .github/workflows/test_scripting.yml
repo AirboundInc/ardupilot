@@ -123,9 +123,12 @@ jobs:
           # CMUX-framing every write while the mock speaks plain AT. LTE_OPTIONS
           # in lte_test.parm cannot fix that: script-declared params do not exist
           # when the defaults file is parsed, so the value is silently dropped.
-          # Force NOMUX in the script's own default. 6 = SIGNALS(2) | NOMUX(4).
+          # Force NOMUX in the script's own default. STEPS brings back the
+          # "LTE_modem: step X" GCS lines the step check below reads (off by
+          # default in flight). 70 = SIGNALS(2) | NOMUX(4) | STEPS(64).
           for f in scripts/LTE_modem.lua ArduPlane/scripts/LTE_modem.lua; do
-            sed -i "s/bind_add_param('OPTIONS', 12, 2)/bind_add_param('OPTIONS', 12, 6)/" "$f"
+            sed -i "s/bind_add_param('OPTIONS', 12, 2)/bind_add_param('OPTIONS', 12, 70)/" "$f"
+            grep -q "bind_add_param('OPTIONS', 12, 70)" "$f" || { echo "OPTIONS sed did not apply to $f"; exit 1; }
           done
 
           # SCR_HEAP_SIZE must match Pixhawk6C-bdshot defaults.parm: the 200KB SITL
