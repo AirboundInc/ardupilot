@@ -163,6 +163,16 @@ jobs:
           pip install requests mock
           Tools/autotest/unittest/annotate_params_unittest.py
 
+      - name: Unittest embed (ROMFS Lua stripping)
+        if: matrix.config == 'unit-tests'
+        run: |
+          # luac5.3 lets the test compare bytecode before and after stripping;
+          # without it those checks are skipped, not failed
+          (apt-get update && apt-get install -y --no-install-recommends lua5.3) || \
+            (sudo apt-get update && sudo apt-get install -y --no-install-recommends lua5.3) || \
+            echo "lua5.3 not installed: bytecode checks will be skipped"
+          python3 Tools/autotest/unittest/embed_unittest.py -v
+
       - name: Archive buildlog artifacts
         uses: actions/upload-artifact@v4
         if: failure()

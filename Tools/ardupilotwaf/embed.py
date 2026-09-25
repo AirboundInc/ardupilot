@@ -12,12 +12,99 @@ import os, sys, zlib
 def write_encode(out, s):
     out.write(s.encode())
 
+def strip_lua(src):
+    '''remove comments and indentation from Lua source, keeping every newline
+    so line numbers in runtime errors still match the original file'''
+    out = []
+    i, n = 0, len(src)
+
+    def long_bracket(j):
+        # level of a long bracket opening at j ("[[", "[=[", ...), or -1
+        if j >= n or src[j] != '[':
+            return -1
+        k = j + 1
+        while k < n and src[k] == '=':
+            k += 1
+        return k - j - 1 if k < n and src[k] == '[' else -1
+
+    if src.startswith('#'):
+        # first-line shebang, skipped by the Lua loader: keep it verbatim
+        e = src.find('\n')
+        e = n if e < 0 else e
+        out.append(src[:e])
+        i = e
+    while i < n:
+        c = src[i]
+        if c == '-' and src.startswith('--', i):
+            lvl = long_bracket(i + 2)
+            if lvl >= 0:
+                close = ']' + '=' * lvl + ']'
+                e = src.find(close, i + 4 + lvl)
+                if e < 0:
+                    raise ValueError('unterminated long comment')
+                body = src[i:e + len(close)]
+                # a comment is whitespace to Lua: keep its newlines, or one space
+                out.append('\n' * body.count('\n') if '\n' in body else ' ')
+                i = e + len(close)
+            else:
+                e = src.find('\n', i)
+                i = n if e < 0 else e
+        elif c == '[' and long_bracket(i) >= 0:
+            lvl = long_bracket(i)
+            close = ']' + '=' * lvl + ']'
+            e = src.find(close, i + 2 + lvl)
+            if e < 0:
+                raise ValueError('unterminated long string')
+            out.append(src[i:e + len(close)])
+            i = e + len(close)
+        elif c in '"\'':
+            j = i + 1
+            while j < n and src[j] != c:
+                if src[j] == '\\':
+                    j += 1
+                    if src.startswith('\r\n', j):
+                        j += 1
+                    elif j < n and src[j] == 'z':
+                        # \z skips the whitespace after it, newlines included
+                        while j + 1 < n and src[j + 1] in ' \t\r\n\f\v':
+                            j += 1
+                elif src[j] == '\n':
+                    raise ValueError('unterminated string')
+                j += 1
+            if j >= n:
+                raise ValueError('unterminated string')
+            out.append(src[i:j + 1])
+            i = j + 1
+        elif c == '\n':
+            # drop trailing whitespace before the newline and indentation after it
+            while out and out[-1] in (' ', '\t'):
+                out.pop()
+            out.append('\n')
+            i += 1
+            while i < n and src[i] in ' \t':
+                i += 1
+        else:
+            out.append(c)
+            i += 1
+    return ''.join(out)
+
 def embed_file(out, f, idx, embedded_name, uncompressed):
     '''embed one file'''
     try:
         contents = open(f,'rb').read()
     except Exception:
         raise Exception("Failed to embed %s" % f)
+
+    if embedded_name.endswith(".lua"):
+        # AP_ROMFS decompresses a file whole into one malloc on open, and a
+        # 137KB LTE_modem.lua failed that allocation (ENOENT) on a Pixhawk6C.
+        # Comments and indentation don't change the compiled script.
+        try:
+            stripped = strip_lua(contents.decode('utf-8', 'surrogateescape')).encode('utf-8', 'surrogateescape')
+            print("Stripped %s: %u -> %u bytes" % (embedded_name, len(contents), len(stripped)))
+            contents = stripped
+        except ValueError as e:
+            print("Not stripping %s: %s" % (embedded_name, e))
 
     if embedded_name.endswith("bootloader.bin"):
         # round size to a multiple of 32 bytes for bootloader, this ensures

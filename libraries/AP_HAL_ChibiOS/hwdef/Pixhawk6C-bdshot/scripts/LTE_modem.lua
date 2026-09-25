@@ -378,6 +378,28 @@ local cmux = { FLAG = 0xF9, UIH = 0xEF, SABM = 0x2F, EA = 0x01, CR_SEND = 0x02, 
 local last_mccmnc = nil
 local last_band = nil
 local lte_track = { band = nil, cid = nil }
+-- Band/tower changes are reported once the cell has held for 5 s: one line
+-- per burst, not two per switch (the bench flip-flopped B3/B40 every few
+-- seconds). Every poll still goes to LTES.
+function lte_track.note(tower, band)
+    local now = millis():tofloat()
+    if tower ~= lte_track.cid or band ~= lte_track.band then
+        if not lte_track.sw_n then
+            lte_track.sw_n = 0; lte_track.from_cid = lte_track.cid; lte_track.from_band = lte_track.band
+        end
+        lte_track.sw_n = lte_track.sw_n + 1; lte_track.sw_ms = now
+        lte_track.cid = tower; lte_track.band = band
+    elseif lte_track.sw_n and now - lte_track.sw_ms > 5000 then
+        local b = lte_track.from_band ~= band and string.format('B%d -> B%d', lte_track.from_band, band)
+                  or string.format('B%d', band)
+        if lte_track.sw_n == 1 then
+            gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE: tower %d -> %d (%s)', lte_track.from_cid, tower, b))
+        else
+            gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE: %d tower switches, now %d (%s)', lte_track.sw_n, tower, b))
+        end
+        lte_track.sw_n = nil
+    end
+end
 
 local fcs_table = {
     0x00, 0x91, 0xe3, 0x72, 0x07, 0x96, 0xe4, 0x75, 0x0e, 0x9f, 0xed, 0x7c, 0x09, 0x98, 0xea, 0x7b,
@@ -617,7 +639,7 @@ end
 local function reset_state()
     step = "ATI"; modem = default_modem; found_cmux = false; cs.cmux_probe_n = 0
     reset_buffers(); buf.uart = ""
-    lte_track.band = nil; lte_track.cid = nil
+    lte_track.band = nil; lte_track.cid = nil; lte_track.sw_n = nil
     cs.cops_zero_sent = false; cs.qcsq_tries = 0
     cs.cipopen_retry = 0; cs.cipopen_sent = false; cs.cipopen_sent_ms = 0
     cs.hard_reset_strikes = 0 
@@ -799,14 +821,10 @@ local function check_CPSI(s)
             gcs:send_text(MAV_SEVERITY.INFO, string.format("LTE: connected on Band %s (%s)", tostring(band), earfcn_band))
             lte_track.band = band_num
         end
-        if lte_track.cid == nil then lte_track.cid = tower_id end
-        if lte_track.band ~= nil and band_num ~= lte_track.band then
-            gcs:send_text(MAV_SEVERITY.INFO, string.format("LTE WARNING: band switch %d -> %d (%s)", lte_track.band, band_num, earfcn_band))
-            lte_track.band = band_num
-        end
-        if lte_track.cid ~= nil and tower_id ~= lte_track.cid then
-            gcs:send_text(MAV_SEVERITY.INFO, string.format("LTE WARNING: cell tower switch CID %d -> %d", lte_track.cid, tower_id))
-            lte_track.cid = tower_id
+        -- cell ID 0: the SIM7600 between cells, not a tower
+        if tower_id ~= 0 then
+            if lte_track.cid == nil then lte_track.cid = tower_id end
+            lte_track.note(tower_id, band_num)
         end
         return true
     end
@@ -848,15 +866,9 @@ local function check_QENG(s)
             gcs:send_text(MAV_SEVERITY.INFO, string.format("LTE: connected on Band %d (EARFCN %d)", band, earfcn))
             lte_track.band = band
         end
-        if lte_track.cid == nil then lte_track.cid = tower_id end
-
-        if lte_track.band ~= nil and band ~= lte_track.band then
-            gcs:send_text(MAV_SEVERITY.INFO, string.format("LTE WARNING: band switch %d -> %d (EARFCN %d)", lte_track.band, band, earfcn))
-            lte_track.band = band
-        end
-        if lte_track.cid ~= nil and tower_id ~= lte_track.cid then
-            gcs:send_text(MAV_SEVERITY.INFO, string.format("LTE WARNING: cell tower switch CID %d -> %d", lte_track.cid, tower_id))
-            lte_track.cid = tower_id
+        if tower_id ~= 0 then   -- cell ID 0 is not a tower
+            if lte_track.cid == nil then lte_track.cid = tower_id end
+            lte_track.note(tower_id, band)
         end
         return true
     end
