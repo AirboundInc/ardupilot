@@ -69,7 +69,7 @@ local P = {
                                                         -- shared by EVERY link (USB included) --
                                                         -- changing it mid-session disconnects any
                                                         -- other GCS already attached under the old id.
-    AUTHKEY     = bind_add_param('AUTHKEY', 28, 1)     -- 1 = self-apply the mavlinkSigningKey from the
+    AUTHKEY     = bind_add_param('AUTHKEY', 28, 0)     -- 1 = self-apply the mavlinkSigningKey from the
                                                         -- HTTPAUTH response via gcs:set_signing_key().
                                                         -- 0 (default) = ignore it entirely. The key is
                                                         -- deliberately never printed/logged (it would
@@ -153,7 +153,7 @@ if supports_routing then
     P_ROUTE.MASK = bind_add_param('ROUTE_MASK',  19, 32)
 end
 
-local OPT = { LOGALL=(1<<0), SIGNALS=(1<<1), NOMUX=(1<<2), NOSIGQUERY=(1<<3), TCP=(1<<4), DPUSH=(1<<5) }
+local OPT = { LOGALL=(1<<0), SIGNALS=(1<<1), NOMUX=(1<<2), NOSIGQUERY=(1<<3), TCP=(1<<4), DPUSH=(1<<5), STEPS=(1<<6) }
 
 local modem_list = {
     ["SimCom"] = { spn = 'AT+CSPN?\r\n', banner = 'SIMCOM', cmux = 'AT+CMUX=0\r\n', setbaud = 'AT+IPR=%u\r\n', pppopen = 'ATD*99#\r', cpin = 'AT+CPIN?\r\n', cpsi = 'AT+CPSI?\r\n', reset = 'AT+CFUN=1,1\r\n', cipmode = 'AT+CIPMODE=1\r\n', cipopen_udp = 'AT+CIPOPEN=0,"UDP","%d.%d.%d.%d",%d,6001\r\n', cipopen_tcp = 'AT+CIPOPEN=0,"TCP","%d.%d.%d.%d",%d\r\n', cipclose = 'AT+CIPCLOSE=0\r\n', cgerep = 'AT+CGEREP=1,1\r\n', netopen = 'AT+NETOPEN\r\n', mccmnc = 'AT+COPS=1,2,"%u"\r\n', setband_mask = 'AT+CNBP=,0x%x\r\n', setband_all = 'AT+CNBP=,0x480000000000000000000000000000000000000000000042000007FFFFDF3FFF\r\n', config_extra = 'ATH\r\n', fast_connect = true, sim_probe = 'AT+CICCID\r\n', csq_gate = 'AT+CPSI?\r\n', socket_state = 'AT+CIPOPEN?\r\n' },
@@ -340,7 +340,7 @@ local cs = {
     http_retry_count = 0,
     auth_done = false,
     creg_search_ms = nil,
-    siminfo_sent = false,
+    siminfo_n = 0,             -- SIMINFO queries sent so far (one at a time)
     siminfo_printed = false
 }
 
@@ -376,6 +376,28 @@ local cmux = { FLAG = 0xF9, UIH = 0xEF, SABM = 0x2F, EA = 0x01, CR_SEND = 0x02, 
 local last_mccmnc = nil
 local last_band = nil
 local lte_track = { band = nil, cid = nil }
+-- Band/tower changes are reported once the cell has held for 5 s: one line
+-- per burst, not two per switch (the bench flip-flopped B3/B40 every few
+-- seconds). Every poll still goes to LTES.
+function lte_track.note(tower, band)
+    local now = millis():tofloat()
+    if tower ~= lte_track.cid or band ~= lte_track.band then
+        if not lte_track.sw_n then
+            lte_track.sw_n = 0; lte_track.from_cid = lte_track.cid; lte_track.from_band = lte_track.band
+        end
+        lte_track.sw_n = lte_track.sw_n + 1; lte_track.sw_ms = now
+        lte_track.cid = tower; lte_track.band = band
+    elseif lte_track.sw_n and now - lte_track.sw_ms > 5000 then
+        local b = lte_track.from_band ~= band and string.format('B%d -> B%d', lte_track.from_band, band)
+                  or string.format('B%d', band)
+        if lte_track.sw_n == 1 then
+            gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE: tower %d -> %d (%s)', lte_track.from_cid, tower, b))
+        else
+            gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE: %d tower switches, now %d (%s)', lte_track.sw_n, tower, b))
+        end
+        lte_track.sw_n = nil
+    end
+end
 
 local fcs_table = {
     0x00, 0x91, 0xe3, 0x72, 0x07, 0x96, 0xe4, 0x75, 0x0e, 0x9f, 0xed, 0x7c, 0x09, 0x98, 0xea, 0x7b,
@@ -616,7 +638,7 @@ end
 local function reset_state()
     step = "ATI"; modem = default_modem; found_cmux = false
     reset_buffers(); buf.uart = ""
-    lte_track.band = nil; lte_track.cid = nil
+    lte_track.band = nil; lte_track.cid = nil; lte_track.sw_n = nil
     cs.cops_zero_sent = false; cs.qcsq_tries = 0
     cs.cipopen_retry = 0; cs.cipopen_sent = false; cs.cipopen_sent_ms = 0
     cs.hard_reset_strikes = 0 
@@ -752,14 +774,10 @@ local function check_CPSI(s)
             gcs:send_text(MAV_SEVERITY.INFO, string.format("LTE: connected on Band %s (%s)", tostring(band), earfcn_band))
             lte_track.band = band_num
         end
-        if lte_track.cid == nil then lte_track.cid = tower_id end
-        if lte_track.band ~= nil and band_num ~= lte_track.band then
-            gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE WARNING: band switch %d -> %d (%s)", lte_track.band, band_num, earfcn_band))
-            lte_track.band = band_num
-        end
-        if lte_track.cid ~= nil and tower_id ~= lte_track.cid then
-            gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE WARNING: cell tower switch CID %d -> %d", lte_track.cid, tower_id))
-            lte_track.cid = tower_id
+        -- cell ID 0: the SIM7600 between cells, not a tower
+        if tower_id ~= 0 then
+            if lte_track.cid == nil then lte_track.cid = tower_id end
+            lte_track.note(tower_id, band_num)
         end
         return true
     end
@@ -790,6 +808,9 @@ local function check_QENG(s)
         local rsrq = tonumber(t[tac_idx+2]) or 0
         local rssi = tonumber(t[tac_idx+3]) or 0
         local sinr = tonumber(t[tac_idx+4]) or 0
+        -- EC25 while searching (0134): LIMSRV, or NOCONN with MCC 65535, CID
+        -- FFFFFFFF, EARFCN -1. Not a cell: it logged bogus band/tower switches.
+        if t[1] == "LIMSRV" or mcc == 65535 or earfcn < 0 then return false end
 
         logger:write("LTES", 'MCC,MNC,TAC,CID,PID,EF,RSRP,RSRQ,RSSI,SINR', 'iiiiiiiiii', mcc, mnc, tac, cid, tonumber(t[7]) or 0, earfcn, rsrp, rsrq, rssi, sinr)
         local tower_id = cid >> 8
@@ -797,15 +818,9 @@ local function check_QENG(s)
             gcs:send_text(MAV_SEVERITY.INFO, string.format("LTE: connected on Band %d (EARFCN %d)", band, earfcn))
             lte_track.band = band
         end
-        if lte_track.cid == nil then lte_track.cid = tower_id end
-
-        if lte_track.band ~= nil and band ~= lte_track.band then
-            gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE WARNING: band switch %d -> %d (EARFCN %d)", lte_track.band, band, earfcn))
-            lte_track.band = band
-        end
-        if lte_track.cid ~= nil and tower_id ~= lte_track.cid then
-            gcs:send_text(MAV_SEVERITY.WARNING, string.format("LTE WARNING: cell tower switch CID %d -> %d", lte_track.cid, tower_id))
-            lte_track.cid = tower_id
+        if tower_id ~= 0 then   -- cell ID 0 is not a tower
+            if lte_track.cid == nil then lte_track.cid = tower_id end
+            lte_track.note(tower_id, band)
         end
         return true
     end
@@ -1432,7 +1447,7 @@ local function step_ATI()
     -- past 2s (modem mid-reboot after a reset), chirp every 5s so the recovery
     -- window is no longer a black hole in the messages tab.
     local ati_s = (millis():tofloat() - cs.step_timer_ms) / 1000
-    if ati_s > 2 and (not cs.ati_dbg_ms or (millis() - cs.ati_dbg_ms) > 5000) then
+    if ati_s > 2 and (not cs.ati_dbg_ms or (millis() - cs.ati_dbg_ms) > 15000) then
         cs.ati_dbg_ms = millis()
         gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE: waiting for modem (ATI, %ds)', math.floor(ati_s)))
     end
@@ -1648,7 +1663,7 @@ local function step_CREG()
             -- Registered. SIMINFO prints the identity block and then makes
             -- this same HTTPAUTH-or-not decision, so the routing lives in one
             -- place rather than both.
-            step = "SIMINFO"; cs.siminfo_sent = false
+            step = "SIMINFO"; cs.siminfo_n = 0
             return
             
         elseif reg == "0" or reg == "3" then
@@ -1695,16 +1710,24 @@ end
 -- HTTPAUTH. Sits here because AT+COPS? only answers once registered.
 -- AT+COPS=3,0 pins the read to long alphanumeric -- set_MCCMNC may have left
 -- it numeric (AT+COPS=4,2), giving "40410" instead of "airtel".
--- Capped at 1.5s and never calls handle_error, so it can't hold up a connect.
+-- Capped at 1.5s (3s before HTTPAUTH) and never calls handle_error, so it
+-- can't hold up a connect.
 local function step_SIMINFO()
     local raw = uart_read()
     if raw and #raw > 0 then buf.setup = buf.setup .. raw end
     if #buf.setup > 2048 then buf.setup = "" end
 
-    if not cs.siminfo_sent then
-        AT_send('AT+COPS=3,0\r\n'); AT_send('AT+COPS?\r\n')
-        if modem.spn then AT_send(modem.spn) end
-        cs.siminfo_sent = true
+    -- One query at a time: a modem still answering one drops the next (EC25,
+    -- 0043-0045: three sent together, only the first answered, SIM "unknown").
+    -- The next goes out after a new OK/ERROR, or after 1 s.
+    local q = { 'AT+COPS=3,0\r\n', 'AT+COPS?\r\n', modem.spn }
+    local _, n_ok = buf.setup:gsub('\r\nOK\r\n', '')
+    local _, n_err = buf.setup:gsub('ERROR', '')
+    local now = millis():tofloat()
+    if cs.siminfo_n < #q and (cs.siminfo_n == 0 or n_ok + n_err > cs.siminfo_acks
+                              or now - cs.siminfo_ms > 1000) then
+        cs.siminfo_n = cs.siminfo_n + 1; cs.siminfo_ms = now; cs.siminfo_acks = n_ok + n_err
+        AT_send(q[cs.siminfo_n])
         return
     end
 
@@ -1727,8 +1750,13 @@ local function step_SIMINFO()
                      or buf.setup:find('ERROR')
     -- Re-queried each registration so a network change is picked up. Revisits
     -- get a shorter budget: restoring the link outranks naming the operator.
-    local waited = (millis():tofloat() - cs.step_timer_ms) / 1000
+    local waited = (now - cs.step_timer_ms) / 1000
     if not (oper and spn_done) and waited < (cs.siminfo_printed and 0.8 or 1.5) then return end
+    -- HTTPAUTH takes a bare OK as an answer, so before it every query must be
+    -- sent and the last one answered, or a late reply is read as its CERT_LIST
+    -- answer. At most 3 s, and only once per session (auth is cached).
+    if waited < 3 and P.HTTPAUTH:get() == 1 and modem.http and (AUTH_EVERY_RECONNECT or not cs.auth_done)
+       and (cs.siminfo_n < #q or n_ok + n_err <= cs.siminfo_acks) then return end
 
     -- Each field updated only from its own answer -- a partial reply must not
     -- blank the half that didn't arrive, which is the common case at 0.8s.
@@ -1853,7 +1881,7 @@ end
 local function step_CMUX()
     if found_cmux then
         cmux.send_sabm()
-        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CMUX mode set')
+        log_data('{CMUX mode set}', '***')
         cmux_was_set = true  -- marker for CPIN-failure fallback
         step = "BAUD"
         return
@@ -1862,7 +1890,7 @@ local function step_CMUX()
     if s then
         if s:find("CME ERROR") then AT_send('AT+CFUN=1\r\n')
         elseif #s >= 4 and (cmux.parse_cmux_frame(s) or s:find('CMUX=0\r\r\nOK\r') or s == string.char(cmux.FLAG,cmux.FLAG,cmux.FLAG,cmux.FLAG)) then
-            gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: CMUX mode set')
+            log_data('{CMUX mode set}', '***')
             cmux_was_set = true  -- marker for CPIN-failure fallback
             cmux.send_sabm(); step = "BAUD"; return
         end
@@ -1885,7 +1913,7 @@ end
 local function step_CIPCLOSE()
     local s = uart_read()
     if s and (s:find('\r\nOK\r\n') or s:find('\nERROR\r\n') or s:find('+QICLOSE') or s:find('+CIPCLOSE')) then
-        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: socket closed, opening')
+        log_data('{socket closed, opening}', '***')
         step = "CIPOPEN"; return
     end
     AT_send(modem.cipclose)
@@ -1893,7 +1921,7 @@ end
 
 local function step_SIGNAL_GATE()
     if cs.post_reset then
-        gcs:send_text(MAV_SEVERITY.INFO, 'LTE: Skipping signal gate post-reset')
+        log_data('{signal gate skipped post-reset}', '***')
         if P.PROTOCOL:get() == PPP then
             step = modem.cgact and "CGACT" or "PPPOPEN"
         elseif modem.cipmode then step = "CIPMODE"
@@ -1956,7 +1984,7 @@ local function step_CIPMODE()
     -- the real command entirely and leaving the socket in non-transparent
     -- mode with no error ever raised.
     if cs.cipmode_sent and (s:find('\r\r\nOK\r') or s:find('\r\nOK\r\n')) then
-        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: transparent mode set'); step = "NETOPEN"; return
+        log_data('{transparent mode set}', '***'); step = "NETOPEN"; return
     end
     data_send(modem.cipmode)
     cs.cipmode_sent = true
@@ -1973,7 +2001,7 @@ local function step_NETOPEN()
     if s:find("AT+CNACT=0,1") and s:find("ERROR") and modem.netclose then data_send(modem.netclose); return end
     if handle_error(s) then return end
     if s and (s:find('NETOPEN\r') or s:find('ACTIVE\r') or s:find('OK\r')) then
-        gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: network opened')
+        log_data('{network opened}', '***')
         if modem.preflight then step = "QENG"
         elseif modem.fast_connect then step = "SOCKET_STATE"
         else step = "CIPOPEN" end
@@ -1998,7 +2026,7 @@ local function step_CIPOPEN()
 
     -- Pre-close stale socket on first entry only
     if s == "" and modem.cipclose and not cs.cipopen_sent and not cs.cipopen_preclosed then
-        gcs:send_text(MAV_SEVERITY.INFO, "LTE: pre-close stale socket")
+        log_data('{pre-close stale socket}', '***')
         cs.cipopen_preclosed = true
         step = "CIPCLOSE"
         return
@@ -2279,11 +2307,10 @@ local function run_step()
     local now_ms = millis()
 
     if step_changed then
-    -- SIMINFO is silent here: it announces itself with the module/firmware/sim
-    -- lines it prints, so a step line ahead of them says nothing extra.
-    if step ~= "SIMINFO" then
-        gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE_modem: step %s', step))
-    end
+    -- Step changes go to the BIN (LTET) and the SD log; to the GCS only with
+    -- LTE_OPTIONS STEPS (64), since one reconnect printed ~10 of them.
+    logger:write('LTET', 'Step', 'N', step:sub(1, 16)); log_data('{step ' .. step .. '}', '***')
+    if option_enabled(OPT.STEPS) then gcs:send_text(MAV_SEVERITY.INFO, 'LTE_modem: step ' .. step) end
     if cs.last_step and cs.last_step ~= "ATI" and not cs.reset_recorded then
         table.insert(cs.step_times, {name=cs.last_step, ms=math.floor(now_ms:tofloat()-cs.step_timer_ms)})
     end
@@ -2311,7 +2338,7 @@ local function run_step()
             end
             
             gcs:send_text(MAV_SEVERITY.INFO, string.format('LTE longest step: %s (%dms)', max_name, max_ms))
-            gcs:send_text(MAV_SEVERITY.INFO, 'LTE timing: '..table.concat(parts,' ')..' total:'..total..'ms')
+            log_data('LTE timing: '..table.concat(parts,' ')..' total:'..total..'ms', '***')
             
             if cs.disconnect_ms then
                 local outage_s = (now_ms:tofloat() - cs.disconnect_ms) / 1000
