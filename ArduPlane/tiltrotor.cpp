@@ -1053,6 +1053,7 @@ void Tiltrotor::dual_axis_output(void)
     SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle + 50.0f * rudder_dt, 0, 100));
     SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle - 50.0f * rudder_dt, 0, 100));
 
+
     // forward flight: Axis 1 is at 90deg (motors fully forward)
     // use rudder for differential yaw vectoring via Axis 2
     // set Q_TILT_VEC_FWGAIN > 0 to enable; default 0 disables it
