@@ -165,12 +165,12 @@ jobs:
 
       - name: Unittest embed (ROMFS Lua stripping)
         if: matrix.config == 'unit-tests'
+        env:
+          # the test builds luac from AP_Scripting/lua itself (the container
+          # runs as a non-root user, so lua5.3 can't be installed); fail rather
+          # than skip the bytecode checks if that build is not possible
+          EMBED_TEST_REQUIRE_LUAC: '1'
         run: |
-          # luac5.3 lets the test compare bytecode before and after stripping;
-          # without it those checks are skipped, not failed
-          (apt-get update && apt-get install -y --no-install-recommends lua5.3) || \
-            (sudo apt-get update && sudo apt-get install -y --no-install-recommends lua5.3) || \
-            echo "lua5.3 not installed: bytecode checks will be skipped"
           python3 Tools/autotest/unittest/embed_unittest.py -v
 
       - name: Archive buildlog artifacts

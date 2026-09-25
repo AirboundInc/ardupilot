@@ -4,13 +4,15 @@
 Unit tests for Tools/ardupilotwaf/embed.py: the Lua comment stripper and the
 ROMFS header it feeds.
 
-The strongest check compiles Lua before and after stripping with luac5.3,
-debug info kept, and requires identical bytecode: same code, same line
-numbers. Those tests are skipped when luac5.3 is not installed.
+The strongest check compiles Lua before and after stripping, debug info kept,
+and requires identical bytecode: same code, same line numbers. The compiler is
+luac built from ArduPilot's own Lua (needs gcc/cc/clang), else luac5.3; with
+neither those tests are skipped, or fail if EMBED_TEST_REQUIRE_LUAC=1.
 
     python3 Tools/autotest/unittest/embed_unittest.py
 '''
 
+import atexit
 import contextlib
 import io
 import os
@@ -28,7 +30,49 @@ sys.path.insert(0, os.path.join(ROOT, 'Tools', 'ardupilotwaf'))
 import embed  # noqa: E402
 from embed import strip_lua  # noqa: E402
 
-LUAC = shutil.which('luac5.3')
+
+
+def build_luac():
+    '''compile luac from ArduPilot's own Lua (AP_Scripting/lua/src) with the
+    vehicle's defines, so the check uses the parser the vehicle runs; None if
+    there is no C compiler. Needs no root, unlike installing lua5.3.'''
+    cc = shutil.which('gcc') or shutil.which('cc') or shutil.which('clang')
+    if not cc:
+        return None
+    src = os.path.join(ROOT, 'libraries', 'AP_Scripting', 'lua', 'src')
+    d = tempfile.mkdtemp(prefix='ap_luac_')
+    atexit.register(shutil.rmtree, d, True)
+    # the two ArduPilot headers the Lua sources include, cut down to what luac needs
+    os.makedirs(os.path.join(d, 'AP_Filesystem'))
+    os.makedirs(os.path.join(d, 'AP_Scripting'))
+    open(os.path.join(d, 'AP_Filesystem', 'posix_compat.h'), 'w').close()
+    with open(os.path.join(d, 'AP_Scripting', 'lua_common_defs.h'), 'w') as f:
+        f.write('#pragma once\n#define SCRIPTING_DIRECTORY "./scripts"\n'
+                'int lua_get_current_env_ref();\nconst char* lua_get_modules_path();\n'
+                'void lua_abort(void) __attribute__((noreturn));\n')
+    with open(os.path.join(d, 'stubs.c'), 'w') as f:
+        f.write('#include <stdlib.h>\n#include "lua.h"\n'
+                'int lua_get_current_env_ref() { return 0; }\n'
+                'const char* lua_get_modules_path() { return ""; }\n'
+                'void lua_abort(void) { abort(); }\n'
+                # ARDUPILOT_BUILD leaves this out: the vehicle has its own allocator
+                'static void *l_alloc(void *ud, void *p, size_t o, size_t n) {\n'
+                '    (void)ud; (void)o; if (n == 0) { free(p); return NULL; } return realloc(p, n); }\n'
+                'lua_State *luaL_newstate(void) { return lua_newstate(l_alloc, NULL); }\n')
+    srcs = [os.path.join(src, f) for f in sorted(os.listdir(src)) if f.endswith('.c') and f != 'lua.c']
+    out = os.path.join(d, 'luac')
+    r = subprocess.run([cc, '-std=gnu99', '-O1', '-w', '-DLUA_32BITS=1', '-DARDUPILOT_BUILD',
+                        '-I', d, '-I', src, '-o', out] + srcs + [os.path.join(d, 'stubs.c'), '-lm'],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        print('could not build luac from AP_Scripting/lua:\n' + r.stderr[-2000:], file=sys.stderr)
+        return None
+    return out
+
+
+LUAC = os.environ.get('LUAC') or build_luac() or shutil.which('luac5.3')
+# set in CI, so a missing compiler fails the run instead of skipping the checks
+REQUIRE_LUAC = os.environ.get('EMBED_TEST_REQUIRE_LUAC') == '1'
 LTE_SCRIPT = os.path.join(ROOT, 'libraries', 'AP_HAL_ChibiOS', 'hwdef', 'Pixhawk6C-bdshot',
                           'scripts', 'LTE_modem.lua')
 
@@ -95,7 +139,15 @@ class TestStripLua(unittest.TestCase):
                     strip_lua(src)
 
 
-@unittest.skipUnless(LUAC, 'luac5.3 not installed')
+class TestCompiler(unittest.TestCase):
+
+    def test_compiler_found(self):
+        if not LUAC and not REQUIRE_LUAC:
+            self.skipTest('no Lua compiler: bytecode checks skipped')
+        self.assertIsNotNone(LUAC, 'no C compiler to build luac, and no luac5.3')
+
+
+@unittest.skipUnless(LUAC, 'no Lua compiler')
 class TestBytecodeIdentical(unittest.TestCase):
 
     def test_cases(self):
@@ -124,7 +176,7 @@ class TestBytecodeIdentical(unittest.TestCase):
                 with self.subTest(os.path.relpath(path, ROOT)):
                     self.assertEqual(luac(strip_lua(src)), before)
         self.assertGreater(count, 50, 'expected to find the repo Lua scripts')
-        print('\n  %d Lua files compiled identically after stripping' % count, file=sys.stderr)
+        print('\n  %d Lua files compiled identically after stripping (%s)' % (count, LUAC), file=sys.stderr)
 
 
 def embed_and_read_back(files, uncompressed=False):
@@ -209,7 +261,7 @@ class TestLteModemScript(unittest.TestCase):
     def test_line_count_kept(self):
         self.assertEqual(self.got[0].count(b'\n'), self.src.count(b'\n'))
 
-    @unittest.skipUnless(LUAC, 'luac5.3 not installed')
+    @unittest.skipUnless(LUAC, 'no Lua compiler')
     def test_bytecode_identical(self):
         self.assertEqual(luac(self.got[0].decode('utf-8', 'surrogateescape')),
                          luac(self.src.decode('utf-8', 'surrogateescape')))
