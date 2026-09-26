@@ -1097,6 +1097,15 @@ function dp.test_start(id)
 end
 
 function dp.test_tick()
+    -- Arming ends any bench test at once: test 9 would fly with flow control
+    -- and the hold off, and 2/3 would take off deregistered or radio-off.
+    if arming:is_armed() then
+        if cs.test_ignore_fc then
+            cs.test_ignore_fc = nil
+            gcs:send_text(MAV_SEVERITY.WARNING, 'LTE TEST: ended on arming')
+        end
+        if cs.test_undo then cs.test_until = 0 end
+    end
     if cs.test_undo and millis():tofloat() > cs.test_until then
         -- skipped while the modem is rebooting: a reboot has already undone it
         if step ~= "RESET" and step ~= "ATI" then AT_send(cs.test_undo) end
