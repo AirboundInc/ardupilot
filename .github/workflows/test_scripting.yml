@@ -118,6 +118,15 @@ jobs:
           sed -i 's/step = "CMUX"/step = "CPIN"/g' ArduPlane/scripts/LTE_modem.lua
           sed -i "s/step = 'CMUX'/step = 'CPIN'/g" ArduPlane/scripts/LTE_modem.lua
 
+          # STEPS brings back the "LTE_modem: step X" GCS lines the step check
+          # reads (off by default in flight). Set in the script's own default:
+          # script-declared params in lte_test.parm are silently dropped.
+          # 66 = SIGNALS(2) | STEPS(64).
+          for f in scripts/LTE_modem.lua ArduPlane/scripts/LTE_modem.lua; do
+            sed -i "s/bind_add_param('OPTIONS', 12, 2)/bind_add_param('OPTIONS', 12, 66)/" "$f"
+            grep -q "bind_add_param('OPTIONS', 12, 66)" "$f" || { echo "OPTIONS sed did not apply to $f"; exit 1; }
+          done
+
           cat <<'EOF' > lte_test.parm
           SCR_ENABLE 1
           LTE_ENABLE 1
