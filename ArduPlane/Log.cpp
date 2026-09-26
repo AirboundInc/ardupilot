@@ -512,16 +512,13 @@ const struct LogStructure Plane::log_structure[] = {
 // @Field: Tilt: Current tilt angle, 0 deg vertical, 90 deg horizontal
 // @Field: FL: Front left tilt angle, 0 deg vertical, 90 deg horizontal
 // @Field: FR: Front right tilt angle, 0 deg vertical, 90 deg horizontal
-// @Field: BTms: Time since start of backtransition throttle blend
 // @Field: FWThr: Last fixed wing throttle captured before backtransition
-// @Field: PilThr: Pilot vertical throttle demand fed into the blend
-// @Field: BlThr: Blended throttle output during backtransition
 // @Field: FTms: Time since start of forward transition throttle blend
 // @Field: FTCmd: FBWA/commanded throttle fed into the forward transition blend
 // @Field: FTBl: Blended throttle output during forward transition
 #if HAL_QUADPLANE_ENABLED
     { LOG_TILT_MSG, sizeof(Tiltrotor::log_tiltrotor),
-      "TILT", "QfffIfffIff",  "TimeUS,Tilt,FL,FR,BTms,FWThr,PilThr,BlThr,FTms,FTCmd,FTBl", "sddds---s--", "F---C---C--" , true },
+      "TILT", "QffffIff",  "TimeUS,Tilt,FL,FR,FWThr,FTms,FTCmd,FTBl", "sddd-s--", "F----C--" , true },
 #endif
 
 // @LoggerMessage: PIDG

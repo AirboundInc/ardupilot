@@ -502,7 +502,13 @@ int16_t Plane::calc_nav_yaw_coordinated()
          // add in the coordinated turn yaw rate to make it easier to fly while tuning the yaw rate controller
          const float coordination_yaw_rate = degrees(GRAVITY_MSS * tanf(radians(nav_roll_cd*0.01f))/MAX(aparm.airspeed_min,smoothed_airspeed));
         
-         const bool allow_heading_lock = (rudder_in == 0 && abs(nav_roll_cd) < 500);
+        bool allow_heading_lock = (rudder_in == 0 && abs(nav_roll_cd) < 500);
+        #if HAL_QUADPLANE_ENABLED
+                if (quadplane.available() && quadplane.transition != nullptr &&
+                    !quadplane.transition->complete()) {
+                    allow_heading_lock = false;
+                }
+        #endif
          const float heading_hold_rate = yawController.get_heading_hold_rate(allow_heading_lock, g.acro_yaw_rate);
 
        commanded_rudder = yawController.get_rate_out(yaw_rate+coordination_yaw_rate+heading_hold_rate,  speed_scaler, false);

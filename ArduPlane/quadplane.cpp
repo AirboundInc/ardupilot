@@ -639,6 +639,13 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("FWREC_ANG_MAX", 48, QuadPlane, assist.fw_recovery_angle_max, 7000),
 
+    // @Param: POS1_YAW_EN
+    // @DisplayName: POSITION1 yaw to landing point enable
+    // @Description: When enabled, if the VTOL POSITION1 controller detects an overshoot (moving away from the landing point, or nose more than 60 degrees off the bearing to it), the vehicle yaws to face the landing point (wind corrected). When disabled, yaw in POSITION1 is only driven by turn coordination and weathervaning. Does not apply to tailsitters, which never use this yaw target.
+    // @Values: 0:Disabled,1:Enabled
+    // @User: Advanced
+    AP_GROUPINFO("POS1_YAW_EN", 50, QuadPlane, pos1_yaw_to_target_en, 0),
+
     AP_GROUPEND
 };
 
@@ -1682,7 +1689,6 @@ void SLT_Transition::update()
         default:
             if (have_airspeed && aspeed > plane.aparm.airspeed_min) {
                 transition_condition_met = true;
-                gcs().send_text(MAV_SEVERITY_INFO, "Transition airspeed reached %.1f", (double)aspeed);
             }
             break;
         }
@@ -2753,7 +2759,7 @@ void QuadPlane::vtol_position_controller(void)
                                                   2*position2_dist_threshold + stopping_distance(rel_groundspeed_sq));
 
                 target_speed_xy_cms = diff_wp_norm * target_speed * 100;
-                if (!tailsitter.enabled()) {
+                if (!tailsitter.enabled() && pos1_yaw_to_target_en) {
                   // for tailsitters we want to weathervane as soon as we are in
                   // vtol mode in position 1
                   have_target_yaw = true;
@@ -2821,9 +2827,26 @@ void QuadPlane::vtol_position_controller(void)
                                                                plane.nav_pitch_cd,
                                                                target_yaw_deg*100, true);
         } else {
+            /*
             attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
                                                                           plane.nav_pitch_cd,
                                                                           desired_auto_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
+        */
+
+            float coord_scale;
+            if (tiltrotor.enabled()) {
+                // rotors vertical => roll is for lateral position hold, not a coordinated turn
+                coord_scale = tiltrotor.current_tilt;
+            } else {
+                float aspeed = 0;
+                ahrs.airspeed_estimate(aspeed);
+                coord_scale = linear_interpolate(0, 1, aspeed, assist.speed, plane.aparm.airspeed_min);
+            }
+            attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
+                                                                          plane.nav_pitch_cd,
+                                                                          coord_scale * desired_auto_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
+
+        
         }
         if ((plane.auto_state.wp_distance < position2_dist_threshold) && tiltrotor.tilt_angle_achieved() &&
             fabsf(rel_groundspeed_sq) < sq(3*position2_target_speed)) {
@@ -2920,6 +2943,8 @@ void QuadPlane::vtol_position_controller(void)
     }
 
     // now height control
+    const bool vtol_alt_freeze = tailsitter.enabled() ||
+    (tiltrotor.enabled() && tiltrotor.type == Tiltrotor::TILT_TYPE_DUAL_AXIS);
     switch (poscontrol.get_state()) {
     case QPOS_NONE:
         poscontrol.set_state(QPOS_POSITION1);
@@ -2936,7 +2961,9 @@ void QuadPlane::vtol_position_controller(void)
         }
         break;
     case QPOS_POSITION1:
-        if (tailsitter.in_vtol_transition(now_ms)) {
+        if (tailsitter.in_vtol_transition(now_ms) ||
+            (tiltrotor.type == Tiltrotor::TILT_TYPE_DUAL_AXIS &&
+             tiltrotor.in_vtol_transition(now_ms))) {
             pos_control->relax_z_controller(0);
             break;
         }
@@ -2975,11 +3002,13 @@ void QuadPlane::vtol_position_controller(void)
             float target_z = target_altitude_cm;
             pos_control->input_pos_vel_accel_z(target_z, zero, 0);
         } else if (plane.control_mode == &plane.mode_qrtl) {
-            if (tailsitter.enabled()){
+            if (vtol_alt_freeze) {
                 set_climb_rate_cms(0);
                 last_pos2_ms = now_ms;
-                weathervane->set_gain(tailsitter.wvane_max_gain/3);
-            }else{
+                if (tailsitter.enabled()) {
+                    weathervane->set_gain(tailsitter.wvane_max_gain/3);
+                }
+            } else {
                 Location loc2 = loc;
                 loc2.change_alt_frame(Location::AltFrame::ABOVE_ORIGIN);
                 float target_z = loc2.alt;
@@ -2987,19 +3016,22 @@ void QuadPlane::vtol_position_controller(void)
                 pos_control->input_pos_vel_accel_z(target_z, zero, 0);
             }
         } else {
-            if(tailsitter.enabled()){
+            if (vtol_alt_freeze) {
                 last_pos2_ms = now_ms;
-                weathervane->set_gain(tailsitter.wvane_max_gain/3);
+                if (tailsitter.enabled()) {
+                    weathervane->set_gain(tailsitter.wvane_max_gain/3);
+                }
             }
             set_climb_rate_cms(0);
         }
+
         break;
     }
 
     case QPOS_LAND_DESCEND:
     case QPOS_LAND_ABORT:
-    case QPOS_LAND_FINAL: {
-        if (tailsitter.enabled() && now_ms - last_pos2_ms < q_land_freeze_time * 1000) {
+    case QPOS_LAND_FINAL: { 
+        if (vtol_alt_freeze && now_ms - last_pos2_ms < q_land_freeze_time * 1000) {  
             set_climb_rate_cms(0);
             static uint32_t last_log_ms = 0;
             if (now_ms - last_log_ms >= 2000) {

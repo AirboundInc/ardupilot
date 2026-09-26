@@ -100,20 +100,7 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @DisplayName: Back transition delay for running fixed wing controller
     // @Description: How long, after the Q_TILT_FWHLD_MS throttle hold period ends, to blend from the held fixed wing throttle to the active VTOL controller's commanded throttle following a backtransition into any VTOL mode    // @Range: 0 10000
     // @User: Standard
-    AP_GROUPINFO("BTDLY_MS", 13, Tiltrotor, back_trans_delay_ms, 1000),
-
-    // @Param: FWHLD_MS
-    // @DisplayName: Fixed wing throttle hold time after back transition
-    // @Description: How long to hold the last fixed wing throttle steady after a backtransition into any VTOL mode, before blending to the active VTOL controller's commanded throttle over Q_TILT_BTDLY_MS    // @Range: 0 10000
-    // @User: Standard
-    AP_GROUPINFO("FWHLD_MS", 14, Tiltrotor, fw_throttle_hold_ms, 500),
-
-    // @Param: FWHLD_EN
-    // @DisplayName: Fixed wing controller hold enable
-    // @Description: Enable/Disable for running fixed wing controller during Q_TILT_FWHLD_MS in backtransition
-    // @Values: 0:Disabled,1:Enabled
-    // @User: Standard
-    AP_GROUPINFO("FWHLD_EN", 15, Tiltrotor, fw_control_hold_en, 0),
+    AP_GROUPINFO("BTTIM_MS", 13, Tiltrotor, back_trans_time_ms, 4000),
 
     // @Param: THR_BT
     // @DisplayName: Backtransition hold throttle
@@ -121,7 +108,7 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @Units: %
     // @Range: 0 100
     // @User: Standard
-    AP_GROUPINFO("THR_BT", 16, Tiltrotor, back_trans_hold_throttle, 30),
+    AP_GROUPINFO("TRBT_MIN", 14, Tiltrotor, back_trans_hold_throttle, 0),
 
     // @Param: THR_FT
     // @DisplayName: Forward transition hold throttle
@@ -129,7 +116,7 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @Units: %
     // @Range: 0 100
     // @User: Standard
-    AP_GROUPINFO("THR_FT", 17, Tiltrotor, fwd_trans_hold_throttle, 30),
+    AP_GROUPINFO("THR_FT", 15, Tiltrotor, fwd_trans_hold_throttle, 30),
 
     // @Param: FTHLD_MS
     // @DisplayName: Forward transition throttle hold time
@@ -137,7 +124,7 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @Units: ms
     // @Range: 0 10000
     // @User: Standard
-    AP_GROUPINFO("FTHLD_MS", 18, Tiltrotor, fwd_trans_hold_ms, 500),
+    AP_GROUPINFO("FTHLD_MS", 16, Tiltrotor, fwd_trans_hold_ms, 500),
 
     // @Param: FTBLD_MS
     // @DisplayName: Forward transition throttle blend time
@@ -145,14 +132,14 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @Units: ms
     // @Range: 0 10000
     // @User: Standard
-    AP_GROUPINFO("FTBLD_MS", 19, Tiltrotor, fwd_trans_blend_ms, 1000),
+    AP_GROUPINFO("FTBLD_MS", 17, Tiltrotor, fwd_trans_blend_ms, 1000),
 
     // @Param: HVPOW
     // @DisplayName: Tiltrotor vector thrust gain power in hover
     // @Description: Power-law exponent applied to the normalized pitch error driving axis 2's extra hover vectoring correction. Values above 1 suppress correction for small pitch errors (avoiding twitchy/windup-prone behavior, e.g. on the ground before takeoff) while still reaching full correction authority at large errors. Negative disables the extra correction entirely.
     // @Range: 0 4
     // @Increment: 0.1
-    AP_GROUPINFO("HVPOW", 20, Tiltrotor, vectored_hover_power, 1.0),
+    AP_GROUPINFO("HVPOW", 18, Tiltrotor, vectored_hover_power, 1.0),
 
     AP_GROUPEND
 };
@@ -492,10 +479,7 @@ void Tiltrotor::write_log()
         LOG_PACKET_HEADER_INIT(LOG_TILT_MSG),
         time_us      : AP_HAL::micros64(),
         current_tilt : current_tilt * 90.0,
-        backtrans_elapsed_ms : backtrans_elapsed_ms,
         fw_throttle  : last_fw_throttle,
-        pilot_throttle : backtrans_pilot_throttle,
-        blend_throttle : backtrans_blend_throttle,
         fwdtrans_elapsed_ms : fwdtrans_elapsed_ms,
         fwdtrans_commanded_throttle : fwdtrans_commanded_throttle,
         fwdtrans_blend_throttle : fwdtrans_blend_throttle,
@@ -834,11 +818,8 @@ void Tiltrotor::dual_axis_output(void)
         // Q_TILT_BTDLY_MS after a backtransition, in every VTOL mode & suspends vertical controller
         const bool force_backtrans_hold = in_vtol_transition(now);
 
-        const float raw_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
-        const float throttle = force_backtrans_hold
-            ? get_backtrans_throttle(now, raw_throttle * 0.01f) * 100.0f
-            : raw_throttle;
-        if (quadplane.assisted_flight || force_backtrans_hold) {
+        float throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
+        if (quadplane.assisted_flight) {
             quadplane.hold_stabilize(throttle * 0.01f);
             quadplane.motors_output(true);
         } else {
@@ -851,7 +832,6 @@ void Tiltrotor::dual_axis_output(void)
         // keeps its normal fixed-wing-forward-throttle meaning for anything
         // else that reads it this tick (e.g. AETR logging while hovering).
         dual_axis_mixout_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
-        SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, throttle);
 
         if (!quadplane.in_vtol_mode()) {
             // in FW transition: limit/blend the commanded throttle over
@@ -917,6 +897,77 @@ void Tiltrotor::dual_axis_output(void)
 
         tilt_left_adjusted  += extra_elevator;
         tilt_right_adjusted += extra_elevator;
+        if((backtrans_done_reported ^ force_backtrans_hold)){
+            if(force_backtrans_hold){
+                GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Backtransition: Started");
+                backtrans_done_reported = true;
+            }
+            else{
+                GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Backtransition: Completed");
+                backtrans_done_reported = false;
+            }
+        }
+        quadplane.pos_control->set_dual_axis_tilt_transition(force_backtrans_hold);
+        if(force_backtrans_hold && quadplane.motors->armed()){
+            // Setpoint updated part need to done at the place where this method is invoked.
+            plane.nav_pitch_cd = 0.0f;
+            plane.nav_roll_cd = 0.0f;
+            plane.stabilize_pitch();
+            plane.stabilize_roll();
+            plane.stabilize_yaw();
+            plane.calc_nav_yaw_coordinated();
+            quadplane.attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd, plane.nav_pitch_cd, quadplane.get_desired_yaw_rate_cds(false));
+            // throttle handler.
+            quadplane.set_climb_rate_cms(0.0f);
+            float plane_throttle = plane.get_throttle_input(true);
+            if((plane.TECS_controller.get_throttle_demand()) > 0.0f){
+                plane_throttle = plane.TECS_controller.get_throttle_demand();
+            }
+            float alpha =  constrain_float(-axis1_pos / SERVO_MAX, 0.0f, 1.0f);
+            // FW rudder command
+            const float rud_gain_fw  = float(plane.g2.rudd_dt_gain) * 0.01f;
+            const float rudder_dt_fw = rud_gain_fw * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
+            const float rudder_left = constrain_float(plane_throttle + 50.0f * rudder_dt_fw, 0, 100);
+            const float rudder_right = constrain_float(plane_throttle - 50.0f * rudder_dt_fw, 0, 100);
+
+            // FW tilt command
+            const float scaler_fw = (plane.control_mode == &plane.mode_manual) ? 1.0f :
+                         (quadplane.FW_vector_throttle_scaling() / plane.get_speed_scaler());
+            const float gain   = vectoring_gain_fw * scaler_fw;
+            const float elevator_fw = SRV_Channels::get_output_scaled(SRV_Channel::k_elevator) * (1.0f / 4500.0f);
+            const float aileron_fw  = SRV_Channels::get_output_scaled(SRV_Channel::k_aileron)  * (1.0f / 4500.0f);
+
+            float tilt_left_fw = constrain_float((elevator_fw + aileron_fw) * gain, -1.0f, 1.0f) * SERVO_MAX;
+            float tilt_right_fw = constrain_float((elevator_fw - aileron_fw) * gain, -1.0f, 1.0f) * SERVO_MAX;
+
+            // Blend the tilt commands based on the axis1_pos
+            tilt_left_adjusted  = (1.0f - alpha) * tilt_left_adjusted + alpha * tilt_left_fw;
+            tilt_right_adjusted = (1.0f - alpha) * tilt_right_adjusted + alpha * tilt_right_fw;
+            // Blend the throttle commands based on the axis1_pos
+            float throttle_left = quadplane.motors->get_throttle_out_left()*100.0f;
+            float throttle_right = quadplane.motors->get_throttle_out_right()*100.0f;
+            float thrust_bt = (throttle_left + throttle_right)*0.5f;
+            if(back_trans_hold_throttle > 0.0f){
+                float roll_bt = (throttle_left - throttle_right)*0.5f;
+                thrust_bt = MAX(back_trans_hold_throttle, thrust_bt);
+                throttle_left = constrain_float(thrust_bt + roll_bt, 0, 100);
+                throttle_right = constrain_float(thrust_bt - roll_bt, 0, 100);
+            }
+            float blended_throttle_left = (1.0f - alpha) * throttle_left + alpha * rudder_left;
+            float blended_throttle_right = (1.0f - alpha) * throttle_right + alpha * rudder_right;
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(blended_throttle_left, 0, 100));
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(blended_throttle_right, 0, 100));
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, thrust_bt);
+
+#if HAL_LOGGING_ENABLED
+            AP::logger().WriteStreaming("BLND", "TimeUS,alpha,TrL,TrR",
+                "s---", // seconds, no units
+                "F000", // micro (1e-6), no mult (1e0)
+                "Qfff", // uint64_t, float
+                AP_HAL::micros64(), alpha, blended_throttle_left, blended_throttle_right);
+#endif
+                
+        }
 
 #if HAL_LOGGING_ENABLED
         // Add logging for desired thrust vectoring angles
@@ -1095,56 +1146,13 @@ bool Tiltrotor::in_vtol_transition(uint32_t now) const
     }
 
     // smoothen throttle transition for Q_TILT_FWHLD_MS + Q_TILT_BTDLY_MS after backtransition
-    const uint32_t total_ms = (uint32_t)(fw_throttle_hold_ms) + (uint32_t)(back_trans_delay_ms);
+    const uint32_t total_ms = (uint32_t)(back_trans_time_ms);
     if (total_ms > 0 && transition->backtrans_start_ms != 0 &&
-        (now - transition->backtrans_start_ms) < total_ms) {
+        (now - transition->backtrans_start_ms) < total_ms && quadplane.motors->armed()) {
         return true;
     }
 
     return false;
-}
-
-/*
-  true only during the Q_TILT_FWHLD_MS hold sub-window immediately after
-  a backtransition, before the Q_TILT_BTDLY_MS blend starts
-*/
-bool Tiltrotor::in_fw_throttle_hold(uint32_t now) const
-{
-    return transition->backtrans_start_ms != 0 &&
-           (now - transition->backtrans_start_ms) < (uint32_t)(fw_throttle_hold_ms);
-}
-
-/*
-  after a backtransition: hold the Q_TILT_THR_BT throttle steady for
-  Q_TILT_FWHLD_MS, then linearly blend from that throttle to the pilot's
-  vertical throttle demand over the following Q_TILT_BTDLY_MS
-*/
-float Tiltrotor::get_backtrans_throttle(uint32_t now, float pilot_throttle)
-{
-    backtrans_pilot_throttle = pilot_throttle;
-
-    const uint32_t hold_ms = (uint32_t)(fw_throttle_hold_ms);
-    const uint32_t delay_ms = (uint32_t)(back_trans_delay_ms);
-    if (transition->backtrans_start_ms == 0 || (hold_ms == 0 && delay_ms == 0)) {
-        backtrans_elapsed_ms = 0;
-        backtrans_blend_throttle = pilot_throttle;
-        return pilot_throttle;
-    }
-
-    const float hold_throttle = back_trans_hold_throttle * 0.01f;
-
-    backtrans_elapsed_ms = now - transition->backtrans_start_ms;
-
-    if (backtrans_elapsed_ms < hold_ms) {
-        // still in the throttle hold period, keep it steady at the configured hold throttle
-        backtrans_blend_throttle = hold_throttle;
-        return backtrans_blend_throttle;
-    }
-
-    const uint32_t blend_elapsed_ms = backtrans_elapsed_ms - hold_ms;
-    const float progress = (delay_ms == 0) ? 1.0f : constrain_float(blend_elapsed_ms / (float)delay_ms, 0.0f, 1.0f);
-    backtrans_blend_throttle = hold_throttle + (pilot_throttle - hold_throttle) * progress;
-    return backtrans_blend_throttle;
 }
 
 /*
