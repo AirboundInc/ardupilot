@@ -2827,9 +2827,26 @@ void QuadPlane::vtol_position_controller(void)
                                                                plane.nav_pitch_cd,
                                                                target_yaw_deg*100, true);
         } else {
+            /*
             attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
                                                                           plane.nav_pitch_cd,
                                                                           desired_auto_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
+        */
+
+            float coord_scale;
+            if (tiltrotor.enabled()) {
+                // rotors vertical => roll is for lateral position hold, not a coordinated turn
+                coord_scale = tiltrotor.current_tilt;
+            } else {
+                float aspeed = 0;
+                ahrs.airspeed_estimate(aspeed);
+                coord_scale = linear_interpolate(0, 1, aspeed, assist.speed, plane.aparm.airspeed_min);
+            }
+            attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
+                                                                          plane.nav_pitch_cd,
+                                                                          coord_scale * desired_auto_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
+
+        
         }
         if ((plane.auto_state.wp_distance < position2_dist_threshold) && tiltrotor.tilt_angle_achieved() &&
             fabsf(rel_groundspeed_sq) < sq(3*position2_target_speed)) {
