@@ -2484,7 +2484,10 @@ local function step_CONNECTED()
 
     s = ser_device:readstring(512)
     if s then buf.modem = buf.modem .. s end
-    if #buf.modem > 10240 then buf.modem = "" end
+    -- 4 KB, not 10: the queue only grows while DLC2 is flow-stopped, and each
+    -- append asks the Lua heap for one block this size. A 10 KB block is the
+    -- likely trigger of the heap growth at the first outage of rc4 flights.
+    if #buf.modem > 4096 then buf.modem = "" end
     if #buf.fc > 10240 then buf.fc = "" end
 
     -- Uplink (vehicle -> modem -> GCS). Held (no service, or flow-stopped past
@@ -2508,18 +2511,21 @@ local function step_CONNECTED()
         -- queue still drains, but a backlog released by FC is spread over
         -- ticks. Flushing it in one run broke SCR_VM_I_COUNT and got the
         -- script killed (logs 0102-0104).
-        local data_sent, frames = 0, 0
-        while #buf.modem > 0 and frames < 6 do
-            local n = #buf.modem
+        local data_sent, frames, pos, total = 0, 0, 1, #buf.modem
+        while pos <= total and frames < 6 do
+            local n = total - pos + 1
             if n > 100 then n = 100 end
             if quota > 0 and quota - data_sent < n then n = quota - data_sent end
-            local data = buf.modem:sub(1, n)
+            local data = buf.modem:sub(pos, pos + n - 1)
             data_sent = data_sent + #data; cs.last_send_data_ms = now_ms
             if not data_send_connected(data) then break end
-            buf.modem = buf.modem:sub(n + 1)
+            pos = pos + n
             frames = frames + 1
             if quota > 0 and data_sent >= quota then break end
         end
+        -- Trim once, not per frame: with 10 KB queued after a flow-stop, a copy
+        -- per frame made ~60 KB of garbage in one run and grew the Lua heap.
+        if pos > 1 then buf.modem = buf.modem:sub(pos) end
     end
 
     -- Deliver downlink payload to flight controller
