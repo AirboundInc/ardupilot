@@ -49,13 +49,6 @@ void ModeQStabilize::run()
 
     float pilot_throttle_scaled = quadplane.get_pilot_throttle();
 
-    // backtransition throttle hold/blend is now applied generically for
-    // every VTOL mode in Tiltrotor::dual_axis_output()
-    if (quadplane.tiltrotor.in_vtol_transition(now)) {
-        Mode::run();
-        return;
-    }
-
     plane.quadplane.assign_tilt_to_fwd_thr();
 
     // special check for ESC calibration in QSTABILIZE
