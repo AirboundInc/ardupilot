@@ -23,7 +23,9 @@ EXPECTED_PORT = 8080
 
 # ── Expected step order for the happy path (CMUX bypassed via sed) ────
 # Allow CIPCLOSE between SOCKET_STATE and final CIPOPEN/CONNECTED
-ALLOWED_STEPS = {"ATI", "CPIN", "CONFIG", "CREG", "SIGNAL_GATE", 
+# Step lines need LTE_OPTIONS STEPS (64); the workflow sets it in the script
+# default. SIMINFO runs between CREG and HTTPAUTH.
+ALLOWED_STEPS = {"ATI", "CPIN", "CONFIG", "CREG", "SIMINFO", "SIGNAL_GATE",
                  "QENG", "SOCKET_STATE", "CIPOPEN", "CIPCLOSE", "CONNECTED"}
 REQUIRED_STEPS = ["ATI", "CPIN", "CREG", "CIPOPEN", "CONNECTED"]
 
