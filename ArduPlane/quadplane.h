@@ -201,6 +201,11 @@ public:
 
     bool tailsitter_in_vtol_transition();
 
+    // Axis 1 tilt for scripting: 0 = vertical (VTOL), 1 = fully forward
+    float get_tilt(void) const { return tiltrotor.current_tilt; }
+    // true when the rotors are at the forward flight tilt
+    bool tilt_fully_fwd(void) const { return tiltrotor.fully_fwd(); }
+
 
 private:
     AP_AHRS &ahrs;

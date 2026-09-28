@@ -6,6 +6,12 @@
    This script saves the VTOL trim on the way out to fixed wing, applies
    VECTRIM_FW_L/VECTRIM_FW_R while fixed wing, and restores the saved VTOL
    trim on the way back.
+
+   The fixed wing trims are only applied once Axis 1 is fully forward,
+   read from quadplane:get_tilt() (Tiltrotor current_tilt, 0 = vertical,
+   1 = fully forward), so the VTOL trim is kept for the whole forward
+   transition while the rotors tilt. Requires firmware with the
+   quadplane:get_tilt() scripting binding.
 --]]
 
 local MAV_SEVERITY_INFO  = 6
@@ -63,7 +69,15 @@ local VECTRIM_FW_R = bind_add_param('FW_R', 3, 1500)
 local K_TILTMOTOR_LEFT_VEC  = 190
 local K_TILTMOTOR_RIGHT_VEC = 191
 
+local TILT_FULL_FWD = 0.999   -- current_tilt >= this is treated as Axis 1 fully forward
+
 local UPDATE_PERIOD_MS = 200
+
+-- check the firmware has the quadplane:get_tilt() binding before doing anything
+if not pcall(function() return quadplane:get_tilt() end) then
+   gcs:send_text(MAV_SEVERITY_ERROR, "VecTrim: quadplane:get_tilt() binding missing, stopping")
+   return
+end
 
 -- resolve the SERVOx_TRIM parameter name for a given SERVO_FUNCTION, or nil if not assigned
 local function trim_param_name(servo_function)
@@ -82,48 +96,70 @@ if not left_trim_param or not right_trim_param then
    return
 end
 
--- trims as configured for VTOL flight, captured just before the first switch to fixed wing
+-- trims as configured for VTOL flight, captured just before the switch to fixed wing
 local vtol_trim_left = nil
 local vtol_trim_right = nil
 
 -- true once the fixed wing trims have been applied
 local in_fw_trim = false
 
+local function restore_vtol_trims(reason)
+   param:set(left_trim_param, vtol_trim_left)
+   param:set(right_trim_param, vtol_trim_right)
+   in_fw_trim = false
+   gcs:send_text(MAV_SEVERITY_INFO, string.format("VecTrim: %s, VTOL trims restored (L=%.0f R=%.0f)",
+                  reason, vtol_trim_left, vtol_trim_right))
+end
+
+local function apply_fw_trims(tilt)
+   vtol_trim_left = param:get(left_trim_param)
+   vtol_trim_right = param:get(right_trim_param)
+   param:set(left_trim_param, VECTRIM_FW_L:get())
+   param:set(right_trim_param, VECTRIM_FW_R:get())
+   in_fw_trim = true
+   gcs:send_text(MAV_SEVERITY_INFO, string.format("VecTrim: Axis1 %.0fdeg, FW trims applied (L=%.0f R=%.0f), VTOL trims saved (L=%.0f R=%.0f)",
+                  tilt * 90, VECTRIM_FW_L:get(), VECTRIM_FW_R:get(), vtol_trim_left, vtol_trim_right))
+end
+
 local function update()
    if VECTRIM_ENABLE:get() <= 0 then
       if in_fw_trim then
-         param:set(left_trim_param, vtol_trim_left)
-         param:set(right_trim_param, vtol_trim_right)
-         gcs:send_text(MAV_SEVERITY_INFO, "VecTrim: disabled, VTOL trims restored")
-         in_fw_trim = false
+         restore_vtol_trims("disabled")
       end
       return update, UPDATE_PERIOD_MS
    end
 
-   local is_vtol = quadplane:in_vtol_mode()
+   local is_vtol   = quadplane:in_vtol_mode()
+   local tilt      = quadplane:get_tilt()
+   local axis1_fwd = tilt >= TILT_FULL_FWD
 
-   if is_vtol then
-      if in_fw_trim then
-         param:set(left_trim_param, vtol_trim_left)
-         param:set(right_trim_param, vtol_trim_right)
-         gcs:send_text(MAV_SEVERITY_INFO, string.format("VecTrim: VTOL trims restored (L=%d R=%d)", vtol_trim_left, vtol_trim_right))
-         in_fw_trim = false
-      end
-   else
-      if not in_fw_trim then
-         vtol_trim_left = param:get(left_trim_param)
-         vtol_trim_right = param:get(right_trim_param)
-         param:set(left_trim_param, VECTRIM_FW_L:get())
-         param:set(right_trim_param, VECTRIM_FW_R:get())
-         gcs:send_text(MAV_SEVERITY_INFO, string.format("VecTrim: FW trims applied (L=%d R=%d), VTOL trims saved (L=%d R=%d)",
-                        VECTRIM_FW_L:get(), VECTRIM_FW_R:get(), vtol_trim_left, vtol_trim_right))
-         in_fw_trim = true
-      end
+   -- FW trims only in fixed wing flight with Axis 1 fully forward, VTOL trims otherwise
+   local want_fw = (not is_vtol) and axis1_fwd
+
+   if want_fw and not in_fw_trim then
+      apply_fw_trims(tilt)
+   elseif not want_fw and in_fw_trim then
+      restore_vtol_trims(is_vtol and "VTOL mode" or "Axis1 not fwd")
    end
 
    return update, UPDATE_PERIOD_MS
 end
 
-gcs:send_text(MAV_SEVERITY_INFO, "VecTrim: loaded")
+-- protected wrapper: on any script error put the VTOL trims back instead of leaving FW trims stuck
+local function protected_update()
+   local ok, ret, period = pcall(update)
+   if not ok then
+      gcs:send_text(MAV_SEVERITY_ERROR, "VecTrim: error: " .. tostring(ret))
+      if in_fw_trim and vtol_trim_left and vtol_trim_right then
+         param:set(left_trim_param, vtol_trim_left)
+         param:set(right_trim_param, vtol_trim_right)
+         in_fw_trim = false
+      end
+      return protected_update, 1000
+   end
+   return protected_update, period
+end
 
-return update, 1000
+gcs:send_text(MAV_SEVERITY_INFO, "AB VecTrim: loaded")
+
+return protected_update, 1000
