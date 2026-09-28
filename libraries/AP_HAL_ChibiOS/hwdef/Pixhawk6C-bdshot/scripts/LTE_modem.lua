@@ -2493,9 +2493,8 @@ local function step_CONNECTED()
 
     s = ser_device:readstring(512)
     if s then buf.modem = buf.modem .. s end
-    -- 4 KB, not 10: the queue only grows while DLC2 is flow-stopped, and each
-    -- append asks the Lua heap for one block this size. A 10 KB block is the
-    -- likely trigger of the heap growth at the first outage of rc4 flights.
+    -- 4 KB is ~1 s of uplink: it only fills while DLC2 is flow-stopped, older
+    -- telemetry is stale by release, and each append is one heap block this size.
     if #buf.modem > 4096 then buf.modem = "" end
     if #buf.fc > 10240 then buf.fc = "" end
 

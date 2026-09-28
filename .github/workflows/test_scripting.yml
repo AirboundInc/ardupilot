@@ -131,8 +131,10 @@ jobs:
             grep -q "bind_add_param('OPTIONS', 12, 70)" "$f" || { echo "OPTIONS sed did not apply to $f"; exit 1; }
           done
 
-          # SCR_HEAP_SIZE must match Pixhawk6C-bdshot defaults.parm: the 200KB SITL
-          # default is too small for the Lua parser to compile LTE_modem.lua.
+          # SCR_HEAP_SIZE is read from Pixhawk6C-bdshot defaults.parm so SITL runs
+          # the flight value (the 200KB SITL default can't compile LTE_modem.lua).
+          HEAP=$(awk '$1=="SCR_HEAP_SIZE"{print $2}' libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/defaults.parm)
+          [ -n "$HEAP" ] || { echo "SCR_HEAP_SIZE missing from Pixhawk6C-bdshot defaults.parm"; exit 1; }
           # NOTE: only the SCR_* / SERIAL* lines below actually take effect. The
           # LTE_* ones are declared by the Lua script at runtime, so they do not
           # exist when this file is parsed and their values are discarded -- they
@@ -141,7 +143,6 @@ jobs:
           # (as Lte_modem_test.py does for LTE_SERVER_*).
           cat <<'EOF' > lte_test.parm
           SCR_ENABLE 1
-          SCR_HEAP_SIZE 300000
           LTE_ENABLE 1
           LTE_SERPORT 0
           SERIAL1_PROTOCOL 28
@@ -151,6 +152,7 @@ jobs:
           LTE_SCRPORT 0
           LTE_OPTIONS 4
           EOF
+          echo "SCR_HEAP_SIZE $HEAP" >> lte_test.parm
 
       - name: "LTE Happy Path: Boot SITL and Verify"
         shell: bash
