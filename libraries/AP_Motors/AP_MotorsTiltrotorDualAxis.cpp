@@ -22,6 +22,7 @@
 #include <AP_Math/AP_Math.h>
 #include "AP_MotorsTiltrotorDualAxis.h"
 #include <SRV_Channel/SRV_Channel.h>
+#include <AP_Logger/AP_Logger.h>
 
 #define SERVO_OUTPUT_RANGE  4500
 
@@ -97,9 +98,19 @@ void AP_MotorsTiltrotorDualAxis::output_armed_stabilizing()
         limit.roll = true;
     }
     // Global mixer for the dual-axis tiltrotor with roll yaw swaping based on the elbow tilt angle.
-    const float inverse_term = 1.0f / MAX(FLT_EPSILON, cosf(2.0f*_elbow_tilt_angle));
-    const float differential_thrust = (roll_thrust *cosf(_elbow_tilt_angle) + yaw_thrust * -sinf(_elbow_tilt_angle)) * inverse_term;
-    const float differential_TV = (roll_thrust * -sinf(_elbow_tilt_angle) + yaw_thrust * cosf(_elbow_tilt_angle)) * inverse_term;
+    float differential_thrust,differential_TV, inverse_term;
+    if(_elbow_tilt_angle < radians(50.0f) && _elbow_tilt_angle > radians(40.0f)) {
+        // if the elbow tilt angle is less than 50 degrees, we swap roll and yaw
+        differential_thrust = roll_thrust/2.0f + yaw_thrust/2.0f;
+        differential_TV = roll_thrust/2.0f + yaw_thrust/2.0f;
+        inverse_term = 1.0f;
+
+    }
+    else{
+        inverse_term = fabsf(1.0f /  cosf(2.0f*_elbow_tilt_angle));
+        differential_thrust = (roll_thrust *cosf(_elbow_tilt_angle) + yaw_thrust * -sinf(_elbow_tilt_angle)) * inverse_term;
+        differential_TV = (roll_thrust * -sinf(_elbow_tilt_angle) + yaw_thrust * cosf(_elbow_tilt_angle)) * inverse_term;
+    }
 
     // calculate left and right throttle outputs
     _thrust_left  = throttle_thrust + differential_thrust * 0.5f;
@@ -143,6 +154,12 @@ void AP_MotorsTiltrotorDualAxis::output_armed_stabilizing()
     // thrust vectoring
     _tilt_left  = pitch_thrust - differential_TV;
     _tilt_right = pitch_thrust + differential_TV;
+    AP::logger().WriteStreaming("ELBO", "TimeUS,iVT,dt,dtv,rt,yt,tlt",
+        "s------", // seconds, degrees
+        "F000000", // micro (1e-6), no mult (1e0)
+        "Qffffff", // uint64_t, float
+        AP_HAL::micros64(),
+        inverse_term, differential_thrust, differential_TV,roll_thrust, yaw_thrust, _elbow_tilt_angle);
 }
 
 void AP_MotorsTiltrotorDualAxis::output_to_motors()
