@@ -56,7 +56,7 @@ assert(param:add_table(PARAM_TABLE_KEY, PARAM_TABLE_PREFIX, 5), 'VecTrim: could 
   // @Values: 0:Disabled,1:Enabled
   // @User: Standard
 --]]
-local VECTRIM_ENABLE = bind_add_param('ENABLE', 1, 1)
+local VECTRIM_ENABLE = bind_add_param('ENABLE', 1, 0)
 
 --[[
   // @Param: VECTRIM_FW_L
