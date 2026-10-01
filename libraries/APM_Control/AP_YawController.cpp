@@ -404,7 +404,6 @@ float AP_YawController::get_heading_hold_rate(bool allow_lock, float max_rate)
             return 0;
         }
         const AP_AHRS &_ahrs = AP::ahrs();
-        //const uint32_t now = AP_HAL::millis();
         if (_heading_lock_timer_ms == 0) {
             _heading_lock_timer_ms = now;
         } else if (!_heading_locked && now - _heading_lock_timer_ms > 500) {
