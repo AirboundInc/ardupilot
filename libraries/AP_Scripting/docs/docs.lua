@@ -2154,6 +2154,13 @@ function quadplane:abort_landing() end
 ---@return boolean
 function quadplane:tailsitter_in_vtol_transition() end
 
+-- Axis 1 tilt: 0 = rotors vertical (VTOL), 1 = rotors fully forward
+---@return number
+function quadplane:get_tilt() end
+
+-- true if the tilt rotors are at the forward flight tilt
+---@return boolean
+function quadplane:tilt_fully_fwd() end
 -- desc
 ---@return number -- roll_cd
 ---@return number -- pitch_cd

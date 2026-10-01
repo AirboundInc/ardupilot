@@ -387,13 +387,23 @@ void AP_YawController::reset_I()
 
 float AP_YawController::get_heading_hold_rate(bool allow_lock, float max_rate)
     {
+        const uint32_t now = AP_HAL::millis();
+
+        // if we haven't been called recently (e.g. VTOL flight, mode without
+        // coordinated yaw) any existing lock is stale - drop it so a fresh
+        // lock is taken on the current heading
+        if (now - _last_hdg_hold_call_ms > 200) {
+            _heading_locked = false;
+            _heading_lock_timer_ms = 0;
+        }
+        _last_hdg_hold_call_ms = now;
+
         if (!is_positive(_K_HDG) || !allow_lock) {
             _heading_locked = false;
             _heading_lock_timer_ms = 0;
             return 0;
         }
         const AP_AHRS &_ahrs = AP::ahrs();
-        const uint32_t now = AP_HAL::millis();
         if (_heading_lock_timer_ms == 0) {
             _heading_lock_timer_ms = now;
         } else if (!_heading_locked && now - _heading_lock_timer_ms > 500) {

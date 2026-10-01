@@ -201,6 +201,11 @@ public:
 
     bool tailsitter_in_vtol_transition();
 
+    // Axis 1 tilt for scripting: 0 = vertical (VTOL), 1 = fully forward
+    float get_tilt(void) const { return tiltrotor.current_tilt; }
+    // true when the rotors are at the forward flight tilt
+    bool tilt_fully_fwd(void) const { return tiltrotor.fully_fwd(); }
+
 
 private:
     AP_AHRS &ahrs;
@@ -667,6 +672,9 @@ private:
     AP_Float takeoff_yaw_tol;
     AP_Float takeoff_yaw_align_timeout;
     AP_Int8 takeoff_yaw_align_enable;
+
+    // enable yawing to face the landing point when POSITION1 detects an overshoot
+    AP_Int8 pos1_yaw_to_target_en;
 
     // oneshot with duration ARMING_DELAY_MS used by quadplane to delay spoolup after arming:
     // ignored unless OPTION_DELAY_ARMING or OPTION_TILT_DISARMED is set
