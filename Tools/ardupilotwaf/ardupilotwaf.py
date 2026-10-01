@@ -129,6 +129,8 @@ COMMON_VEHICLE_DEPENDENT_LIBRARIES = [
     'AP_Arming',
     'AP_RCMapper',
     'AP_MultiHeap',
+    'AP_CustomStorage',
+    'AP_CustomMavlinkHandler',
 ]
 
 def get_legacy_defines(sketch_name, bld):

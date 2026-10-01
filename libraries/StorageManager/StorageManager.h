@@ -22,19 +22,20 @@
 
 #include <AP_HAL/AP_HAL.h>
 #include <AP_BoardConfig/AP_BoardConfig_config.h>
+#include <AP_CustomStorage/AP_CustomStorage_config.h>
 
 /*
   use just one area per storage type for boards with 4k of
   storage. Use larger areas for other boards
  */
 #if HAL_STORAGE_SIZE >= 32768
-#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+#if AP_CUSTOM_STORAGE_ENABLED
 #define STORAGE_NUM_AREAS 18+1 // 1 added for our custom storage
 #else
 #define STORAGE_NUM_AREAS 18
 #endif
 #elif HAL_STORAGE_SIZE >= 16384
-#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+#if AP_CUSTOM_STORAGE_ENABLED
 #define STORAGE_NUM_AREAS 15+1 // 1 added for our custom storage
 #else
 #define STORAGE_NUM_AREAS 15
@@ -59,7 +60,7 @@
 class StorageManager {
     friend class StorageAccess;
 public:
-#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+#if AP_CUSTOM_STORAGE_ENABLED
     enum StorageType {
         StorageParam   = 0,
         StorageFence   = 1,

@@ -33,7 +33,7 @@
 
 extern const AP_HAL::HAL& hal;
 
-#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+#if AP_CUSTOM_STORAGE_ENABLED
 // size of the StorageCustom area
 #define AP_CUSTOM_STORAGE_SIZE 128
 #endif
@@ -100,7 +100,7 @@ const StorageManager::StorageArea StorageManager::layout[STORAGE_NUM_AREAS] = {
     { StorageCANDNA,   15232,  1024},
     // 128 byte gap at end of first 16k
 #endif
-#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1  && (STORAGE_NUM_AREAS == 16 || STORAGE_NUM_AREAS == 19)
+#if AP_CUSTOM_STORAGE_ENABLED && (STORAGE_NUM_AREAS == 16 || STORAGE_NUM_AREAS == 19)
     {StorageCustom, 16256, AP_CUSTOM_STORAGE_SIZE},
 #endif
 
@@ -118,7 +118,7 @@ const StorageManager::StorageArea StorageManager::layout[STORAGE_NUM_AREAS] = {
  */
 void StorageManager::erase(void)
 {
-#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+#if AP_CUSTOM_STORAGE_ENABLED
     // store the custom storage block in a temporary buffer
     const StorageAccess custom(StorageCustom);
     uint8_t custom_data[AP_CUSTOM_STORAGE_SIZE] {};
@@ -130,7 +130,7 @@ void StorageManager::erase(void)
         ::printf("StorageManager: erase failed\n");
     }
 
-#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+#if AP_CUSTOM_STORAGE_ENABLED
     // write the data back
     if (custom_saved) {
         custom.write_block(0, custom_data, sizeof(custom_data));
