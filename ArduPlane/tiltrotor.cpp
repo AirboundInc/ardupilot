@@ -97,14 +97,16 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     AP_GROUPINFO("FWGAIN", 12, Tiltrotor, vectoring_gain_fw, 0),
 
     // @Param: BTDLY_MS
-    // @DisplayName: Back transition delay for running fixed wing controller
-    // @Description: How long, after the Q_TILT_FWHLD_MS throttle hold period ends, to blend from the held fixed wing throttle to the active VTOL controller's commanded throttle following a backtransition into any VTOL mode    // @Range: 0 10000
+    // @DisplayName: Back transition total time
+    // @Description: This is the total time in milliseconds for a back transition from fixed wing to VTOL flight.
+    // @Units: ms
+    // @Range: 0 10000
     // @User: Standard
     AP_GROUPINFO("BTTIM_MS", 13, Tiltrotor, back_trans_time_ms, 4000),
 
     // @Param: THR_BT
-    // @DisplayName: Backtransition hold throttle
-    // @Description: Fixed throttle percentage to hold during the Q_TILT_FWHLD_MS hold window after a backtransition into VTOL flight, instead of holding the last fixed wing throttle
+    // @DisplayName: Backtransition minimum throttle
+    // @Description: This is the minimum throttle percentage to hold during the back transition from fixed wing to VTOL flight.
     // @Units: %
     // @Range: 0 100
     // @User: Standard
