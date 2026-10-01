@@ -100,17 +100,16 @@ void AP_MotorsTiltrotorDualAxis::output_armed_stabilizing()
     // Global mixer for the dual-axis tiltrotor with roll yaw swaping based on the elbow tilt angle.
     float differential_thrust,differential_TV, inverse_term;
     if(_elbow_tilt_angle < radians(50.0f) && _elbow_tilt_angle > radians(40.0f)) {
-        // if the elbow tilt angle is less than 50 degrees, we swap roll and yaw
-        differential_thrust = roll_thrust/2.0f + yaw_thrust/2.0f;
-        differential_TV = roll_thrust/2.0f + yaw_thrust/2.0f;
-        inverse_term = 1.0f;
+
+        inverse_term = fabsf(1.0f /  cosf(2.0f*radians(40.0f)));
 
     }
     else{
         inverse_term = fabsf(1.0f /  cosf(2.0f*_elbow_tilt_angle));
-        differential_thrust = (roll_thrust *cosf(_elbow_tilt_angle) + yaw_thrust * -sinf(_elbow_tilt_angle)) * inverse_term;
-        differential_TV = (roll_thrust * -sinf(_elbow_tilt_angle) + yaw_thrust * cosf(_elbow_tilt_angle)) * inverse_term;
+        
     }
+    differential_thrust = (roll_thrust *cosf(_elbow_tilt_angle) + yaw_thrust * -sinf(_elbow_tilt_angle)) * inverse_term;
+    differential_TV = (roll_thrust * -sinf(_elbow_tilt_angle) + yaw_thrust * cosf(_elbow_tilt_angle)) * inverse_term;
 
     // calculate left and right throttle outputs
     _thrust_left  = throttle_thrust + differential_thrust * 0.5f;
