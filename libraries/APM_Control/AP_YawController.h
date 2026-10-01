@@ -75,9 +75,9 @@ private:
     AP_Int16 _imax;
     AP_Int8  _rate_enable;
     AP_Float _K_HDG;
-    bool _heading_locked;
-    uint32_t _heading_lock_timer_ms;
-    uint32_t _last_hdg_hold_call_ms;   // last time get_heading_hold_rate() ran
+    bool _heading_locked = false;
+    uint32_t _heading_lock_timer_ms = 0;
+    uint32_t _last_hdg_hold_call_ms = 0;   // last time get_heading_hold_rate() ran
     int32_t _locked_heading_cd;
     AC_PID rate_pid{0.04, 0.15, 0, 0.15, 0.666, 3, 0, 12, 150, 1};
 
