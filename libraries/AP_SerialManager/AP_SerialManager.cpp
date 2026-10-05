@@ -585,7 +585,7 @@ void AP_SerialManager::init()
                     break;
 
                 case SerialProtocol_TTLServo:
-                    uart->begin(map_baudrate(state[i].baud),
+                    uart->begin(state[i].baudrate(),
                                 AP_SERIALMANAGER_TTLSERVO_BUFSIZE_RX,
                                 AP_SERIALMANAGER_TTLSERVO_BUFSIZE_TX);
                     uart->set_unbuffered_writes(true);

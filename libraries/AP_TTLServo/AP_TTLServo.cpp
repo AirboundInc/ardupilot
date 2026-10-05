@@ -585,7 +585,10 @@ void AP_TTLServo::update()
 
     // If it wasn't possible to initialize serial port
     if (port == nullptr) {
-        GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "TTLServo: No port found");
+        if(!_gcs_announce.no_serial_port_found && (AP_HAL::millis() - _gcs_announce.no_serial_port_found_ms)>10000) {
+            GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "TTLServo: No serial port assigned");
+            _gcs_announce.no_serial_port_found = true;
+        }        
         return;
     }
 
@@ -609,6 +612,7 @@ void AP_TTLServo::update()
             servo_response = RESPONSE_TYPE::PING;
             last_send_us = AP_HAL::micros();
             delay_time_us = 200 * us_per_byte;
+            GCS_SEND_TEXT(MAV_SEVERITY_DEBUG,"TTLServo:Pinging servo");
             return;
         }
 

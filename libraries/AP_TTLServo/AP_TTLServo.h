@@ -96,6 +96,8 @@ class AP_TTLServo {
     COMM_STATE servo_comm_state=COMM_STATE::IDLE;
     
     struct gcs_announce{
+      bool no_serial_port_found = false;
+      uint32_t no_serial_port_found_ms;
       bool empty_servo_bus = false;
       bool servo_not_responding = false;
       uint32_t last_servo_responsding_error_ms;
