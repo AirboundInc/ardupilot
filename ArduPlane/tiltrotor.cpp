@@ -899,9 +899,6 @@ void Tiltrotor::dual_axis_output(void)
         float des_pitch_cd = quadplane.attitude_control->get_att_target_euler_cd().y;
         float pitch_cd = quadplane.ahrs_view->pitch_sensor;
 
-        float des_pitch_cd2 = plane.nav_pitch_cd;
-        float pitch_cd2 = plane.ahrs.pitch_sensor;
-
         float pitch_error_cd = (des_pitch_cd - pitch_cd) * vectoring_gain_hvr;
 
         float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
@@ -931,6 +928,8 @@ void Tiltrotor::dual_axis_output(void)
                 (float)is_vtol,
                 extra_pitch/100);
 
+        float des_pitch_cd2 = plane.nav_pitch_cd;
+        float pitch_cd2 = plane.ahrs.pitch_sensor;
         AP::logger().WriteStreaming("PITE", "TimeUS,DesPit1,DesPit2,Pit1,Pit2",
                 "sdddd", // seconds, degrees
                 "F0000", // micro (1e-6), no mult (1e0)
