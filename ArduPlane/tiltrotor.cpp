@@ -96,7 +96,7 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("FWGAIN", 12, Tiltrotor, vectoring_gain_fw, 0),
 
-    // @Param: BTDLY_MS
+    // @Param: BTTIM_MS
     // @DisplayName: Back transition total time
     // @Description: This is the total time in milliseconds for a back transition from fixed wing to VTOL flight.
     // @Units: ms
@@ -104,7 +104,7 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("BTTIM_MS", 13, Tiltrotor, back_trans_time_ms, 4000),
 
-    // @Param: THR_BT
+    // @Param: TRBT_MIN
     // @DisplayName: Backtransition minimum throttle
     // @Description: This is the minimum throttle percentage to hold during the back transition from fixed wing to VTOL flight.
     // @Units: %
