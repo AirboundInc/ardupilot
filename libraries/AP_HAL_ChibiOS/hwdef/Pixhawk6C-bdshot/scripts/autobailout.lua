@@ -12,7 +12,7 @@ assert(param:add_param(KEY, 1, "PIT_LIM",  50),  'could not add AUTOB_PIT_LIM') 
 assert(param:add_param(KEY, 2, "ENABLE", 1),'could not add AUTOB_ENABLE')    -- 1 = Enabled
 assert(param:add_param(KEY, 3, "BTRN_DLY", 2500), 'could not add AUTOB_BTRN_DLY') -- Delay (ms) before checking pitch
 assert(param:add_param(KEY, 4, "PIT_TOUT", 100), 'could not add AUTOB_PIT_TOUT')  -- Sustained duration to enter bailout (ms)
-assert(param:add_param(KEY, 5, "PARA_EN", 1),'could not add AUTOB_PARA_EN')    -- 1 = Enabled
+assert(param:add_param(KEY, 5, "PARA_EN", 0),'could not add AUTOB_PARA_EN')    -- 1 = Enabled
 assert(param:add_param(KEY, 6,"PARA_ANG", -15),'could not add AUTOB_PARA_ANG') -- AHRS Pitch(FW frame) threshold to trigger parachute(deg)
 assert(param:add_param(KEY, 7,"PARA_TOUT", 100),'could not add AUTOB_PARA_TOUT') -- Parachute pitch threshold timeout in ms
 assert(param:add_param(KEY, 8,  "LOOP_MS", 50), 'could not add AUTOB_LOOP_MS')  -- Loop rate (ms)
