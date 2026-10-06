@@ -73,7 +73,7 @@ def build_luac():
 LUAC = os.environ.get('LUAC') or build_luac() or shutil.which('luac5.3')
 # set in CI, so a missing compiler fails the run instead of skipping the checks
 REQUIRE_LUAC = os.environ.get('EMBED_TEST_REQUIRE_LUAC') == '1'
-LTE_SCRIPT = os.path.join(ROOT, 'libraries', 'AP_HAL_ChibiOS', 'hwdef', 'Pixhawk6C-bdshot',
+LTE_SCRIPT = os.path.join(ROOT, 'libraries', 'AP_HAL_ChibiOS', 'hwdef', 'AB-TRT',
                           'scripts', 'LTE_modem.lua')
 
 
