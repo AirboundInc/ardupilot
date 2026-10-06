@@ -239,7 +239,7 @@ void Plane::calc_airspeed_errors()
 #endif
     } else if (control_mode == &mode_rtl && mode_rtl.airspeed_reduced()) {
         // reduced RTL airspeed, never above cruise; AIRSPEED_MIN clamp applied below
-        target_airspeed_cm = MIN(plane.g2.rtl_arspd, aparm.airspeed_cruise) * 100;
+        target_airspeed_cm = MIN(g2.rtl_arspd, aparm.airspeed_cruise) * 100;
     } else {
         // Normal airspeed target for all other cases
         target_airspeed_cm = aparm.airspeed_cruise*100;

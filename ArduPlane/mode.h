@@ -485,7 +485,8 @@ private:
         REDUCED,    // between RTL_ARSPD_LO and RTL_ARSPD_HI
         RESTORED,   // reached RTL_ARSPD_LO, cruise latched until mode change
     };
-    SpeedState speed_state;
+    SpeedState speed_state = SpeedState::CRUISE;
+
     void update_speed_reduction();
 };
 

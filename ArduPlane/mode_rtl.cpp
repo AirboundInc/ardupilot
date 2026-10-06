@@ -44,7 +44,7 @@ bool ModeRTL::_enter()
 void ModeRTL::_exit()
 {
     if (speed_state == SpeedState::REDUCED) {
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "RTL: cruise airspeed restored (mode change)");
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "RTL: cruise airspeed restored");
     }
     speed_state = SpeedState::CRUISE;
 }
