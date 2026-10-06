@@ -328,6 +328,14 @@ bool AP_Arming_Plane::arm(const AP_Arming::Method method, const bool do_arming_c
         }
     }
 
+    // start every flight with clean fixed-wing integrators. The yaw rate
+    // controller's I term is frozen while underspeed, so without this it
+    // carries over from the previous flight (no reboot) into the next one
+    plane.rollController.reset_I();
+    plane.pitchController.reset_I();
+    plane.yawController.reset_I();
+
+
     change_arm_state();
 
     // rising edge of delay_arming oneshot
