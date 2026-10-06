@@ -465,15 +465,28 @@ public:
 
     bool does_auto_throttle() const override { return true; }
 
+    // true while RTL_ARSPD should replace cruise airspeed
+    bool airspeed_reduced() const { return speed_state == SpeedState::REDUCED; }
+
 protected:
 
     bool _enter() override;
+    void _exit() override;
     bool _pre_arm_checks(size_t buflen, char *buffer) const override { return false; }
 
 private:
 
     // Switch to QRTL if enabled and within radius
     bool switch_QRTL();
+
+    // RTL_ARSPD distance band handling
+    enum class SpeedState : uint8_t {
+        CRUISE,     // beyond RTL_ARSPD_HI, or feature disabled
+        REDUCED,    // between RTL_ARSPD_LO and RTL_ARSPD_HI
+        RESTORED,   // reached RTL_ARSPD_LO, cruise latched until mode change
+    };
+    SpeedState speed_state;
+    void update_speed_reduction();
 };
 
 class ModeStabilize : public Mode
