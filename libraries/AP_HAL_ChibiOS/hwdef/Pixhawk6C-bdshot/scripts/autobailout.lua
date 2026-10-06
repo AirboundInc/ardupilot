@@ -68,7 +68,7 @@ local autobailout_active = false
 local last_mode_idx = 0
 local pre_bailout_mode = nil
 local first_pitch_exceeded_t = nil
-local critical_voltage_start_ms = nil
+local critical_voltage_start_ms = 0
 local gcs_announce_autobailout = false
 local gcs_announce_battery_failsafe = false
 local gcs_announce_battery_monitor_not_configured = false
@@ -268,11 +268,6 @@ function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode)
         -- Wait for Delay (settle time)
         return false
     end
-    
-    --dont check if battery critical failsafe active
-    if battery_critical_failsafed() then
-        return false
-    end
 
     --Dont monitor vtol pitch if AUTOB_PIT_LIM is negative.
     if pitch_timeout < 0 then
@@ -327,11 +322,6 @@ function is_predicted_vtol_pitch_exceeding_threshold(current_vtol_pitch_deg, cur
         return false
     end
     
-    --dont check if battery critical failsafe active
-    if battery_critical_failsafed() then
-        return false
-    end
-
     --dont check if within delay_ms post backtransition
     local current_time = millis():tofloat()
     local delay_ms = p_btrn_dly:get() or 1000
@@ -416,6 +406,9 @@ function update()
 
     update_autoresume_count()
 
+    --dont check if battery critical failsafe active
+    if battery_critical_failsafed() then return update, loop_ms end
+
     -- ==========================================================
     -- LOGIC: MONITORING (Checking Pitch)
     -- ==========================================================
@@ -447,7 +440,7 @@ function update()
             post_bailout_sample_count = math.min(post_bailout_sample_count, WINDOW_SIZE)
             local avg_lim  = p_avg_lim:get()  or 20
             local peak_lim = p_peak_lim:get() or 30
-            if not battery_critical_failsafed() and post_bailout_sample_count >= WINDOW_SIZE and avg_err < avg_lim and peak_ang < peak_lim and autobresume_count < max_autobresume_count then
+            if post_bailout_sample_count >= WINDOW_SIZE and avg_err < avg_lim and peak_ang < peak_lim and autobresume_count < max_autobresume_count then
                 if pre_bailout_mode and vehicle:set_mode(pre_bailout_mode) then
                     local recovered_mode = pre_bailout_mode
                     autobailout_active = false
