@@ -572,6 +572,11 @@ public:
     // min initial climb in RTL
     AP_Int16        rtl_climb_min;
 
+    // reduced airspeed band in RTL
+    AP_Float        rtl_arspd;
+    AP_Float        rtl_arspd_dist_hi;
+    AP_Float        rtl_arspd_dist_lo;
+
     AP_Int8         man_expo_roll;
     AP_Int8         man_expo_pitch;
     AP_Int8         man_expo_rudder;

@@ -237,6 +237,9 @@ void Plane::calc_airspeed_errors()
     } else if (control_mode == &mode_qrtl && quadplane.in_vtol_land_approach()) {
         target_airspeed_cm = quadplane.get_land_airspeed() * 100;
 #endif
+    } else if (control_mode == &mode_rtl && mode_rtl.airspeed_reduced()) {
+        // reduced RTL airspeed, never above cruise; AIRSPEED_MIN clamp applied below
+        target_airspeed_cm = MIN(plane.g2.rtl_arspd, aparm.airspeed_cruise) * 100;
     } else {
         // Normal airspeed target for all other cases
         target_airspeed_cm = aparm.airspeed_cruise*100;
