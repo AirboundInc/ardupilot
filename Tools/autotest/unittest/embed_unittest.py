@@ -114,8 +114,22 @@ CASES = {
     'minus operators': ('local b, c = 3, 4\nlocal a = b - -c\nlocal d = 5 -1\nreturn a, d\n', None),
     'comment at end of file': ('local a = 1 -- no newline at end', 'local a = 1 '),
     'crlf line endings': ('local a = 1 -- c\r\n  local b = 2\r\nreturn a + b\r\n',
-                          'local a = 1\nlocal b = 2\r\nreturn a + b\r\n'),
+                          'local a = 1\r\nlocal b = 2\r\nreturn a + b\r\n'),
+    # Lua also ends lines at a lone \r, and at \n\r
+    'cr line endings': ('local a = 1 -- c\r  local b = 2\rreturn a + b\r',
+                        'local a = 1\rlocal b = 2\rreturn a + b\r'),
+    'cr after first comment': ('-- comment\rreturn 1\r', '\rreturn 1\r'),
+    'block comment with cr': ('--[[a\rb\r]]local a = 1\rreturn a\r', '\n\nlocal a = 1\rreturn a\r'),
+    'lf cr line endings': ('local a = 1 -- c\n\r  local b = 2\n\rreturn a + b\n\r',
+                           'local a = 1\n\rlocal b = 2\n\rreturn a + b\n\r'),
+    'backslash cr in string': ('local s = "a\\\r  b"\rreturn s\r', None),
+    'backslash lf cr in string': ('local s = "a\\\n\r  b"\n\rreturn s\n\r', None),
 }
+
+
+def lua_lines(s):
+    '''line breaks as Lua counts them'''
+    return len(embed.LUA_NEWLINE.findall(s))
 
 
 class TestStripLua(unittest.TestCase):
@@ -129,10 +143,11 @@ class TestStripLua(unittest.TestCase):
     def test_line_count_kept(self):
         for name, (src, _) in CASES.items():
             with self.subTest(name):
-                self.assertEqual(strip_lua(src).count('\n'), src.count('\n'))
+                self.assertEqual(lua_lines(strip_lua(src)), lua_lines(src))
 
     def test_unterminated_raises(self):
-        for src in ('local s = "abc\nreturn s\n', "local s = 'abc", 'local s = [[abc\n',
+        for src in ('local s = "abc\nreturn s\n', 'local s = "abc\rreturn s\r', "local s = 'abc",
+                    'local s = [[abc\n',
                     '--[[ never closed\nlocal a = 1\n', '--[==[ wrong level ]]\n'):
             with self.subTest(src):
                 with self.assertRaises(ValueError):

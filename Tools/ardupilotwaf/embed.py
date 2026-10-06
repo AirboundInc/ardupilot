@@ -7,7 +7,11 @@ Andrew Tridgell
 May 2017
 '''
 
-import os, sys, zlib
+import os, re, sys, zlib
+
+# Lua ends a line at \n, \r, \r\n or \n\r; each pair is one line break
+LUA_NEWLINE = re.compile(r'\r\n|\n\r|\r|\n')
+LINE_END = re.compile(r'[\r\n]')
 
 def write_encode(out, s):
     out.write(s.encode())
@@ -28,7 +32,7 @@ def strip_lua(src):
         return k - j - 1 if k < n and src[k] == '[' else -1
 
     if src.startswith('#'):
-        # first-line shebang, skipped by the Lua loader: keep it verbatim
+        # first-line shebang, skipped by the Lua loader up to \n only: keep it verbatim
         e = src.find('\n')
         e = n if e < 0 else e
         out.append(src[:e])
@@ -43,12 +47,13 @@ def strip_lua(src):
                 if e < 0:
                     raise ValueError('unterminated long comment')
                 body = src[i:e + len(close)]
-                # a comment is whitespace to Lua: keep its newlines, or one space
-                out.append('\n' * body.count('\n') if '\n' in body else ' ')
+                # a comment is whitespace to Lua: keep its line breaks, or one space
+                lines = len(LUA_NEWLINE.findall(body))
+                out.append('\n' * lines if lines else ' ')
                 i = e + len(close)
             else:
-                e = src.find('\n', i)
-                i = n if e < 0 else e
+                m = LINE_END.search(src, i)
+                i = m.start() if m else n
         elif c == '[' and long_bracket(i) >= 0:
             lvl = long_bracket(i)
             close = ']' + '=' * lvl + ']'
@@ -62,25 +67,27 @@ def strip_lua(src):
             while j < n and src[j] != c:
                 if src[j] == '\\':
                     j += 1
-                    if src.startswith('\r\n', j):
-                        j += 1
+                    m = LUA_NEWLINE.match(src, j)
+                    if m:
+                        j = m.end() - 1   # escaped line break, a \r\n or \n\r pair included
                     elif j < n and src[j] == 'z':
                         # \z skips the whitespace after it, newlines included
                         while j + 1 < n and src[j + 1] in ' \t\r\n\f\v':
                             j += 1
-                elif src[j] == '\n':
+                elif src[j] in '\r\n':
                     raise ValueError('unterminated string')
                 j += 1
             if j >= n:
                 raise ValueError('unterminated string')
             out.append(src[i:j + 1])
             i = j + 1
-        elif c == '\n':
-            # drop trailing whitespace before the newline and indentation after it
+        elif c in '\r\n':
+            # drop trailing whitespace before the line break and indentation after it
             while out and out[-1] in (' ', '\t'):
                 out.pop()
-            out.append('\n')
-            i += 1
+            m = LUA_NEWLINE.match(src, i)
+            out.append(m.group())
+            i = m.end()
             while i < n and src[i] in ' \t':
                 i += 1
         else:
