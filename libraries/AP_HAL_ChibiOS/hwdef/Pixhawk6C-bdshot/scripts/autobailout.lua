@@ -249,7 +249,7 @@ function trigger_autobailout(current_mode)
     return false
 end
 
-function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode)
+function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode, is_battery_critical)
     local threshold = p_pit_lim:get() or 40
     local pitch_timeout = p_pitch_timeout:get() or 100
 
@@ -266,6 +266,11 @@ function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode)
     --dont check if not armed or not in vtol phase
     if not is_vtol_flight or not arming:is_armed() then
         -- Wait for Delay (settle time)
+        return false
+    end
+
+    --Dont check if battery is critical
+    if is_battery_critical then 
         return false
     end
 
@@ -298,7 +303,7 @@ function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode)
     return false
 end    
 
-function is_predicted_vtol_pitch_exceeding_threshold(current_vtol_pitch_deg, current_vtol_pitch_rate, is_vtol_flight, flightmode)
+function is_predicted_vtol_pitch_exceeding_threshold(current_vtol_pitch_deg, current_vtol_pitch_rate, is_vtol_flight, flightmode, is_battery_critical)
     local pitch_prediction_interval = p_prediction_interval:get() or 0
 
     --Disable prediction based check
@@ -319,6 +324,11 @@ function is_predicted_vtol_pitch_exceeding_threshold(current_vtol_pitch_deg, cur
     --dont check if not armed or not in vtol phase
     if not is_vtol_flight or not arming:is_armed() then
         -- Wait for Delay (settle time)
+        return false
+    end
+
+    --Dont check if battery is critical
+    if is_battery_critical then 
         return false
     end
     
@@ -406,16 +416,15 @@ function update()
 
     update_autoresume_count()
 
-    --dont check if battery critical failsafe active
-    if battery_critical_failsafed() then return update, loop_ms end
+    local is_battery_critical = battery_critical_failsafed()
 
     -- ==========================================================
     -- LOGIC: MONITORING (Checking Pitch)
     -- ==========================================================
     if not autobailout_active then
-        if is_vtol_pitch_exceeding_limit(actual_vtol_pitch_deg, is_vtol_flight, current_mode) then
+        if is_vtol_pitch_exceeding_limit(actual_vtol_pitch_deg, is_vtol_flight, current_mode, is_battery_critical) then
             trigger_autobailout(current_mode)
-        elseif is_predicted_vtol_pitch_exceeding_threshold(actual_vtol_pitch_deg, actual_vtol_pitch_rate, is_vtol_flight,current_mode) then
+        elseif is_predicted_vtol_pitch_exceeding_threshold(actual_vtol_pitch_deg, actual_vtol_pitch_rate, is_vtol_flight,current_mode, is_battery_critical) then
             trigger_autobailout(current_mode)
         end
     -- ==========================================================
@@ -440,7 +449,7 @@ function update()
             post_bailout_sample_count = math.min(post_bailout_sample_count, WINDOW_SIZE)
             local avg_lim  = p_avg_lim:get()  or 20
             local peak_lim = p_peak_lim:get() or 30
-            if post_bailout_sample_count >= WINDOW_SIZE and avg_err < avg_lim and peak_ang < peak_lim and autobresume_count < max_autobresume_count then
+            if not is_battery_critical and post_bailout_sample_count >= WINDOW_SIZE and avg_err < avg_lim and peak_ang < peak_lim and autobresume_count < max_autobresume_count then
                 if pre_bailout_mode and vehicle:set_mode(pre_bailout_mode) then
                     local recovered_mode = pre_bailout_mode
                     autobailout_active = false
