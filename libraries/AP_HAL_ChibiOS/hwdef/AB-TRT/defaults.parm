@@ -1,4 +1,7 @@
-@include ../Pixhawk6C/defaults.parm
+# Airbound TRT default parameters.
+
+@include ../Pixhawk6C-bdshot/defaults.parm
+@include ../AB-base/defaults.parm
 
 AHRS_EKF_TYPE 3
 AHRS_GPS_MINSATS 8
