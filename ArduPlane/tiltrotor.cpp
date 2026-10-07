@@ -1348,6 +1348,8 @@ float Tiltrotor_Transition_DualAxis::update_controllers(float pilot_vtol_throttl
         quadplane.hold_stabilize(throttle_pct * 0.01f);
         quadplane.motors_output(true);
         update_yaw_authority();
+        plane.nav_pitch_cd = 0.0f;
+        plane.nav_roll_cd = 0.0f;
         return throttle_pct;
     }
 
@@ -1359,6 +1361,8 @@ float Tiltrotor_Transition_DualAxis::update_controllers(float pilot_vtol_throttl
         // the ESC throttle sent to the boom motors
         quadplane.hold_stabilize(pilot_vtol_throttle_pct * 0.01f);
         quadplane.motors_output(true);
+        plane.nav_pitch_cd = 0.0f;
+        plane.nav_roll_cd = 0.0f;
         return get_fwd_trans_throttle(now, commanded_fw_throttle_pct);
 
     case Stage::FW:
