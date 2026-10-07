@@ -209,6 +209,7 @@ function battery_critical_failsafed()
             gcs:send_text(2,"AUTOB:BATT_MONITOR not configured")
             gcs_announce_battery_monitor_not_configured = true
         end
+        return false
     end
 
     battery1_critical_voltage = Parameter()
