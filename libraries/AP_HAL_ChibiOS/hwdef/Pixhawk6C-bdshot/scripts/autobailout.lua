@@ -49,7 +49,7 @@ local p_win_n   = bind_param("AUTOB_WIN_SMP")
 local p_dbg_en = bind_param("AUTOB_DBG_EN")
 local p_prediction_interval = bind_param("AUTOB_PRED_INT")
 local p_pred_angle_threshold = bind_param("AUTOB_PRED_ANG")
-local p_autobailout_resume_count = bind_param("AUTOB_COUNT") -- -1 : Disables autoresume. 0: disables autobailout and autoresumes. >0: Set limit on autobailout/autoresume count 
+local p_autobailout_count = bind_param("AUTOB_COUNT") -- -1 : Disables autoresume. 0: disables autobailout and autoresumes. >0: Set limit on autobailout/autoresume count 
 
 -- Read Parachute trigger channel number from FCU parameter list 
 
@@ -72,8 +72,8 @@ local critical_voltage_start_ms = 0
 local gcs_announce_autobailout = false
 local gcs_announce_battery_failsafe = false
 local gcs_announce_battery_monitor_not_configured = false
-local autobresume_count = 0
-local max_autobresume_count = p_autobailout_resume_count:get()
+local autob_count = 0
+local max_autob_count = p_autobailout_count:get()
 
 local WINDOW_SIZE     = 50
 local pitch_error_buf = {}
@@ -247,7 +247,8 @@ function trigger_autobailout(current_mode)
         autobailout_active = true
         pre_bailout_mode = current_mode
         post_bailout_sample_count = 0 --Reset this variable only when autobailout is active
-        gcs:send_text(2, "AUTOB: Switching to QLoiter" )
+        autob_count = autob_count+1
+        gcs:send_text(2, "AUTOB: Switching to QLoiter")
         return true
     end
     return false
@@ -355,11 +356,11 @@ function is_predicted_vtol_pitch_exceeding_threshold(current_vtol_pitch_deg, cur
 end
 
 function update_autoresume_count()     
-    max_autobresume_count = p_autobailout_resume_count:get()
+    max_autob_count = p_autobailout_count:get()
     
-    -- Reset autobresume_count after disarming flight 
-    if not arming:is_armed() and autobresume_count > 0 then
-        autobresume_count = 0
+    -- Reset autob_count after disarming flight 
+    if not arming:is_armed() and autob_count > 0 then
+        autob_count = 0
     end 
 end
 
@@ -426,7 +427,7 @@ function update()
     -- LOGIC: MONITORING (Checking Pitch)
     -- ==========================================================
     if not autobailout_active then
-        local autobailout_count_not_exhausted =  (max_autobresume_count < 0) or (autobresume_count < max_autobresume_count)
+        local autobailout_count_not_exhausted =  (max_autob_count < 0) or (autob_count < max_autob_count)
         if autobailout_count_not_exhausted and is_vtol_pitch_exceeding_limit(actual_vtol_pitch_deg, is_vtol_flight, current_mode, is_battery_critical) then
             trigger_autobailout(current_mode)
         elseif autobailout_count_not_exhausted and is_predicted_vtol_pitch_exceeding_threshold(actual_vtol_pitch_deg, actual_vtol_pitch_rate, is_vtol_flight,current_mode, is_battery_critical) then
@@ -438,9 +439,11 @@ function update()
     elseif autobailout_active then
         if not gcs_announce_autobailout then
             gcs:send_text(4, "AUTOB: Autobailout Active")
-            if autobresume_count >= max_autobresume_count then
-                gcs:send_text(4,"AUTOB: Autoresume deactivated")
-                gcs:send_text(2,"AUTOB: Resume manually")
+            if max_autob_count > 0 then 
+                gcs:send_text(6, string.format("AUTOB: Autobailout Attempt:(%d/%d)",autob_count,max_autob_count))
+                if autob_count >= max_autob_count then
+                    gcs:send_text(2,"AUTOB: Autobailout attempts exhausted")
+                end
             end
             gcs_announce_autobailout = true
         end
@@ -454,14 +457,13 @@ function update()
             post_bailout_sample_count = math.min(post_bailout_sample_count, WINDOW_SIZE)
             local avg_lim  = p_avg_lim:get()  or 20
             local peak_lim = p_peak_lim:get() or 30
-            if not is_battery_critical and post_bailout_sample_count >= WINDOW_SIZE and avg_err < avg_lim and peak_ang < peak_lim and autobresume_count < max_autobresume_count then
+            if not is_battery_critical and post_bailout_sample_count >= WINDOW_SIZE and avg_err < avg_lim and peak_ang < peak_lim and autob_count <= max_autob_count then
                 if pre_bailout_mode and vehicle:set_mode(pre_bailout_mode) then
                     local recovered_mode = pre_bailout_mode
                     autobailout_active = false
                     pre_bailout_mode = nil
                     gcs_announce_autobailout = false
-                    autobresume_count = autobresume_count+1
-                    gcs:send_text(2, string.format("AUTOB: Recovering (%d) to mode %s",autobresume_count,tostring(recovered_mode)))
+                    gcs:send_text(2, string.format("AUTOB: Recovering to mode %s",tostring(recovered_mode)))
                 end
             end
         end
