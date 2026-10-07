@@ -23,7 +23,7 @@ assert(param:add_param(KEY, 12,"PEAK_LIM", 30),'could not add AUTOB_PEAK_LIM')
 assert(param:add_param(KEY, 13, "DBG_EN", 1), 'could not add AUTOB_DBG_EN')  -- 1 = enable dataflash logging
 assert(param:add_param(KEY, 14, "PRED_INT", 1000), 'could not add AUTOB_PRED_INT')  -- Rate based VTOL pitch prediction interval
 assert(param:add_param(KEY, 15, "PRED_ANG", 105), 'could not add AUTOB_PRED_ANG') -- VTOL frame absolute rate based predicted angle threshold for autobailout
-assert(param:add_param(KEY, 16, "RES_CNT", 5), 'could not add AUTOB_RES_CNT') -- VTOL frame absolute rate based predicted angle threshold for autobailout
+assert(param:add_param(KEY, 16, "COUNT", 5), 'could not add AUTOB_COUNT') -- VTOL frame absolute rate based predicted angle threshold for autobailout
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
@@ -49,7 +49,7 @@ local p_win_n   = bind_param("AUTOB_WIN_SMP")
 local p_dbg_en = bind_param("AUTOB_DBG_EN")
 local p_prediction_interval = bind_param("AUTOB_PRED_INT")
 local p_pred_angle_threshold = bind_param("AUTOB_PRED_ANG")
-local p_autobailout_resume_count = bind_param("AUTOB_RES_CNT")
+local p_autobailout_resume_count = bind_param("AUTOB_COUNT") -- -1 : Disables autoresume. 0: disables autobailout and autoresumes. >0: Set limit on autobailout/autoresume count 
 
 -- Read Parachute trigger channel number from FCU parameter list 
 
@@ -225,7 +225,11 @@ function battery_critical_failsafed()
             end
             return true
         end
-    elseif battery:voltage(0) > battery1_critical_voltage:get() then
+    elseif battery:voltage(0) >= battery1_critical_voltage:get() then
+        if gcs_announce_battery_failsafe then
+            gcs:send_text(6, "AUTOB: Battery critical cleared. Bailout/Resume reenabled") 
+            gcs_announce_battery_failsafe = false
+        end
         critical_voltage_start_ms = 0
     end  
 
@@ -422,9 +426,10 @@ function update()
     -- LOGIC: MONITORING (Checking Pitch)
     -- ==========================================================
     if not autobailout_active then
-        if is_vtol_pitch_exceeding_limit(actual_vtol_pitch_deg, is_vtol_flight, current_mode, is_battery_critical) then
+        local autobailout_count_not_exhausted =  (max_autobresume_count < 0) or (autobresume_count < max_autobresume_count)
+        if autobailout_count_not_exhausted and is_vtol_pitch_exceeding_limit(actual_vtol_pitch_deg, is_vtol_flight, current_mode, is_battery_critical) then
             trigger_autobailout(current_mode)
-        elseif is_predicted_vtol_pitch_exceeding_threshold(actual_vtol_pitch_deg, actual_vtol_pitch_rate, is_vtol_flight,current_mode, is_battery_critical) then
+        elseif autobailout_count_not_exhausted and is_predicted_vtol_pitch_exceeding_threshold(actual_vtol_pitch_deg, actual_vtol_pitch_rate, is_vtol_flight,current_mode, is_battery_critical) then
             trigger_autobailout(current_mode)
         end
     -- ==========================================================
