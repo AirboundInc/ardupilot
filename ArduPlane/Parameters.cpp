@@ -1325,7 +1325,7 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
 
     // @Param: RTL_ARSPD
     // @DisplayName: RTL reduced airspeed
-    // @Description: Target airspeed used in RTL while the distance to the RTL destination (home or rally point) is between RTL_ARSPD_LO and RTL_ARSPD_HI. Never raises the target above AIRSPEED_CRUISE and is limited to AIRSPEED_MIN. Set to 0 to disable.
+    // @Description: Target airspeed used in RTL while the distance to the RTL destination (home or rally point) is between RTL_ASPD_DST_LO and RTL_ASPD_DST_HI. Never raises the target above AIRSPEED_CRUISE and is limited to AIRSPEED_MIN. Set to 0 to disable.
     // @Units: m/s
     // @Range: 0 100
     // @Increment: 0.1
