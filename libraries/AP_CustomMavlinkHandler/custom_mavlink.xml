@@ -52,7 +52,7 @@
       <field type="uint32_t" name="rx_to_other">Frames received whose target_system is a different vehicle, i.e. misrouted to this link.</field>
       <field type="uint32_t" name="rx_broadcast">Frames received with target_system 0 or no target field.</field>
       <field type="uint32_t" name="rx_seq_lost">Sequence gaps in frames addressed to this vehicle or broadcast, tracked per sender. Only meaningful if the sender numbers each vehicle's frames separately.</field>
-      <field type="uint32_t" name="rx_seq_dup">Frames addressed to this vehicle or broadcast that repeated the sender's previous sequence number, e.g. a sender whose sequence never increments.</field>
+      <field type="uint32_t" name="rx_seq_dup">Frames addressed to this vehicle or broadcast that repeated or went back on the sender's sequence number: a sender whose sequence never increments, or a duplicated or late frame.</field>
       <field type="uint32_t" name="rx_crc_errors">Frames of a known message type that failed the CRC check (damaged or truncated).</field>
       <field type="uint32_t" name="rx_unknown">Frames of a message type this vehicle does not know, so the CRC could not be checked.</field>
       <field type="uint32_t" name="tx_count">Frames sent by this vehicle on this link.</field>
@@ -64,8 +64,8 @@
       <field type="uint8_t" name="sender_sysid">System ID of the sender these counters are for.</field>
       <field type="uint8_t" name="sender_compid">Component ID of the sender these counters are for.</field>
       <field type="uint32_t" name="frames">Frames received from this sender that were addressed to this vehicle or broadcast.</field>
-      <field type="uint32_t" name="seq_lost">Sequence gaps in this sender's frames, i.e. frames lost on the way. Only meaningful if the sender numbers each vehicle's frames separately.</field>
-      <field type="uint32_t" name="seq_dup">Frames that repeated this sender's previous sequence number, e.g. a sender whose sequence never increments.</field>
+      <field type="uint32_t" name="seq_lost">Sequence gaps in this sender's frames, i.e. frames lost on the way. Only meaningful if the sender numbers each vehicle's frames separately. A jump of 128 or more, or a return after 60 s of silence, is not counted.</field>
+      <field type="uint32_t" name="seq_dup">Frames that repeated or went back on this sender's sequence number: a sender whose sequence never increments, or a duplicated or late frame.</field>
       <field type="uint8_t" name="last_seq">Sequence number of the last frame received from this sender.</field>
     </message>
     <!-- custom messages END -->

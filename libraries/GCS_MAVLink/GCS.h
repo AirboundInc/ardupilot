@@ -1141,14 +1141,18 @@ private:
             uint8_t sysid;
             uint8_t compid;
             uint8_t last_seq;
+            uint8_t behind_seq;      // last frame older than last_seq
+            uint8_t behind_run;      // older frames in a row, counting up (a sender restart)
             uint32_t last_ms;
             uint32_t frames;
             uint32_t seq_lost;
             uint32_t seq_dup;
         } senders[4];
         uint8_t num_senders;
-        uint8_t next_sender_report;  // AIRBOUND_LINK_SENDER resumes here after a full buffer
-        uint8_t sender_report_ticks; // 1 Hz calls since the last AIRBOUND_LINK_SENDER report
+        // AIRBOUND_LINK_SENDER report in progress, resumed here after a full buffer
+        bool sender_report_active;
+        uint8_t next_sender_report;
+        uint32_t sender_report_ms;
     } link_stats;
     void link_stats_count_rx(const mavlink_message_t &msg);
 #endif

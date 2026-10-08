@@ -853,7 +853,7 @@ struct PACKED log_VER {
 // @Field: RxOth: frames received addressed to a different sysid (misrouted)
 // @Field: RxBc: frames received with target_system 0 or no target
 // @Field: SeqL: sequence gaps in frames addressed to us or broadcast, tracked per sender
-// @Field: SeqD: frames addressed to us or broadcast repeating the sender's previous sequence number
+// @Field: SeqD: frames addressed to us or broadcast that repeated or went back on the sender's sequence number (stuck counter, duplicate or late frame)
 // @Field: CRC: frames of a known message type that failed the CRC check
 // @Field: Unk: frames of an unknown message type
 // @Field: TxP: frames sent on this link
@@ -867,7 +867,7 @@ struct PACKED log_VER {
 // @Field: Comp: sender component id; the instance field, so log viewers show each sender as LNKQ[Comp]
 // @Field: Fr: frames from this sender addressed to us or broadcast
 // @Field: SeqL: sequence gaps from this sender
-// @Field: SeqD: frames repeating this sender's previous sequence number
+// @Field: SeqD: frames that repeated or went back on this sender's sequence number
 // @Field: Seq: last sequence number received from this sender
 
 // @LoggerMessage: LNKO
