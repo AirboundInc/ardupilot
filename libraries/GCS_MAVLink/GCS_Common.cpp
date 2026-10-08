@@ -1159,6 +1159,10 @@ ap_message GCS_MAVLINK::mavlink_id_to_ap_message_id(const uint32_t mavlink_id) c
 #if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
         { MAVLINK_MSG_ID_AIRBOUND_FLIGHT_INFORMATION, MSG_AIRBOUND_FLIGHT_INFORMATION},
 #endif
+#if AP_AIRBOUND_LINK_STATS_ENABLED
+        { MAVLINK_MSG_ID_AIRBOUND_LINK_STATS, MSG_AIRBOUND_LINK_STATS},
+        { MAVLINK_MSG_ID_AIRBOUND_LINK_SENDER, MSG_AIRBOUND_LINK_SENDER},
+#endif
             };
 
     for (uint8_t i=0; i<ARRAY_SIZE(map); i++) {
@@ -1640,6 +1644,9 @@ void GCS_MAVLINK::update_send()
     // the assumption that we don't send more than 256 messages
     // between the last pass through here
     send_packet_count += uint8_t(_channel_status.current_tx_seq - last_tx_seq);
+#if AP_AIRBOUND_LINK_STATS_ENABLED
+    link_stats.tx_count += uint8_t(_channel_status.current_tx_seq - last_tx_seq);
+#endif
     last_tx_seq = _channel_status.current_tx_seq;
 }
 
@@ -1891,6 +1898,9 @@ GCS_MAVLINK::update_receive(uint32_t max_time_us)
         const uint8_t framing = mavlink_frame_char_buffer(channel_buffer(), channel_status(), c, &msg, &status);
         if (framing == MAVLINK_FRAMING_OK) {
             hal.util->persistent_data.last_mavlink_msgid = msg.msgid;
+#if AP_AIRBOUND_LINK_STATS_ENABLED
+            link_stats_count_rx(msg);
+#endif
             packetReceived(status, msg);
             parsed_packet = true;
             gcs_alternative_active[chan] = false;
@@ -1907,6 +1917,16 @@ GCS_MAVLINK::update_receive(uint32_t max_time_us)
             }
         }
 #endif // AP_SCRIPTING_ENABLED
+#if AP_AIRBOUND_LINK_STATS_ENABLED
+        if (framing == MAVLINK_FRAMING_BAD_CRC) {
+            // an unknown msgid has no crc_extra, so its CRC always fails
+            if (mavlink_get_msg_entry(msg.msgid) == nullptr) {
+                link_stats.rx_unknown++;
+            } else {
+                link_stats.rx_crc_errors++;
+            }
+        }
+#endif
 
         if (parsed_packet || i % 100 == 0) {
             // make sure we don't spend too much time parsing mavlink messages
@@ -2016,6 +2036,140 @@ GCS_MAVLINK::update_receive(uint32_t max_time_us)
 #endif
 }
 
+#if AP_AIRBOUND_LINK_STATS_ENABLED
+/*
+  classify a frame received on this link by its target, and count
+  sequence gaps per sender on frames addressed to us or broadcast
+*/
+void GCS_MAVLINK::link_stats_count_rx(const mavlink_message_t &msg)
+{
+    int16_t target_system = -1;
+    int16_t target_component = -1;
+    routing.get_targets(msg, target_system, target_component);
+
+    if (target_system > 0 && target_system != mavlink_system.sysid) {
+        // carries another vehicle's numbering if the sender counts per vehicle
+        link_stats.rx_to_other++;
+#if HAL_LOGGING_ENABLED
+        // one row per misrouted frame, to trace who sent what to whom
+        const struct log_LNKO pkt{
+            LOG_PACKET_HEADER_INIT(LOG_LNKO_MSG),
+            time_us       : AP_HAL::micros64(),
+            chan          : (uint8_t)chan,
+            sysid         : msg.sysid,
+            compid        : msg.compid,
+            target_sysid  : (uint8_t)target_system,
+            target_compid : (uint8_t)MAX(target_component, 0),
+            mavlink_msgid : msg.msgid,
+            seq           : msg.seq,
+        };
+        AP::logger().WriteBlock(&pkt, sizeof(pkt));
+#endif
+        return;
+    }
+    if (target_system <= 0) {
+        link_stats.rx_broadcast++;
+    } else {
+        link_stats.rx_to_me++;
+    }
+
+    // seq is numbered by the sender, so a gap is only a loss if the
+    // sender keeps a separate counter for each vehicle
+    const uint32_t now_ms = AP_HAL::millis();
+    uint8_t oldest = 0;
+    for (uint8_t i=0; i<link_stats.num_senders; i++) {
+        auto &s = link_stats.senders[i];
+        if (s.sysid == msg.sysid && s.compid == msg.compid) {
+            if (msg.seq == s.last_seq) {
+                s.seq_dup++;
+                link_stats.rx_seq_dup++;
+            } else {
+                const uint8_t lost = msg.seq - s.last_seq - 1;
+                s.seq_lost += lost;
+                link_stats.rx_seq_lost += lost;
+            }
+            s.frames++;
+            s.last_seq = msg.seq;
+            s.last_ms = now_ms;
+            return;
+        }
+        if (now_ms - s.last_ms > now_ms - link_stats.senders[oldest].last_ms) {
+            oldest = i;
+        }
+    }
+
+    // new sender: use a free slot, else replace the longest-silent one
+    if (link_stats.num_senders < ARRAY_SIZE(link_stats.senders)) {
+        oldest = link_stats.num_senders++;
+    }
+    auto &s = link_stats.senders[oldest];
+    s.sysid = msg.sysid;
+    s.compid = msg.compid;
+    s.last_seq = msg.seq;
+    s.last_ms = now_ms;
+    s.frames = 1;
+    s.seq_lost = 0;
+    s.seq_dup = 0;
+}
+
+void GCS_MAVLINK::send_airbound_link_stats() const
+{
+    mavlink_msg_airbound_link_stats_send(
+        chan,
+        AP_HAL::millis(),
+        link_stats.rx_to_me,
+        link_stats.rx_to_other,
+        link_stats.rx_broadcast,
+        link_stats.rx_seq_lost,
+        link_stats.rx_seq_dup,
+        link_stats.rx_crc_errors,
+        link_stats.rx_unknown,
+        link_stats.tx_count,
+        link_stats.tx_buffer_full);
+}
+
+// one AIRBOUND_LINK_SENDER per recently heard sender, every AB_LNK_SENDER seconds;
+// returns false on a full buffer so the remaining senders go out on the next call
+bool GCS_MAVLINK::send_airbound_link_sender()
+{
+    const AP_Vehicle *vehicle = AP::vehicle();
+    const uint8_t period_s = vehicle == nullptr ? 0 : vehicle->airbound_link_sender_period_s();
+    if (period_s == 0) {
+        link_stats.sender_report_ticks = 0;
+        return true;
+    }
+    // called at the message's 1 Hz interval: start a report on every period_s-th call
+    if (link_stats.next_sender_report == 0) {
+        if (++link_stats.sender_report_ticks < period_s) {
+            return true;
+        }
+        link_stats.sender_report_ticks = 0;
+    }
+    const uint32_t now_ms = AP_HAL::millis();
+    while (link_stats.next_sender_report < link_stats.num_senders) {
+        const auto &s = link_stats.senders[link_stats.next_sender_report];
+        if (now_ms - s.last_ms > 10000) {
+            // gone quiet: still logged in LNKQ, not worth link bandwidth
+            link_stats.next_sender_report++;
+            continue;
+        }
+        CHECK_PAYLOAD_SIZE(AIRBOUND_LINK_SENDER);
+        mavlink_msg_airbound_link_sender_send(
+            chan,
+            now_ms,
+            s.sysid,
+            s.compid,
+            s.frames,
+            s.seq_lost,
+            s.seq_dup,
+            s.last_seq);
+        link_stats.next_sender_report++;
+    }
+    link_stats.next_sender_report = 0;
+    return true;
+}
+#endif  // AP_AIRBOUND_LINK_STATS_ENABLED
+
 #if HAL_LOGGING_ENABLED
 /*
   record stats about this link to logger
@@ -2052,6 +2206,41 @@ void GCS_MAVLINK::log_mavlink_stats()
     };
 
     AP::logger().WriteBlock(&pkt, sizeof(pkt));
+
+#if AP_AIRBOUND_LINK_STATS_ENABLED
+    const struct log_LNKS lnks{
+        LOG_PACKET_HEADER_INIT(LOG_LNKS_MSG),
+        time_us        : pkt.time_us,
+        chan           : (uint8_t)chan,
+        rx_to_me       : link_stats.rx_to_me,
+        rx_to_other    : link_stats.rx_to_other,
+        rx_broadcast   : link_stats.rx_broadcast,
+        rx_seq_lost    : link_stats.rx_seq_lost,
+        rx_seq_dup     : link_stats.rx_seq_dup,
+        rx_crc_errors  : link_stats.rx_crc_errors,
+        rx_unknown     : link_stats.rx_unknown,
+        tx_count       : link_stats.tx_count,
+        tx_buffer_full : link_stats.tx_buffer_full,
+    };
+    AP::logger().WriteBlock(&lnks, sizeof(lnks));
+
+    // one row per sender, so e.g. Rudra's loss can be read apart from MAVProxy's
+    for (uint8_t i=0; i<link_stats.num_senders; i++) {
+        const auto &s = link_stats.senders[i];
+        const struct log_LNKQ lnkq{
+            LOG_PACKET_HEADER_INIT(LOG_LNKQ_MSG),
+            time_us  : pkt.time_us,
+            chan     : (uint8_t)chan,
+            sysid    : s.sysid,
+            compid   : s.compid,
+            frames   : s.frames,
+            seq_lost : s.seq_lost,
+            seq_dup  : s.seq_dup,
+            last_seq : s.last_seq,
+        };
+        AP::logger().WriteBlock(&lnkq, sizeof(lnkq));
+    }
+#endif
 }
 #endif
 
@@ -6428,6 +6617,17 @@ bool GCS_MAVLINK::try_send_message(const enum ap_message id)
         break;
 #endif
 
+#if AP_AIRBOUND_LINK_STATS_ENABLED
+    case MSG_AIRBOUND_LINK_STATS:
+        CHECK_PAYLOAD_SIZE(AIRBOUND_LINK_STATS);
+        send_airbound_link_stats();
+        break;
+
+    case MSG_AIRBOUND_LINK_SENDER:
+        ret = send_airbound_link_sender();
+        break;
+#endif
+
 #if AP_AHRS_ENABLED
     case MSG_VFR_HUD:
         CHECK_PAYLOAD_SIZE(VFR_HUD);
@@ -6742,6 +6942,10 @@ void GCS_MAVLINK::initialise_message_intervals_from_streamrates()
 #else
     set_mavlink_message_id_interval(MAVLINK_MSG_ID_HEARTBEAT, 1000);
 #endif
+#if AP_AIRBOUND_LINK_STATS_ENABLED
+    set_ap_message_interval(MSG_AIRBOUND_LINK_STATS, 1000);
+    set_ap_message_interval(MSG_AIRBOUND_LINK_SENDER, 1000);
+#endif
 }
 
 bool GCS_MAVLINK::get_default_interval_for_ap_message(const ap_message id, uint16_t &interval) const
@@ -6765,6 +6969,14 @@ bool GCS_MAVLINK::get_default_interval_for_ap_message(const ap_message id, uint1
     // to vehicle startup
     if (default_intervals_from_files != nullptr &&
         default_intervals_from_files->get_interval_for_ap_message_id(id, interval)) {
+        return true;
+    }
+#endif
+
+#if AP_AIRBOUND_LINK_STATS_ENABLED
+    if (id == MSG_AIRBOUND_LINK_STATS || id == MSG_AIRBOUND_LINK_SENDER) {
+        // not "streamed"; 1Hz unless a file or SET_MESSAGE_INTERVAL says otherwise
+        interval = 1000;
         return true;
     }
 #endif

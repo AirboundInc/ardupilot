@@ -45,6 +45,29 @@
       <field type="uint64_t" name="disarming_time_utc" units="us">UTC timestamp of last disarming event.</field>
       <field type="uint32_t" name="flight_time_ms" units="ms">Elapsed flight time since takeoff.</field>
     </message>
+    <message id="15225" name="AIRBOUND_LINK_STATS">
+      <description>MAVLink traffic counters for the link this message is sent on, cumulative since boot. Difference two messages to get per-interval values.</description>
+      <field type="uint32_t" name="time_boot_ms" units="ms">Timestamp (time since system boot).</field>
+      <field type="uint32_t" name="rx_to_me">Frames received whose target_system is this vehicle.</field>
+      <field type="uint32_t" name="rx_to_other">Frames received whose target_system is a different vehicle, i.e. misrouted to this link.</field>
+      <field type="uint32_t" name="rx_broadcast">Frames received with target_system 0 or no target field.</field>
+      <field type="uint32_t" name="rx_seq_lost">Sequence gaps in frames addressed to this vehicle or broadcast, tracked per sender. Only meaningful if the sender numbers each vehicle's frames separately.</field>
+      <field type="uint32_t" name="rx_seq_dup">Frames addressed to this vehicle or broadcast that repeated the sender's previous sequence number, e.g. a sender whose sequence never increments.</field>
+      <field type="uint32_t" name="rx_crc_errors">Frames of a known message type that failed the CRC check (damaged or truncated).</field>
+      <field type="uint32_t" name="rx_unknown">Frames of a message type this vehicle does not know, so the CRC could not be checked.</field>
+      <field type="uint32_t" name="tx_count">Frames sent by this vehicle on this link.</field>
+      <field type="uint32_t" name="tx_buffer_full">Times a message was not sent because the link's send buffer was full.</field>
+    </message>
+    <message id="15226" name="AIRBOUND_LINK_SENDER">
+      <description>Receive counters for one sender (GCS) on the link this message is sent on, cumulative since that sender was first seen. One message per sender heard on the link in the last 10 s, up to 4 per link. Sent every AB_LNK_SENDER seconds; not sent when AB_LNK_SENDER is 0.</description>
+      <field type="uint32_t" name="time_boot_ms" units="ms">Timestamp (time since system boot).</field>
+      <field type="uint8_t" name="sender_sysid">System ID of the sender these counters are for.</field>
+      <field type="uint8_t" name="sender_compid">Component ID of the sender these counters are for.</field>
+      <field type="uint32_t" name="frames">Frames received from this sender that were addressed to this vehicle or broadcast.</field>
+      <field type="uint32_t" name="seq_lost">Sequence gaps in this sender's frames, i.e. frames lost on the way. Only meaningful if the sender numbers each vehicle's frames separately.</field>
+      <field type="uint32_t" name="seq_dup">Frames that repeated this sender's previous sequence number, e.g. a sender whose sequence never increments.</field>
+      <field type="uint8_t" name="last_seq">Sequence number of the last frame received from this sender.</field>
+    </message>
     <!-- custom messages END -->
   </messages>
 </mavlink>

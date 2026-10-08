@@ -316,6 +316,45 @@ struct PACKED log_MAV {
     uint16_t times_full;
 };
 
+struct PACKED log_LNKS {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    uint8_t chan;
+    uint32_t rx_to_me;
+    uint32_t rx_to_other;
+    uint32_t rx_broadcast;
+    uint32_t rx_seq_lost;
+    uint32_t rx_seq_dup;
+    uint32_t rx_crc_errors;
+    uint32_t rx_unknown;
+    uint32_t tx_count;
+    uint32_t tx_buffer_full;
+};
+
+struct PACKED log_LNKQ {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    uint8_t chan;
+    uint8_t sysid;
+    uint8_t compid;
+    uint32_t frames;
+    uint32_t seq_lost;
+    uint32_t seq_dup;
+    uint8_t last_seq;
+};
+
+struct PACKED log_LNKO {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    uint8_t chan;
+    uint8_t sysid;
+    uint8_t compid;
+    uint8_t target_sysid;
+    uint8_t target_compid;
+    uint32_t mavlink_msgid;  // LOG_PACKET_HEADER already has a msgid
+    uint8_t seq;
+};
+
 struct PACKED log_RSSI {
     LOG_PACKET_HEADER;
     uint64_t time_us;
@@ -806,6 +845,42 @@ struct PACKED log_VER {
 // @Field: ss: stream slowdown is the number of ms being added to each message to fit within bandwidth
 // @Field: tf: times buffer was full when a message was going to be sent
 
+// @LoggerMessage: LNKS
+// @Description: Airbound MAVLink link traffic counters, cumulative since boot
+// @Field: TimeUS: Time since system startup
+// @Field: chan: mavlink channel number
+// @Field: RxMe: frames received addressed to this vehicle's sysid
+// @Field: RxOth: frames received addressed to a different sysid (misrouted)
+// @Field: RxBc: frames received with target_system 0 or no target
+// @Field: SeqL: sequence gaps in frames addressed to us or broadcast, tracked per sender
+// @Field: SeqD: frames addressed to us or broadcast repeating the sender's previous sequence number
+// @Field: CRC: frames of a known message type that failed the CRC check
+// @Field: Unk: frames of an unknown message type
+// @Field: TxP: frames sent on this link
+// @Field: TxF: times a message was not sent because the send buffer was full
+
+// @LoggerMessage: LNKQ
+// @Description: Airbound per-sender sequence tracking on a MAVLink link, cumulative since the sender was first seen
+// @Field: TimeUS: Time since system startup
+// @Field: chan: mavlink channel number
+// @Field: Sys: sender system id
+// @Field: Comp: sender component id; the instance field, so log viewers show each sender as LNKQ[Comp]
+// @Field: Fr: frames from this sender addressed to us or broadcast
+// @Field: SeqL: sequence gaps from this sender
+// @Field: SeqD: frames repeating this sender's previous sequence number
+// @Field: Seq: last sequence number received from this sender
+
+// @LoggerMessage: LNKO
+// @Description: Airbound: a received frame addressed to a different vehicle (misrouted to this link)
+// @Field: TimeUS: Time since system startup
+// @Field: chan: mavlink channel number
+// @Field: Sys: sender system id
+// @Field: Comp: sender component id
+// @Field: TSys: target system id the frame was addressed to
+// @Field: TComp: target component id (0 if the message has none)
+// @Field: MsgId: MAVLink message id
+// @Field: Seq: sender's sequence number
+
 // @LoggerMessage: MAVC
 // @Description: MAVLink command we have just executed
 // @Field: TimeUS: Time since system startup
@@ -1254,6 +1329,12 @@ LOG_STRUCTURE_FROM_FENCE \
       "RALY", "QBBLLhB", "TimeUS,Tot,Seq,Lat,Lng,Alt,Flags", "s--DUm-", "F--GGB-" },  \
     { LOG_MAV_MSG, sizeof(log_MAV),   \
       "MAV", "QBHHHBHH",   "TimeUS,chan,txp,rxp,rxdp,flags,ss,tf", "s#----s-", "F-000-C-" },   \
+    { LOG_LNKS_MSG, sizeof(log_LNKS),   \
+      "LNKS", "QBIIIIIIIII", "TimeUS,chan,RxMe,RxOth,RxBc,SeqL,SeqD,CRC,Unk,TxP,TxF", "s#---------", "F----------" },   \
+    { LOG_LNKQ_MSG, sizeof(log_LNKQ),   \
+      "LNKQ", "QBBBIIIB", "TimeUS,chan,Sys,Comp,Fr,SeqL,SeqD,Seq", "s--#----", "F-------" },   \
+    { LOG_LNKO_MSG, sizeof(log_LNKO),   \
+      "LNKO", "QBBBBBIB", "TimeUS,chan,Sys,Comp,TSys,TComp,MsgId,Seq", "s-------", "F-------" },   \
 LOG_STRUCTURE_FROM_VISUALODOM \
     { LOG_OPTFLOW_MSG, sizeof(log_Optflow), \
       "OF",   "QBffff",   "TimeUS,Qual,flowX,flowY,bodyX,bodyY", "s-EEEE", "F-0000" , true }, \
@@ -1368,6 +1449,9 @@ enum LogMessages : uint8_t {
     LOG_RCOUT3_MSG,
     LOG_IDS_FROM_FENCE,
     LOG_IDS_FROM_HAL,
+    LOG_LNKS_MSG,
+    LOG_LNKQ_MSG,
+    LOG_LNKO_MSG,
 
     _LOG_LAST_MSG_
 };
