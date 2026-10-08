@@ -2080,16 +2080,35 @@ void GCS_MAVLINK::link_stats_count_rx(const mavlink_message_t &msg)
     for (uint8_t i=0; i<link_stats.num_senders; i++) {
         auto &s = link_stats.senders[i];
         if (s.sysid == msg.sysid && s.compid == msg.compid) {
-            if (msg.seq == s.last_seq) {
+            // seq wraps at 256: 1..127 ahead is new, anything else is a repeat or an older frame
+            const uint8_t ahead = msg.seq - s.last_seq;
+            if (now_ms - s.last_ms > 60000) {
+                // back after a long silence: the gap may have wrapped or the sender restarted
+                s.last_seq = msg.seq;
+                s.behind_run = 0;
+            } else if (ahead == 0) {
                 s.seq_dup++;
                 link_stats.rx_seq_dup++;
+                s.behind_run = 0;
+            } else if (ahead >= 128) {
+                // late or duplicated frame: not a loss, and the baseline stays put
+                s.seq_dup++;
+                link_stats.rx_seq_dup++;
+                s.behind_run = (s.behind_run > 0 && msg.seq == uint8_t(s.behind_seq + 1)) ? s.behind_run + 1 : 1;
+                s.behind_seq = msg.seq;
+                if (s.behind_run >= 3) {
+                    // three older frames counting up: the sender restarted its count
+                    s.last_seq = msg.seq;
+                    s.behind_run = 0;
+                }
             } else {
-                const uint8_t lost = msg.seq - s.last_seq - 1;
+                const uint8_t lost = ahead - 1;
                 s.seq_lost += lost;
                 link_stats.rx_seq_lost += lost;
+                s.last_seq = msg.seq;
+                s.behind_run = 0;
             }
             s.frames++;
-            s.last_seq = msg.seq;
             s.last_ms = now_ms;
             return;
         }
@@ -2106,6 +2125,7 @@ void GCS_MAVLINK::link_stats_count_rx(const mavlink_message_t &msg)
     s.sysid = msg.sysid;
     s.compid = msg.compid;
     s.last_seq = msg.seq;
+    s.behind_run = 0;
     s.last_ms = now_ms;
     s.frames = 1;
     s.seq_lost = 0;
@@ -2135,17 +2155,21 @@ bool GCS_MAVLINK::send_airbound_link_sender()
     const AP_Vehicle *vehicle = AP::vehicle();
     const uint8_t period_s = vehicle == nullptr ? 0 : vehicle->airbound_link_sender_period_s();
     if (period_s == 0) {
-        link_stats.sender_report_ticks = 0;
+        link_stats.sender_report_active = false;
         return true;
     }
-    // called at the message's 1 Hz interval: start a report on every period_s-th call
-    if (link_stats.next_sender_report == 0) {
-        if (++link_stats.sender_report_ticks < period_s) {
+    const uint32_t now_ms = AP_HAL::millis();
+    if (!link_stats.sender_report_active) {
+        // start a report every period_s seconds; half a call interval absorbs scheduler jitter
+        uint16_t interval_ms = 1000;
+        get_ap_message_interval(MSG_AIRBOUND_LINK_SENDER, interval_ms);
+        if (now_ms - link_stats.sender_report_ms + interval_ms / 2 < period_s * 1000U) {
             return true;
         }
-        link_stats.sender_report_ticks = 0;
+        link_stats.sender_report_ms = now_ms;
+        link_stats.sender_report_active = true;
+        link_stats.next_sender_report = 0;
     }
-    const uint32_t now_ms = AP_HAL::millis();
     while (link_stats.next_sender_report < link_stats.num_senders) {
         const auto &s = link_stats.senders[link_stats.next_sender_report];
         if (now_ms - s.last_ms > 10000) {
@@ -2165,7 +2189,7 @@ bool GCS_MAVLINK::send_airbound_link_sender()
             s.last_seq);
         link_stats.next_sender_report++;
     }
-    link_stats.next_sender_report = 0;
+    link_stats.sender_report_active = false;
     return true;
 }
 #endif  // AP_AIRBOUND_LINK_STATS_ENABLED
