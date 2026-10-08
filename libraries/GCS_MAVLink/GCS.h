@@ -227,7 +227,12 @@ public:
     bool check_payload_size(uint16_t max_payload_len);
 
     // this is called when we discover we'd like to send something but can't:
-    void out_of_space_to_send() { out_of_space_to_send_count++; }
+    void out_of_space_to_send() {
+        out_of_space_to_send_count++;
+#if AP_AIRBOUND_LINK_STATS_ENABLED
+        link_stats.tx_buffer_full++;
+#endif
+    }
 
     void send_mission_ack(const mavlink_message_t &msg,
                           MAV_MISSION_TYPE mission_type,
@@ -383,6 +388,10 @@ public:
     void send_extended_sys_state() const;
 #if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
     void send_airbound_flight_information();
+#endif
+#if AP_AIRBOUND_LINK_STATS_ENABLED
+    void send_airbound_link_stats() const;
+    bool send_airbound_link_sender();
 #endif
     void send_local_position() const;
     void send_vfr_hud();
@@ -1114,6 +1123,35 @@ private:
     uint8_t last_tx_seq;
     uint16_t send_packet_count;
     uint16_t out_of_space_to_send_count; // number of times HAVE_PAYLOAD_SPACE and friends have returned false
+
+#if AP_AIRBOUND_LINK_STATS_ENABLED
+    // cumulative counters for AIRBOUND_LINK_STATS and the LNKS/LNKQ log messages
+    struct {
+        uint32_t rx_to_me;
+        uint32_t rx_to_other;
+        uint32_t rx_broadcast;
+        uint32_t rx_seq_lost;
+        uint32_t rx_seq_dup;
+        uint32_t rx_crc_errors;
+        uint32_t rx_unknown;
+        uint32_t tx_count;
+        uint32_t tx_buffer_full;
+        // per-sender seq tracking on frames addressed to us or broadcast
+        struct {
+            uint8_t sysid;
+            uint8_t compid;
+            uint8_t last_seq;
+            uint32_t last_ms;
+            uint32_t frames;
+            uint32_t seq_lost;
+            uint32_t seq_dup;
+        } senders[4];
+        uint8_t num_senders;
+        uint8_t next_sender_report;  // AIRBOUND_LINK_SENDER resumes here after a full buffer
+        uint8_t sender_report_ticks; // 1 Hz calls since the last AIRBOUND_LINK_SENDER report
+    } link_stats;
+    void link_stats_count_rx(const mavlink_message_t &msg);
+#endif
 
 #if GCS_DEBUG_SEND_MESSAGE_TIMINGS
     struct {

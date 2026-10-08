@@ -33,7 +33,11 @@ class mavgen(Task.Task):
             includes = root.findall('include')
             for i in includes:
                 path = i.text.strip()
-                n = node.parent.find_node(path)
+                if os.path.isabs(path):
+                    # e.g. the custom dialect include added by custom_dialect_tool
+                    n = node.ctx.root.find_node(path)
+                else:
+                    n = node.parent.find_node(path)
                 if n:
                     nodes.append(n)
                     if n not in queue:

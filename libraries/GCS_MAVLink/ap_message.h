@@ -106,5 +106,9 @@ enum ap_message : uint8_t {
 #if AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED
     MSG_AIRBOUND_FLIGHT_INFORMATION,
 #endif
+#if AP_AIRBOUND_LINK_STATS_ENABLED
+    MSG_AIRBOUND_LINK_STATS,
+    MSG_AIRBOUND_LINK_SENDER,
+#endif
     MSG_LAST // MSG_LAST must be the last entry in this enum
 };
