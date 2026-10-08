@@ -893,8 +893,8 @@ void Tiltrotor::dual_axis_output(void)
         // raw attitude-vectoring demand from AP_MotorsTiltrotorDualAxis's
         // mixer (quadplane.motors_output() above), before this function's
         // extra pitch feedback/blending is layered on top
-        float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeftVec);
-        float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRightVec);
+        float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
+        float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
         float tilt_left_adjusted = tilt_left;
         float tilt_right_adjusted = tilt_right;
 

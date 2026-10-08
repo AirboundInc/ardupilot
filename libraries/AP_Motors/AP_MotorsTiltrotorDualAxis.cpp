@@ -38,19 +38,15 @@ void AP_MotorsTiltrotorDualAxis::init(motor_frame_class frame_class, motor_frame
     // left throttle defaults to servo output 2
     SRV_Channels::set_aux_channel_default(SRV_Channel::k_throttleLeft, CH_2);
 
-    // Axis 1 (transition tilt, k_tiltMotorLeft/Right) is driven directly by
-    // Tiltrotor::dual_axis_output() in ArduPlane, not by this mixer, so no
-    // default channel/range is set up for it here.
+    // right servo defaults to servo output 3
+    SRV_Channels::set_aux_channel_default(SRV_Channel::k_tiltMotorRight, CH_3);
+    SRV_Channels::set_angle(SRV_Channel::k_tiltMotorRight, SERVO_OUTPUT_RANGE);
 
-    // right Axis 2 vectoring servo defaults to servo output 5
-    SRV_Channels::set_aux_channel_default(SRV_Channel::k_tiltMotorRightVec, CH_5);
-    SRV_Channels::set_angle(SRV_Channel::k_tiltMotorRightVec, SERVO_OUTPUT_RANGE);
+    // left servo defaults to servo output 4
+    SRV_Channels::set_aux_channel_default(SRV_Channel::k_tiltMotorLeft, CH_4);
+    SRV_Channels::set_angle(SRV_Channel::k_tiltMotorLeft, SERVO_OUTPUT_RANGE);
 
-    // left Axis 2 vectoring servo defaults to servo output 6
-    SRV_Channels::set_aux_channel_default(SRV_Channel::k_tiltMotorLeftVec, CH_6);
-    SRV_Channels::set_angle(SRV_Channel::k_tiltMotorLeftVec, SERVO_OUTPUT_RANGE);
-
-    _mav_type = MAV_TYPE_VTOL_TILTROTOR;
+    _mav_type = MAV_TYPE_VTOL_DUOROTOR;
 
     // record successful initialisation if what we setup was the desired frame_class
     set_initialised_ok(frame_class == MOTOR_FRAME_TAILSITTER);
@@ -197,8 +193,8 @@ void AP_MotorsTiltrotorDualAxis::output_to_motors()
 
     // pitch/yaw vectoring output goes to the independent Axis 2 servos
     // instead of AP_MotorsTailsitter's own tilt servos (k_tiltMotorLeft/Right)
-    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec, _tilt_left*SERVO_OUTPUT_RANGE);
-    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec, _tilt_right*SERVO_OUTPUT_RANGE);
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, _tilt_left*SERVO_OUTPUT_RANGE);
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, _tilt_right*SERVO_OUTPUT_RANGE);
 }
 
 // output_test_seq - spin a motor at the pwm value specified
@@ -213,19 +209,20 @@ void AP_MotorsTiltrotorDualAxis::_output_test_seq(uint8_t motor_seq, int16_t pwm
             SRV_Channels::set_output_pwm(SRV_Channel::k_throttleRight, pwm);
             break;
         case 2:
-            // right Axis 2 vectoring servo
-            SRV_Channels::set_output_pwm(SRV_Channel::k_tiltMotorRightVec, pwm);
+            // right tilt servo
+            SRV_Channels::set_output_pwm(SRV_Channel::k_tiltMotorRight, pwm);
             break;
         case 3:
             // left throttle
             SRV_Channels::set_output_pwm(SRV_Channel::k_throttleLeft, pwm);
             break;
         case 4:
-            // left Axis 2 vectoring servo
-            SRV_Channels::set_output_pwm(SRV_Channel::k_tiltMotorLeftVec, pwm);
+            // left tilt servo
+            SRV_Channels::set_output_pwm(SRV_Channel::k_tiltMotorLeft, pwm);
             break;
         default:
             // do nothing
             break;
     }
 }
+
