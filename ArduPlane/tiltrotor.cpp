@@ -462,7 +462,7 @@ void Tiltrotor::update(void)
     // this it carries over from the previous flight (no reboot) and, via
     // RUDD_DT_GAIN differential thrust, rolls the aircraft at transition
     const bool armed = plane.arming.is_armed();
-    if (type == TILT_TYPE_DUAL_AXIS && armed && !was_armed && !plane.is_flying()) {
+    if (type == TILT_TYPE_DUAL_AXIS && armed && !was_armed) {
         plane.rollController.reset_I();
         plane.pitchController.reset_I();
         plane.yawController.reset_I();
