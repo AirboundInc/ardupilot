@@ -2088,6 +2088,7 @@ void QuadPlane::motors_output(bool run_rate_controller)
             // delay motor start after arming
             set_desired_spool_state(AP_Motors::DesiredSpoolState::SHUT_DOWN);
             motors->output();
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Delaying motor start after arming");
             return;
         }
     }
@@ -2101,6 +2102,7 @@ void QuadPlane::motors_output(bool run_rate_controller)
 #endif
         set_desired_spool_state(AP_Motors::DesiredSpoolState::SHUT_DOWN);
         motors->output();
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "SHUT DOWN");
         return;
     }
     if (esc_calibration && AP_Notify::flags.esc_calibration && plane.control_mode == &plane.mode_qstabilize) {
@@ -2115,6 +2117,7 @@ void QuadPlane::motors_output(bool run_rate_controller)
           transition. That is taken care of by the fixed wing
           stabilisation code
          */
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "ASSISTED FLIGHT: TAILSITTER TRANSITION");
         return;
     }
 
@@ -2142,6 +2145,7 @@ void QuadPlane::motors_output(bool run_rate_controller)
     update_throttle_suppression();
 
     motors->output();
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "MOTORS OUTPUT");
 
     // remember when motors were last active for throttle suppression
     if (motors->get_throttle() > 0.01f || tiltrotor.motors_active()) {

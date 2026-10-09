@@ -23,6 +23,7 @@
 #include "AP_MotorsTiltrotorDualAxis.h"
 #include <SRV_Channel/SRV_Channel.h>
 #include <AP_Logger/AP_Logger.h>
+#include <GCS_MAVLink/GCS.h>
 
 #define SERVO_OUTPUT_RANGE  4500
 
@@ -137,7 +138,7 @@ void AP_MotorsTiltrotorDualAxis::output_armed_stabilizing()
     _thrust_right = constrain_float(_thrust_right + thr_adj, 0.0f, 1.0f);
 
     _throttle = throttle_thrust;
-
+    GCS_SEND_TEXT(MAV_SEVERITY_DEBUG, "Running");
     // compensation_gain can never be zero
     // ensure accurate representation of average throttle output, this value is used for notch tracking and control surface scaling
     if (_has_diff_thrust) {
@@ -145,7 +146,6 @@ void AP_MotorsTiltrotorDualAxis::output_armed_stabilizing()
     } else {
         _throttle_out = throttle_thrust / compensation_gain;
     }
-
     // thrust vectoring
     _tilt_left  = pitch_thrust - differential_TV;
     _tilt_right = pitch_thrust + differential_TV;
