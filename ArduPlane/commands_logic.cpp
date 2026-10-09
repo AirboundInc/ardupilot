@@ -430,18 +430,6 @@ void Plane::do_land(const AP_Mission::Mission_Command& cmd)
 }
 
 #if HAL_QUADPLANE_ENABLED
-/*
-void Plane::do_landing_vtol_approach(const AP_Mission::Mission_Command& cmd)
-{
-    //set target alt
-    Location loc = cmd.content.location;
-    loc.sanitize(current_loc);
-    set_next_WP(loc);
-
-    vtol_approach_s.approach_stage = VTOLApproach::Stage::LOITER_TO_ALT;
-}
-#endif
-*/
 
 void Plane::do_landing_vtol_approach(const AP_Mission::Mission_Command& cmd)
 {
@@ -458,7 +446,7 @@ void Plane::do_landing_vtol_approach(const AP_Mission::Mission_Command& cmd)
 }
 
 /*
-  approach track in degrees, from the wind estimate and Q_FW_LND_APR_WND
+  approach track in degrees, from the wind estimate and Q_FW_LND_APR_DIR
  */
 float Plane::vtol_approach_wind_direction_deg(void) const
 {
@@ -466,7 +454,7 @@ float Plane::vtol_approach_wind_direction_deg(void) const
     // bearing pointing upwind, i.e. a headwind approach track
     const float upwind_deg = degrees(atan2f(-wind.y, -wind.x));
     float offset_deg;
-    switch (quadplane.fw_land_approach_wind.get()) {
+    switch (quadplane.fw_land_approach_direction.get()) {
     case 1:  // tailwind
         offset_deg = 180;
         break;
@@ -1154,14 +1142,6 @@ bool Plane::verify_landing_vtol_approach(const AP_Mission::Mission_Command &cmd)
         case VTOLApproach::Stage::LOITER_TO_ALT:
             {
                 nav_controller->update_loiter(cmd.content.location, abs_radius, direction);
-                /*
-                if (labs(loiter.sum_cd) > 1 && (loiter.reached_target_alt || loiter.unable_to_acheive_target_alt)) {
-                    Vector3f wind = ahrs.wind_estimate();
-                    vtol_approach_s.approach_direction_deg = degrees(atan2f(-wind.y, -wind.x));
-                    gcs().send_text(MAV_SEVERITY_INFO, "Selected an approach path of %.1f", (double)vtol_approach_s.approach_direction_deg);
-                    vtol_approach_s.approach_stage = VTOLApproach::Stage::ENSURE_RADIUS;
-                }
-                */
                 if (labs(loiter.sum_cd) > 1 && (loiter.reached_target_alt || loiter.unable_to_acheive_target_alt)) {
                     vtol_approach_s.approach_direction_deg = vtol_approach_wind_direction_deg();
                     gcs().send_text(MAV_SEVERITY_INFO, "Selected an approach path of %.1f", (double)vtol_approach_s.approach_direction_deg);

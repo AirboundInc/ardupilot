@@ -651,11 +651,11 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Description: Selects the orientation of the final approach leg relative to the estimated wind when using the fixed wing spiral approach to a VTOL landing (NAV_VTOL_LAND with the FW approach option, Q_OPTIONS bit 4, or Q_RTL_MODE=VTOL approach). 0: fly into the wind (headwind). 1: fly with the wind (tailwind). 2: wind from the right side (crosswind from right). 3: wind from the left side (crosswind from left).
     // @Values: 0:Headwind,1:Tailwind,2:Wind from right,3:Wind from left
     // @User: Advanced
-    AP_GROUPINFO("FW_LND_APR_DIR", 51, QuadPlane, fw_land_approach_wind, 0),
+    AP_GROUPINFO("FW_LND_APR_DIR", 51, QuadPlane, fw_land_approach_direction, 0),
 
     // @Param: FW_LND_APR_TYP
     // @DisplayName: Quadplane fixed wing landing approach type
-    // @Description: Type of fixed wing approach used for VTOL landings when the fixed wing approach is enabled (NAV_VTOL_LAND param1=1, Q_OPTIONS bit 4, or Q_RTL_MODE=2). Spiral: loiter down to the approach altitude around the landing point, then break out onto the approach line. Direct: no loiter, fly straight to an entry point Q_FW_LND_APR_LEN before the landing point on the approach line selected by Q_FW_LND_APR_WND, then fly the approach line to the VTOL transition.
+    // @Description: Type of fixed wing approach used for VTOL landings when the fixed wing approach is enabled (NAV_VTOL_LAND param1=1, Q_OPTIONS bit 4, or Q_RTL_MODE=2). Spiral: loiter down to the approach altitude around the landing point, then break out onto the approach line. Direct: no loiter, fly straight to an entry point Q_FW_LND_APR_LEN before the landing point on the approach line selected by Q_FW_LND_APR_DIR, then fly the approach line to the VTOL transition.
     // @Values: 0:Spiral,1:Direct
     // @User: Advanced
     AP_GROUPINFO("FW_LND_APR_TYP", 52, QuadPlane, fw_land_approach_type, 0),

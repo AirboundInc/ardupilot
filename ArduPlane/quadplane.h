@@ -360,8 +360,8 @@ private:
     // fw landing approach radius
     AP_Float fw_land_approach_radius;
 
-    // fw landing approach heading relative to the wind, see Q_FW_LND_APR_WND
-    AP_Int8 fw_land_approach_wind;
+    // fw landing approach heading relative to the wind, see Q_FW_LND_APR_DIR
+    AP_Int8 fw_land_approach_direction;
 
     // fw landing approach type (spiral or direct) and direct final leg length
     AP_Int8 fw_land_approach_type;
