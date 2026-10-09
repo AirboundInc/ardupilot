@@ -430,6 +430,7 @@ void Plane::do_land(const AP_Mission::Mission_Command& cmd)
 }
 
 #if HAL_QUADPLANE_ENABLED
+/*
 void Plane::do_landing_vtol_approach(const AP_Mission::Mission_Command& cmd)
 {
     //set target alt
@@ -440,6 +441,61 @@ void Plane::do_landing_vtol_approach(const AP_Mission::Mission_Command& cmd)
     vtol_approach_s.approach_stage = VTOLApproach::Stage::LOITER_TO_ALT;
 }
 #endif
+*/
+
+void Plane::do_landing_vtol_approach(const AP_Mission::Mission_Command& cmd)
+{
+    //set target alt
+    Location loc = cmd.content.location;
+    loc.sanitize(current_loc);
+    set_next_WP(loc);
+
+    if (quadplane.fw_land_approach_type == 1) {
+        vtol_approach_start_direct();
+    } else {
+        vtol_approach_s.approach_stage = VTOLApproach::Stage::LOITER_TO_ALT;
+    }
+}
+
+/*
+  approach track in degrees, from the wind estimate and Q_FW_LND_APR_WND
+ */
+float Plane::vtol_approach_wind_direction_deg(void) const
+{
+    const Vector3f wind = ahrs.wind_estimate();
+    // bearing pointing upwind, i.e. a headwind approach track
+    const float upwind_deg = degrees(atan2f(-wind.y, -wind.x));
+    float offset_deg;
+    switch (quadplane.fw_land_approach_wind.get()) {
+    case 1:  // tailwind
+        offset_deg = 180;
+        break;
+    case 2:  // wind from right: track is 90 deg left of upwind
+        offset_deg = -90;
+        break;
+    case 3:  // wind from left: track is 90 deg right of upwind
+        offset_deg = 90;
+        break;
+    case 0:  // headwind
+    default:
+        offset_deg = 0;
+        break;
+    }
+    return wrap_360(upwind_deg + offset_deg);
+}
+
+/*
+  start a direct (no spiral) fixed wing approach
+ */
+void Plane::vtol_approach_start_direct(void)
+{
+    vtol_approach_s.approach_direction_deg = vtol_approach_wind_direction_deg();
+    vtol_approach_s.entry_start_loc = current_loc;
+    vtol_approach_s.direction_frozen = false;
+    vtol_approach_s.approach_stage = VTOLApproach::Stage::FLY_TO_ENTRY;
+}
+#endif
+
 
 void Plane::loiter_set_direction_wp(const AP_Mission::Mission_Command& cmd)
 {
@@ -1079,6 +1135,12 @@ bool Plane::verify_landing_vtol_approach(const AP_Mission::Mission_Command &cmd)
     switch (vtol_approach_s.approach_stage) {
         case VTOLApproach::Stage::RTL:
             {
+                if (quadplane.fw_land_approach_type == 1) {
+                    // direct approach: no loiter over home, target Q_RTL_ALT and head for the entry point
+                    plane.do_RTL(plane.home.alt + plane.quadplane.qrtl_alt*100UL);
+                    vtol_approach_start_direct();
+                    break;
+                }
                 // fly home and loiter at RTL alt
                 nav_controller->update_loiter(cmd.content.location, abs_radius, direction);
                 if (plane.reached_loiter_target()) {
@@ -1101,28 +1163,8 @@ bool Plane::verify_landing_vtol_approach(const AP_Mission::Mission_Command &cmd)
                 }
                 */
                 if (labs(loiter.sum_cd) > 1 && (loiter.reached_target_alt || loiter.unable_to_acheive_target_alt)) {
-                    Vector3f wind = ahrs.wind_estimate();
-                    // bearing pointing upwind, i.e. a headwind approach track
-                    const float upwind_deg = degrees(atan2f(-wind.y, -wind.x));
-                    float offset_deg;
-                    switch (quadplane.fw_land_approach_wind.get()) {
-                    case 1:  // tailwind
-                        offset_deg = 180;
-                        break;
-                    case 2:  // wind from right: track is 90 deg left of upwind
-                        offset_deg = -90;
-                        break;
-                    case 3:  // wind from left: track is 90 deg right of upwind
-                        offset_deg = 90;
-                        break;
-                    case 0:  // headwind
-                    default:
-                        offset_deg = 0;
-                        break;
-                    }
-                    vtol_approach_s.approach_direction_deg = wrap_360(upwind_deg + offset_deg);
-                    gcs().send_text(MAV_SEVERITY_INFO, "Selected an approach path of %.1f (wind opt %d)",
-                                    (double)vtol_approach_s.approach_direction_deg, (int)quadplane.fw_land_approach_wind.get());
+                    vtol_approach_s.approach_direction_deg = vtol_approach_wind_direction_deg();
+                    gcs().send_text(MAV_SEVERITY_INFO, "Selected an approach path of %.1f", (double)vtol_approach_s.approach_direction_deg);
                     vtol_approach_s.approach_stage = VTOLApproach::Stage::ENSURE_RADIUS;
                 }
 
@@ -1158,6 +1200,34 @@ bool Plane::verify_landing_vtol_approach(const AP_Mission::Mission_Command &cmd)
                 }
                 FALLTHROUGH;
             }
+        case VTOLApproach::Stage::FLY_TO_ENTRY:
+            if (vtol_approach_s.approach_stage == VTOLApproach::Stage::FLY_TO_ENTRY) {
+                const float entry_dist = MAX(quadplane.fw_land_approach_length.get(), abs_radius);
+
+                // keep refreshing the wind while far away, then freeze the approach direction
+                if (!vtol_approach_s.direction_frozen) {
+                    if (current_loc.get_distance(cmd.content.location) > 2 * entry_dist) {
+                        vtol_approach_s.approach_direction_deg = vtol_approach_wind_direction_deg();
+                    } else {
+                        vtol_approach_s.direction_frozen = true;
+                        gcs().send_text(MAV_SEVERITY_INFO, "Selected an approach path of %.1f", (double)vtol_approach_s.approach_direction_deg);
+                    }
+                }
+
+                Location entry = cmd.content.location;
+                entry.offset_bearing(vtol_approach_s.approach_direction_deg + 180, entry_dist);
+                nav_controller->update_waypoint(vtol_approach_s.entry_start_loc, entry);
+
+                if ((current_loc.get_distance(entry) > g.waypoint_radius) &&
+                    !current_loc.past_interval_finish_line(vtol_approach_s.entry_start_loc, entry)) {
+                    break;
+                }
+
+                gcs().send_text(MAV_SEVERITY_INFO, "Starting VTOL land approach path");
+                vtol_approach_s.approach_stage = VTOLApproach::Stage::APPROACH_LINE;
+                set_next_WP(cmd.content.location);
+            }
+            FALLTHROUGH;
         case VTOLApproach::Stage::APPROACH_LINE:
             {
                 // project an apporach path

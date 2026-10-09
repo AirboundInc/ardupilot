@@ -653,6 +653,23 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("FW_LND_APR_DIR", 51, QuadPlane, fw_land_approach_wind, 0),
 
+    // @Param: FW_LND_APR_TYP
+    // @DisplayName: Quadplane fixed wing landing approach type
+    // @Description: Type of fixed wing approach used for VTOL landings when the fixed wing approach is enabled (NAV_VTOL_LAND param1=1, Q_OPTIONS bit 4, or Q_RTL_MODE=2). Spiral: loiter down to the approach altitude around the landing point, then break out onto the approach line. Direct: no loiter, fly straight to an entry point Q_FW_LND_APR_LEN before the landing point on the approach line selected by Q_FW_LND_APR_WND, then fly the approach line to the VTOL transition.
+    // @Values: 0:Spiral,1:Direct
+    // @User: Advanced
+    AP_GROUPINFO("FW_LND_APR_TYP", 52, QuadPlane, fw_land_approach_type, 0),
+
+    // @Param: FW_LND_APR_LEN
+    // @DisplayName: Quadplane fixed wing direct approach final leg length
+    // @Description: Distance before the landing point at which the direct fixed wing approach joins the approach line. Must be long enough to turn onto the line and still have more than the VTOL stopping distance left. Only used when Q_FW_LND_APR_TYP is Direct.
+    // @Units: m
+    // @Range: 50 2000
+    // @Increment: 10
+    // @User: Advanced
+    AP_GROUPINFO("FW_LND_APR_LEN", 53, QuadPlane, fw_land_approach_length, 300),
+
+
     AP_GROUPEND
 };
 

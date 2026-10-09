@@ -395,12 +395,15 @@ private:
             LOITER_TO_ALT,
             ENSURE_RADIUS,
             WAIT_FOR_BREAKOUT,
+            FLY_TO_ENTRY,
             APPROACH_LINE,
             VTOL_LANDING,
         };
 
         Stage approach_stage;
         float approach_direction_deg;
+        Location entry_start_loc;   // where the direct approach started, for L1 track and finish line
+        bool direction_frozen;      // direct approach: stop refreshing the wind direction
     } vtol_approach_s;
 #endif
 
@@ -1022,6 +1025,8 @@ private:
     bool verify_nav_wp(const AP_Mission::Mission_Command& cmd);
 #if HAL_QUADPLANE_ENABLED
     bool verify_landing_vtol_approach(const AP_Mission::Mission_Command& cmd);
+    float vtol_approach_wind_direction_deg(void) const;
+    void vtol_approach_start_direct(void);
 #endif
     void do_wait_delay(const AP_Mission::Mission_Command& cmd);
     void do_within_distance(const AP_Mission::Mission_Command& cmd);
