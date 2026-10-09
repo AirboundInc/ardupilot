@@ -858,6 +858,8 @@ void Tiltrotor::dual_axis_output(void)
     static_cast<AP_MotorsTiltrotorDualAxis*>(motors)->set_elbow_tilt_angle(elbow_position);
     // motors is guaranteed to be an AP_MotorsTiltrotorDualAxis instance here:
     // quadplane.cpp only allocates that class when type == TILT_TYPE_DUAL_AXIS
+
+    // VTOL controller mixer
     if (quadplane.in_vtol_mode() || quadplane.assisted_flight) {
 
         // the stage and its timers were advanced earlier this tick by
@@ -953,7 +955,7 @@ void Tiltrotor::dual_axis_output(void)
 
         return;
     }
-
+    quadplane.motors_output(true);
     // Stage::FW: fixed wing outputs are being driven, which qualifies a
     // following VTOL mode as a back transition
     dual_axis_transition->note_fw_output();
@@ -971,9 +973,9 @@ void Tiltrotor::dual_axis_output(void)
         ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
         : plane.get_throttle_input(true);
 
-    // remember the throttle we were using in FW flight so it can be
-    // blended with the pilot's vertical throttle after a backtransition
-    last_fw_throttle = throttle * 0.01f;
+    // // remember the throttle we were using in FW flight so it can be
+    // // blended with the pilot's vertical throttle after a backtransition
+    // last_fw_throttle = throttle * 0.01f;
 
     const float rud_gain  = float(plane.g2.rudd_dt_gain) * 0.01f;
     const float rudder_dt = rud_gain * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
@@ -985,31 +987,31 @@ void Tiltrotor::dual_axis_output(void)
     // forward flight: Axis 1 is at 90deg (motors fully forward)
     // use rudder for differential yaw vectoring via Axis 2
     // set Q_TILT_VEC_FWGAIN > 0 to enable; default 0 disables it
-    if (!is_positive(vectoring_gain_fw)) {
-        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,  0);
-        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec, 0);
-        return;
-    }
-    const float scaler = (plane.control_mode == &plane.mode_manual) ? 1.0f :
-                         (quadplane.FW_vector_throttle_scaling() / plane.get_speed_scaler());
-    const float gain   = vectoring_gain_fw * scaler;
-    const float elevator = SRV_Channels::get_output_scaled(SRV_Channel::k_elevator) * (1.0f / 4500.0f);
-    const float aileron  = SRV_Channels::get_output_scaled(SRV_Channel::k_aileron)  * (1.0f / 4500.0f);
+    // if (!is_positive(vectoring_gain_fw)) {
+    //     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,  0);
+    //     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec, 0);
+    //     return;
+    // }
+    // const float scaler = (plane.control_mode == &plane.mode_manual) ? 1.0f :
+    //                      (quadplane.FW_vector_throttle_scaling() / plane.get_speed_scaler());
+    // const float gain   = vectoring_gain_fw * scaler;
+    // const float elevator = SRV_Channels::get_output_scaled(SRV_Channel::k_elevator) * (1.0f / 4500.0f);
+    // const float aileron  = SRV_Channels::get_output_scaled(SRV_Channel::k_aileron)  * (1.0f / 4500.0f);
 
-    float tilt_left = constrain_float((elevator + aileron) * gain, -1.0f, 1.0f) * SERVO_MAX;
-    float tilt_right = constrain_float((elevator - aileron) * gain, -1.0f, 1.0f) * SERVO_MAX;
+    // float tilt_left = constrain_float((elevator + aileron) * gain, -1.0f, 1.0f) * SERVO_MAX;
+    // float tilt_right = constrain_float((elevator - aileron) * gain, -1.0f, 1.0f) * SERVO_MAX;
 
-#if HAL_LOGGING_ENABLED
-        // Add logging for desired thrust vectoring angles
-        AP::logger().WriteStreaming("PHIF", "TimeUS,DesL,DesR",
-                "sdd", // seconds, degrees
-                "F00", // micro (1e-6), no mult (1e0)
-                "Qff", // uint64_t, float
-                AP_HAL::micros64(), tilt_left/100, tilt_right/100);
-#endif
+// #if HAL_LOGGING_ENABLED
+//         // Add logging for desired thrust vectoring angles
+//         AP::logger().WriteStreaming("PHIF", "TimeUS,DesL,DesR",
+//                 "sdd", // seconds, degrees
+//                 "F00", // micro (1e-6), no mult (1e0)
+//                 "Qff", // uint64_t, float
+//                 AP_HAL::micros64(), tilt_left/100, tilt_right/100);
+// #endif
 
-    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec, tilt_left);
-    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec, tilt_right);
+    // SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec, tilt_left);
+    // SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec, tilt_right);
 }
 
 /*
