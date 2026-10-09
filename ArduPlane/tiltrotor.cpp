@@ -457,6 +457,19 @@ void Tiltrotor::update(void)
         return;
     }
 
+    // dual axis: start every flight with clean fixed-wing integrators. The
+    // yaw rate controller's I term is frozen while underspeed, so without
+    // this it carries over from the previous flight (no reboot) and, via
+    // RUDD_DT_GAIN differential thrust, rolls the aircraft at transition
+    const bool armed = plane.arming.is_armed();
+    if (type == TILT_TYPE_DUAL_AXIS && armed && !was_armed) {
+        plane.rollController.reset_I();
+        plane.pitchController.reset_I();
+        plane.yawController.reset_I();
+    }
+    was_armed = armed;
+
+
     if (type == TILT_TYPE_BINARY) {
         binary_update();
     } else {
@@ -867,6 +880,25 @@ void Tiltrotor::dual_axis_output(void)
             // still hovering, not yet in a forward transition
             // (k_throttle was already restored to the raw commanded value above)
             fwd_trans_start_ms = 0;
+
+
+            // mirror the motor mixer output into the left/right scaled
+            // throttle and its slew state, keeping the mixer PWM as the output
+            uint16_t pwm_left, pwm_right;
+            const bool have_pwm_left  = SRV_Channels::get_output_pwm(SRV_Channel::k_throttleLeft,  pwm_left);
+            const bool have_pwm_right = SRV_Channels::get_output_pwm(SRV_Channel::k_throttleRight, pwm_right);
+
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(quadplane.motors->get_throttle_out_left()  * 100.0f, 0, 100));
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(quadplane.motors->get_throttle_out_right() * 100.0f, 0, 100));
+            SRV_Channels::set_slew_rate(SRV_Channel::k_throttleLeft,  0.0, 100, plane.G_Dt);
+            SRV_Channels::set_slew_rate(SRV_Channel::k_throttleRight, 0.0, 100, plane.G_Dt);
+
+            if (have_pwm_left) {
+                SRV_Channels::set_output_pwm(SRV_Channel::k_throttleLeft, pwm_left);
+            }
+            if (have_pwm_right) {
+                SRV_Channels::set_output_pwm(SRV_Channel::k_throttleRight, pwm_right);
+            }
         }
 
         

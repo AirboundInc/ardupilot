@@ -49,6 +49,8 @@ public:
     {
         // this reduces integrator by 95% over 2s
         _pid_info.I *= 0.995f;
+        _integrator *= 0.995f;
+        rate_pid.set_integrator(rate_pid.get_i() * 0.995f);
     }
 
     const AP_PIDInfo& get_pid_info(void) const
@@ -78,7 +80,7 @@ private:
     bool _heading_locked = false;
     uint32_t _heading_lock_timer_ms = 0;
     uint32_t _last_hdg_hold_call_ms = 0;   // last time get_heading_hold_rate() ran
-    int32_t _locked_heading_cd;
+    int32_t _locked_heading_cd = 0;
     AC_PID rate_pid{0.04, 0.15, 0, 0.15, 0.666, 3, 0, 12, 150, 1};
 
     uint32_t _last_t;

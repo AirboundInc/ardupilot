@@ -1323,6 +1323,34 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     AP_GROUPINFO("TOFF_DET_CRT", 40, ParametersG2, takeoff_detect_crt, 0.5),
 #endif
 
+    // @Param: RTL_ARSPD
+    // @DisplayName: RTL reduced airspeed
+    // @Description: Target airspeed used in RTL while the distance to the RTL destination (home or rally point) is between RTL_ASPD_DST_LO and RTL_ASPD_DST_HI. Never raises the target above AIRSPEED_CRUISE and is limited to AIRSPEED_MIN. Set to 0 to disable.
+    // @Units: m/s
+    // @Range: 0 100
+    // @Increment: 0.1
+    // @User: Standard
+    AP_GROUPINFO("RTL_ARSPD", 41, ParametersG2, rtl_arspd, 0),
+
+    // @Param: RTL_ASPD_DST_HI
+    // @DisplayName: RTL reduced airspeed upper distance
+    // @Description: Distance to the RTL destination at or below which RTL_ARSPD is used. Must be greater than RTL_ASPD_DST_LO.
+    // @Units: m
+    // @Range: 0 10000
+    // @Increment: 1
+    // @User: Standard
+    AP_GROUPINFO("RTL_ASPD_DST_HI", 42, ParametersG2, rtl_arspd_dist_hi, 400),
+
+    // @Param: RTL_ASPD_DST_LO
+    // @DisplayName: RTL reduced airspeed lower distance
+    // @Description: Distance to the RTL destination at or below which AIRSPEED_CRUISE is restored for the rest of the RTL. Should be larger than the RTL loiter radius so that it is reached.
+    // @Units: m
+    // @Range: 0 10000
+    // @Increment: 1
+    // @User: Standard
+    AP_GROUPINFO("RTL_ASPD_DST_LO", 43, ParametersG2, rtl_arspd_dist_lo, 1),
+
+
     AP_GROUPEND
 };
 
