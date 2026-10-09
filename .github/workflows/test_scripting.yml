@@ -108,9 +108,9 @@ jobs:
         shell: bash
         run: |
           mkdir -p scripts
-          cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua scripts/
+          cp libraries/AP_HAL_ChibiOS/hwdef/AB-TRT/scripts/LTE_modem.lua scripts/
           mkdir -p ArduPlane/scripts
-          cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua ArduPlane/scripts/
+          cp libraries/AP_HAL_ChibiOS/hwdef/AB-TRT/scripts/LTE_modem.lua ArduPlane/scripts/
 
           # Bypass CMUX transitions for the Python mock
           sed -i 's/step = "CMUX"/step = "CPIN"/g' scripts/LTE_modem.lua
@@ -118,6 +118,29 @@ jobs:
           sed -i 's/step = "CMUX"/step = "CPIN"/g' ArduPlane/scripts/LTE_modem.lua
           sed -i "s/step = 'CMUX'/step = 'CPIN'/g" ArduPlane/scripts/LTE_modem.lua
 
+          # The sed above only skips the CMUX negotiation step; cmux_enabled()
+          # is still true via "modem.cmux and not NOMUX", so the script keeps
+          # CMUX-framing every write while the mock speaks plain AT. LTE_OPTIONS
+          # in lte_test.parm cannot fix that: script-declared params do not exist
+          # when the defaults file is parsed, so the value is silently dropped.
+          # Force NOMUX in the script's own default. STEPS brings back the
+          # "LTE_modem: step X" GCS lines the step check below reads (off by
+          # default in flight). 70 = SIGNALS(2) | NOMUX(4) | STEPS(64).
+          for f in scripts/LTE_modem.lua ArduPlane/scripts/LTE_modem.lua; do
+            sed -i "s/bind_add_param('OPTIONS', 12, 2)/bind_add_param('OPTIONS', 12, 70)/" "$f"
+            grep -q "bind_add_param('OPTIONS', 12, 70)" "$f" || { echo "OPTIONS sed did not apply to $f"; exit 1; }
+          done
+
+          # SCR_HEAP_SIZE is read from AB-TRT defaults.parm so SITL runs
+          # the flight value (the 200KB SITL default can't compile LTE_modem.lua).
+          HEAP=$(awk '$1=="SCR_HEAP_SIZE"{print $2}' libraries/AP_HAL_ChibiOS/hwdef/AB-TRT/defaults.parm)
+          [ -n "$HEAP" ] || { echo "SCR_HEAP_SIZE missing from AB-TRT defaults.parm"; exit 1; }
+          # NOTE: only the SCR_* / SERIAL* lines below actually take effect. The
+          # LTE_* ones are declared by the Lua script at runtime, so they do not
+          # exist when this file is parsed and their values are discarded -- they
+          # happen to match the script's own defaults. To really change an LTE_*
+          # param, sed the script default (as above) or PARAM_SET it after boot
+          # (as Lte_modem_test.py does for LTE_SERVER_*).
           cat <<'EOF' > lte_test.parm
           SCR_ENABLE 1
           LTE_ENABLE 1
@@ -129,6 +152,7 @@ jobs:
           LTE_SCRPORT 0
           LTE_OPTIONS 4
           EOF
+          echo "SCR_HEAP_SIZE $HEAP" >> lte_test.parm
 
       - name: "LTE Happy Path: Boot SITL and Verify"
         shell: bash

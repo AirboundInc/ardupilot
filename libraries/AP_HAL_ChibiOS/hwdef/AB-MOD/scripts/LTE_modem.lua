@@ -33,7 +33,7 @@ end
 assert(param:add_table(PARAM_TABLE_KEY, PARAM_TABLE_PREFIX, 30), 'LTE_modem: could not add param table')
 
 local P = {
-    ENABLE      = bind_add_param('ENABLE',  1, 1),
+    ENABLE      = bind_add_param('ENABLE',  1, 0),
     SERPORT     = bind_add_param('SERPORT',  2, 0),
     SCRPORT     = bind_add_param('SCRPORT',  3, 0),
     SERVER_IP0  = bind_add_param('SERVER_IP0',  4, 0),
