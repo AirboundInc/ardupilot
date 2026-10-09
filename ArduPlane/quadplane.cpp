@@ -646,6 +646,13 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("POS1_YAW_EN", 50, QuadPlane, pos1_yaw_to_target_en, 0),
 
+    // @Param: FW_LND_APR_DIR
+    // @DisplayName: Quadplane fixed wing landing approach wind orientation
+    // @Description: Selects the orientation of the final approach leg relative to the estimated wind when using the fixed wing spiral approach to a VTOL landing (NAV_VTOL_LAND with the FW approach option, Q_OPTIONS bit 4, or Q_RTL_MODE=VTOL approach). 0: fly into the wind (headwind). 1: fly with the wind (tailwind). 2: wind from the right side (crosswind from right). 3: wind from the left side (crosswind from left).
+    // @Values: 0:Headwind,1:Tailwind,2:Wind from right,3:Wind from left
+    // @User: Advanced
+    AP_GROUPINFO("FW_LND_APR_DIR", 51, QuadPlane, fw_land_approach_wind, 0),
+
     AP_GROUPEND
 };
 

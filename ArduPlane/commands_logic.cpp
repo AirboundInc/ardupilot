@@ -1092,13 +1092,40 @@ bool Plane::verify_landing_vtol_approach(const AP_Mission::Mission_Command &cmd)
         case VTOLApproach::Stage::LOITER_TO_ALT:
             {
                 nav_controller->update_loiter(cmd.content.location, abs_radius, direction);
-
+                /*
                 if (labs(loiter.sum_cd) > 1 && (loiter.reached_target_alt || loiter.unable_to_acheive_target_alt)) {
                     Vector3f wind = ahrs.wind_estimate();
                     vtol_approach_s.approach_direction_deg = degrees(atan2f(-wind.y, -wind.x));
                     gcs().send_text(MAV_SEVERITY_INFO, "Selected an approach path of %.1f", (double)vtol_approach_s.approach_direction_deg);
                     vtol_approach_s.approach_stage = VTOLApproach::Stage::ENSURE_RADIUS;
                 }
+                */
+                if (labs(loiter.sum_cd) > 1 && (loiter.reached_target_alt || loiter.unable_to_acheive_target_alt)) {
+                    Vector3f wind = ahrs.wind_estimate();
+                    // bearing pointing upwind, i.e. a headwind approach track
+                    const float upwind_deg = degrees(atan2f(-wind.y, -wind.x));
+                    float offset_deg;
+                    switch (quadplane.fw_land_approach_wind.get()) {
+                    case 1:  // tailwind
+                        offset_deg = 180;
+                        break;
+                    case 2:  // wind from right: track is 90 deg left of upwind
+                        offset_deg = -90;
+                        break;
+                    case 3:  // wind from left: track is 90 deg right of upwind
+                        offset_deg = 90;
+                        break;
+                    case 0:  // headwind
+                    default:
+                        offset_deg = 0;
+                        break;
+                    }
+                    vtol_approach_s.approach_direction_deg = wrap_360(upwind_deg + offset_deg);
+                    gcs().send_text(MAV_SEVERITY_INFO, "Selected an approach path of %.1f (wind opt %d)",
+                                    (double)vtol_approach_s.approach_direction_deg, (int)quadplane.fw_land_approach_wind.get());
+                    vtol_approach_s.approach_stage = VTOLApproach::Stage::ENSURE_RADIUS;
+                }
+
                 break;
             }
         case VTOLApproach::Stage::ENSURE_RADIUS:

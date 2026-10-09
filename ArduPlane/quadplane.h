@@ -360,6 +360,9 @@ private:
     // fw landing approach radius
     AP_Float fw_land_approach_radius;
 
+    // fw landing approach heading relative to the wind, see Q_FW_LND_APR_WND
+    AP_Int8 fw_land_approach_wind;
+
     AP_Int16 rc_speed;
 
     // VTOL assistance in a forward flight mode
