@@ -68,6 +68,7 @@ local autobailout_active = false
 local last_mode_idx = 0
 local pre_bailout_mode = nil
 local first_pitch_exceeded_t = nil
+local is_battery_critical = false
 local critical_voltage_start_ms = 0
 local gcs_announce_autobailout = false
 local gcs_announce_battery_failsafe = false
@@ -422,7 +423,10 @@ function update()
 
     update_autoresume_count()
 
-    local is_battery_critical = battery_critical_failsafed()
+    if not is_battery_critical and battery_critical_failsafed() then
+        --is_battery_critical will not change from true ---> false. Needs reboot.
+        is_battery_critical = true
+    end
 
     -- ==========================================================
     -- LOGIC: MONITORING (Checking Pitch)
@@ -458,7 +462,8 @@ function update()
             post_bailout_sample_count = math.min(post_bailout_sample_count, WINDOW_SIZE)
             local avg_lim  = p_avg_lim:get()  or 20
             local peak_lim = p_peak_lim:get() or 30
-            if not is_battery_critical and post_bailout_sample_count >= WINDOW_SIZE and avg_err < avg_lim and peak_ang < peak_lim and autob_count <= max_autob_count then
+            local is_pitch_stable = post_bailout_sample_count >= WINDOW_SIZE and avg_err < avg_lim and peak_ang < peak_lim
+            if is_battery_critical or (is_pitch_stable and autob_count <= max_autob_count) then
                 if pre_bailout_mode and vehicle:set_mode(pre_bailout_mode) then
                     local recovered_mode = pre_bailout_mode
                     autobailout_active = false
