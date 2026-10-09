@@ -190,7 +190,8 @@ private:
     // tilt should go all the way forward rather than being limited to
     // Q_TILT_MAX
     bool transition_tilt_fully_fwd() const;
-
+    void run_vtol_mixer(void);
+    void run_fw_mixer(void);
     /*
       setup() allocates exactly one of these according to type and hands it
       to QuadPlane as its Transition: dual_axis_transition for
@@ -298,6 +299,7 @@ public:
     // plane.nav_roll_cd/nav_pitch_cd and its own attitude and throttle
     // targets. Both throttles are 0-100 percent.
     float update_controllers(float pilot_vtol_throttle_pct, float commanded_fw_throttle_pct);
+
 
 private:
 

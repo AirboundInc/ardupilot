@@ -861,157 +861,14 @@ void Tiltrotor::dual_axis_output(void)
 
     // VTOL controller mixer
     if (quadplane.in_vtol_mode() || quadplane.assisted_flight) {
-
-        // the stage and its timers were advanced earlier this tick by
-        // update()/VTOL_update() from QuadPlane::update(); update_controllers()
-        // runs that stage's controllers and returns its ESC throttle.
-        // raw_throttle is the pilot's vertical throttle demand in a VTOL mode,
-        // or the FBWA/TECS commanded throttle in a FW mode
-        const float raw_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
-        const float commanded_throttle_pct = plane.control_mode->does_auto_throttle()
-            ? raw_throttle : plane.get_throttle_input(true);
-        const float throttle = dual_axis_transition->update_controllers(raw_throttle, commanded_throttle_pct);
-
-        // AP_MotorsTiltrotorDualAxis::output_to_motors() reuses k_throttle as
-        // its own collective-thrust actuator output (see AP_MotorsTailsitter.cpp,
-        // which it inherits this behaviour from). Capture it for QTHR debug
-        // logging, then restore k_throttle so it keeps its normal
-        // fixed-wing-forward-throttle meaning for anything else that reads
-        // it this tick (e.g. AETR logging while hovering).
-        dual_axis_mixout_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
-        SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, throttle);
-
-        if (!quadplane.in_vtol_mode()) {
-            // in a FW transition the same blended value goes to the ESCs and
-            // back to k_throttle, so k_throttle and the AETR log carry what is
-            // actually sent to the motors. Throttle stays at zero while
-            // disarmed.
-            const float esc_throttle = plane.arming.is_armed_and_safety_off() ? throttle : 0.0f;
-            SRV_Channels::set_output_scaled(SRV_Channel::k_throttle,      esc_throttle);
-            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(esc_throttle, 0, 100));
-            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(esc_throttle, 0, 100));
-        }
-
-
-        // raw attitude-vectoring demand from AP_MotorsTiltrotorDualAxis's
-        // mixer (quadplane.motors_output() above), before this function's
-        // extra pitch feedback/blending is layered on top
-        float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
-        float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
-        float tilt_left_adjusted = tilt_left;
-        float tilt_right_adjusted = tilt_right;
-
-        // drive TVs based on pitch error as well
-
-
-        float des_pitch_cd = quadplane.attitude_control->get_att_target_euler_cd().y;
-        float pitch_cd = quadplane.ahrs_view->pitch_sensor;
-
-        float des_pitch_cd2 = plane.nav_pitch_cd;
-        float pitch_cd2 = plane.ahrs.pitch_sensor;
-
-        float pitch_error_cd = (des_pitch_cd - pitch_cd) * vectoring_gain_hvr;
-
-        float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
-        float extra_sign = extra_pitch > 0?1:-1;
-        float extra_elevator = 0;
-        bool is_vtol = quadplane.in_vtol_mode();
-
-        if (!is_zero(extra_pitch) && is_vtol && !is_negative(vectored_hover_power)) {
-            extra_elevator = extra_sign * powf(fabsf(extra_pitch), vectored_hover_power) * SERVO_MAX;
-        }
-
-        tilt_left_adjusted  += extra_elevator;
-        tilt_right_adjusted += extra_elevator;
-
-#if HAL_LOGGING_ENABLED
-        // Add logging for desired thrust vectoring angles
-        AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,ExtraEl,AdjL,AdjR,PitchErr,isVTOL,ExtraPit",
-                "sdddddddd", // seconds, degrees
-                "F00000000", // micro (1e-6), no mult (1e0)
-                "Qffffffff", // uint64_t, float
-                AP_HAL::micros64(), tilt_left/100, tilt_right/100, extra_elevator/100,
-                tilt_left_adjusted/100, 
-                tilt_right_adjusted/100,
-                pitch_error_cd/100,
-                (float)is_vtol,
-                extra_pitch/100);
-
-        AP::logger().WriteStreaming("PITE", "TimeUS,DesPit1,DesPit2,Pit1,Pit2",
-                "sdddd", // seconds, degrees
-                "F0000", // micro (1e-6), no mult (1e0)
-                "Qffff", // uint64_t, float
-                AP_HAL::micros64(), des_pitch_cd/100, des_pitch_cd2/100,pitch_cd/100,pitch_cd2/100);
-#endif
-        
-        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
-                                        constrain_float(tilt_left_adjusted,  -SERVO_MAX, SERVO_MAX));
-        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
-                                        constrain_float(tilt_right_adjusted, -SERVO_MAX, SERVO_MAX));
-        
-        
-        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
-        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
-
-        return;
+        run_vtol_mixer();
     }
-    quadplane.motors_output(true);
-    // Stage::FW: fixed wing outputs are being driven, which qualifies a
-    // following VTOL mode as a back transition
-    dual_axis_transition->note_fw_output();
-
+    else{
+        run_fw_mixer();
+    }
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
-
-    // never command motor throttle while disarmed: this branch runs
-    // unconditionally in FW modes (even disarmed on the ground, since
-    // assisted_flight is false here), and would otherwise write raw
-    // stick/k_throttle straight to the ESCs, undoing the disarm safety-zero
-    // Plane::set_servos() already applies earlier in the same tick
-    const float throttle = !plane.arming.is_armed_and_safety_off() ? 0.0f
-        : plane.control_mode->does_auto_throttle()
-        ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
-        : plane.get_throttle_input(true);
-
-    // // remember the throttle we were using in FW flight so it can be
-    // // blended with the pilot's vertical throttle after a backtransition
-    // last_fw_throttle = throttle * 0.01f;
-
-    const float rud_gain  = float(plane.g2.rudd_dt_gain) * 0.01f;
-    const float rudder_dt = rud_gain * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
-
-    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle + 50.0f * rudder_dt, 0, 100));
-    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle - 50.0f * rudder_dt, 0, 100));
-
-
-    // forward flight: Axis 1 is at 90deg (motors fully forward)
-    // use rudder for differential yaw vectoring via Axis 2
-    // set Q_TILT_VEC_FWGAIN > 0 to enable; default 0 disables it
-    // if (!is_positive(vectoring_gain_fw)) {
-    //     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,  0);
-    //     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec, 0);
-    //     return;
-    // }
-    // const float scaler = (plane.control_mode == &plane.mode_manual) ? 1.0f :
-    //                      (quadplane.FW_vector_throttle_scaling() / plane.get_speed_scaler());
-    // const float gain   = vectoring_gain_fw * scaler;
-    // const float elevator = SRV_Channels::get_output_scaled(SRV_Channel::k_elevator) * (1.0f / 4500.0f);
-    // const float aileron  = SRV_Channels::get_output_scaled(SRV_Channel::k_aileron)  * (1.0f / 4500.0f);
-
-    // float tilt_left = constrain_float((elevator + aileron) * gain, -1.0f, 1.0f) * SERVO_MAX;
-    // float tilt_right = constrain_float((elevator - aileron) * gain, -1.0f, 1.0f) * SERVO_MAX;
-
-// #if HAL_LOGGING_ENABLED
-//         // Add logging for desired thrust vectoring angles
-//         AP::logger().WriteStreaming("PHIF", "TimeUS,DesL,DesR",
-//                 "sdd", // seconds, degrees
-//                 "F00", // micro (1e-6), no mult (1e0)
-//                 "Qff", // uint64_t, float
-//                 AP_HAL::micros64(), tilt_left/100, tilt_right/100);
-// #endif
-
-    // SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec, tilt_left);
-    // SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec, tilt_right);
+    return;
 }
 
 /*
@@ -1484,6 +1341,146 @@ void Tiltrotor_Transition_DualAxis::set_FW_roll_pitch(int32_t& nav_pitch_cd, int
     plane.TECS_controller.set_pitch_min(-max_pitch);
 
     nav_pitch_cd = constrain_int32(nav_pitch_cd, -max_pitch*100.0, max_pitch*100.0);
+}
+
+void Tiltrotor::run_vtol_mixer(void){
+    // runs that stage's controllers and returns its ESC throttle.
+    // raw_throttle is the pilot's vertical throttle demand in a VTOL mode,
+    // or the FBWA/TECS commanded throttle in a FW mode
+    const float raw_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
+    const float commanded_throttle_pct = plane.control_mode->does_auto_throttle()
+        ? raw_throttle : plane.get_throttle_input(true);
+    const float throttle = dual_axis_transition->update_controllers(raw_throttle, commanded_throttle_pct);
+
+    // AP_MotorsTiltrotorDualAxis::output_to_motors() reuses k_throttle as
+    // its own collective-thrust actuator output (see AP_MotorsTailsitter.cpp,
+    // which it inherits this behaviour from). Capture it for QTHR debug
+    // logging, then restore k_throttle so it keeps its normal
+    // fixed-wing-forward-throttle meaning for anything else that reads
+    // it this tick (e.g. AETR logging while hovering).
+    dual_axis_mixout_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
+    SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, throttle);
+
+    if (!quadplane.in_vtol_mode()) {
+        // in a FW transition the same blended value goes to the ESCs and
+        // back to k_throttle, so k_throttle and the AETR log carry what is
+        // actually sent to the motors. Throttle stays at zero while
+        // disarmed.
+        const float esc_throttle = plane.arming.is_armed_and_safety_off() ? throttle : 0.0f;
+        SRV_Channels::set_output_scaled(SRV_Channel::k_throttle,      esc_throttle);
+        SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(esc_throttle, 0, 100));
+        SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(esc_throttle, 0, 100));
+    }
+
+
+    // raw attitude-vectoring demand from AP_MotorsTiltrotorDualAxis's
+    // mixer (quadplane.motors_output() above), before this function's
+    // extra pitch feedback/blending is layered on top
+    float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
+    float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
+    float tilt_left_adjusted = tilt_left;
+    float tilt_right_adjusted = tilt_right;
+
+    // drive TVs based on pitch error as well
+    float des_pitch_cd = quadplane.attitude_control->get_att_target_euler_cd().y;
+    float pitch_cd = quadplane.ahrs_view->pitch_sensor;
+
+    float des_pitch_cd2 = plane.nav_pitch_cd;
+    float pitch_cd2 = plane.ahrs.pitch_sensor;
+
+    float pitch_error_cd = (des_pitch_cd - pitch_cd) * vectoring_gain_hvr;
+
+    float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
+    float extra_sign = extra_pitch > 0?1:-1;
+    float extra_elevator = 0;
+    bool is_vtol = quadplane.in_vtol_mode();
+
+    if (!is_zero(extra_pitch) && is_vtol && !is_negative(vectored_hover_power)) {
+        extra_elevator = extra_sign * powf(fabsf(extra_pitch), vectored_hover_power) * SERVO_MAX;
+    }
+
+    tilt_left_adjusted  += extra_elevator;
+    tilt_right_adjusted += extra_elevator;
+
+#if HAL_LOGGING_ENABLED
+    // Add logging for desired thrust vectoring angles
+    AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,ExtraEl,AdjL,AdjR,PitchErr,isVTOL,ExtraPit",
+            "sdddddddd", // seconds, degrees
+            "F00000000", // micro (1e-6), no mult (1e0)
+            "Qffffffff", // uint64_t, float
+            AP_HAL::micros64(), tilt_left/100, tilt_right/100, extra_elevator/100,
+            tilt_left_adjusted/100, 
+            tilt_right_adjusted/100,
+            pitch_error_cd/100,
+            (float)is_vtol,
+            extra_pitch/100);
+
+    AP::logger().WriteStreaming("PITE", "TimeUS,DesPit1,DesPit2,Pit1,Pit2",
+            "sdddd", // seconds, degrees
+            "F0000", // micro (1e-6), no mult (1e0)
+            "Qffff", // uint64_t, float
+            AP_HAL::micros64(), des_pitch_cd/100, des_pitch_cd2/100,pitch_cd/100,pitch_cd2/100);
+#endif
+    
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
+                                    constrain_float(tilt_left_adjusted,  -SERVO_MAX, SERVO_MAX));
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
+                                    constrain_float(tilt_right_adjusted, -SERVO_MAX, SERVO_MAX));
+
+}
+void Tiltrotor::run_fw_mixer(void){
+    quadplane.motors_output(true);
+    dual_axis_transition->note_fw_output();
+
+    // never command motor throttle while disarmed: this branch runs
+    // unconditionally in FW modes (even disarmed on the ground, since
+    // assisted_flight is false here), and would otherwise write raw
+    // stick/k_throttle straight to the ESCs, undoing the disarm safety-zero
+    // Plane::set_servos() already applies earlier in the same tick
+    const float throttle = !plane.arming.is_armed_and_safety_off() ? 0.0f
+        : plane.control_mode->does_auto_throttle()
+        ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
+        : plane.get_throttle_input(true);
+
+    // // remember the throttle we were using in FW flight so it can be
+    // // blended with the pilot's vertical throttle after a backtransition
+    // last_fw_throttle = throttle * 0.01f;
+
+    const float rud_gain  = float(plane.g2.rudd_dt_gain) * 0.01f;
+    const float rudder_dt = rud_gain * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
+
+    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle + 50.0f * rudder_dt, 0, 100));
+    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle - 50.0f * rudder_dt, 0, 100));
+
+
+    // forward flight: Axis 1 is at 90deg (motors fully forward)
+    // use rudder for differential yaw vectoring via Axis 2
+    // set Q_TILT_VEC_FWGAIN > 0 to enable; default 0 disables it
+    if (!is_positive(vectoring_gain_fw)) {
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,  0);
+        SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec, 0);
+        return;
+    }
+    const float scaler = (plane.control_mode == &plane.mode_manual) ? 1.0f :
+                         (quadplane.FW_vector_throttle_scaling() / plane.get_speed_scaler());
+    const float gain   = vectoring_gain_fw * scaler;
+    const float elevator = SRV_Channels::get_output_scaled(SRV_Channel::k_elevator) * (1.0f / 4500.0f);
+    const float aileron  = SRV_Channels::get_output_scaled(SRV_Channel::k_aileron)  * (1.0f / 4500.0f);
+
+    float tilt_left = constrain_float((elevator + aileron) * gain, -1.0f, 1.0f) * SERVO_MAX;
+    float tilt_right = constrain_float((elevator - aileron) * gain, -1.0f, 1.0f) * SERVO_MAX;
+
+#if HAL_LOGGING_ENABLED
+        // Add logging for desired thrust vectoring angles
+        AP::logger().WriteStreaming("PHIF", "TimeUS,DesL,DesR",
+                "sdd", // seconds, degrees
+                "F00", // micro (1e-6), no mult (1e0)
+                "Qff", // uint64_t, float
+                AP_HAL::micros64(), tilt_left/100, tilt_right/100);
+#endif
+
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec, tilt_left);
+    SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec, tilt_right);
 }
 
 #endif  // HAL_QUADPLANE_ENABLED
