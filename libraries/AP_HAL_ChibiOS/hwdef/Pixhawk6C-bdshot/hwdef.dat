@@ -22,3 +22,6 @@ FORCE_APJ_DEFAULT_PARAMETERS 1
 
 # Increase the size of the embedded param struct to fit all default parameters
 define AP_PARAM_MAX_EMBEDDED_PARAM 16384
+
+# Airbound custom storage
+define AP_CUSTOM_STORAGE_ENABLED 1

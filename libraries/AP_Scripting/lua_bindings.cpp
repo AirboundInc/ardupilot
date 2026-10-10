@@ -1298,7 +1298,7 @@ int lua_gcs_set_sysid(lua_State *L)
 }
 #endif
 
-#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+#if AP_CUSTOM_STORAGE_ENABLED
 /*
   implement custom_storage:get_uuid() -- returns the stored UUID string,
   or nil if custom storage isn't initialized / nothing has been stored yet.

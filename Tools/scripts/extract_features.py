@@ -204,6 +204,7 @@ class ExtractFeatures(object):
             ('AP_RPM_{type}_ENABLED', r'AP_RPM_(?P<type>.*)::update',),
 
             ('AP_OPENDRONEID_ENABLED', 'AP_OpenDroneID::update',),
+            ('AP_CUSTOM_STORAGE_ENABLED', 'AP_CustomStorage::init',),
 
             ('GPS_MOVING_BASELINE', r'MovingBase::var_info',),
             ('AP_DRONECAN_SEND_GPS', r'AP_GPS_DroneCAN::instance_exists\b',),

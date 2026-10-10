@@ -3025,7 +3025,7 @@ function gcs:set_signing_key(key, initial_timestamp) end
 function gcs:set_sysid(sysid) end
 
 -- Custom persistent storage for per-aircraft identity (UUID, password,
--- craft ID, UIN). Only present when AP_ENABLE_CUSTOM_STORAGE is built in.
+-- craft ID, UIN). Only present when AP_CUSTOM_STORAGE_ENABLED is built in.
 custom_storage = {}
 
 -- returns the stored UUID string, or nil if unset/uninitialized
