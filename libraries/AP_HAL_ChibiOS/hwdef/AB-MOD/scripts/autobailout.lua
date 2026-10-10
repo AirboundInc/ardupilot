@@ -17,7 +17,7 @@ assert(param:add_param(KEY, 6,"PARA_ANG", 70),'could not add AUTOB_PARA_ANG') --
 assert(param:add_param(KEY, 7,"PARA_TOUT", 100),'could not add AUTOB_PARA_TOUT') -- Parachute pitch threshold timeout in ms
 assert(param:add_param(KEY, 8,  "LOOP_MS", 50), 'could not add AUTOB_LOOP_MS')  -- Loop rate (ms)
 assert(param:add_param(KEY, 9,  "WIN_TIM",   5),   'could not add AUTOB_WIN_TIM')    -- Rolling window duration (s)
-assert(param:add_param(KEY, 10, "WIN_SMP",   50),  'could not add AUTOB_WIN_SMP')    -- Calculated samples (output, read-only)
+assert(param:add_param(KEY, 10, "WIN_SMP",   100),  'could not add AUTOB_WIN_SMP')    -- Calculated samples (output, read-only)
 assert(param:add_param(KEY, 11,  "AVG_LIM", 20),'could not add AUTOB_AVG_LIM')    -- Pitch limit
 assert(param:add_param(KEY, 12,"PEAK_LIM", 30),'could not add AUTOB_PEAK_LIM')
 assert(param:add_param(KEY, 13, "DBG_EN", 1), 'could not add AUTOB_DBG_EN')  -- 1 = enable dataflash logging
