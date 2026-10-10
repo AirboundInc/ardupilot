@@ -71,7 +71,6 @@ local first_pitch_exceeded_t = nil
 local is_battery_critical = false
 local critical_voltage_start_ms = 0
 local gcs_announce_autobailout = false
-local gcs_announce_battery_failsafe = false
 local gcs_announce_battery_monitor_not_configured = false
 local autob_count = 0
 local max_autob_count = p_autobailout_count:get()
@@ -221,17 +220,9 @@ function battery_critical_failsafed()
         if critical_voltage_start_ms == 0 then
             critical_voltage_start_ms = millis()
         elseif battery1_low_timer:get() > 0 and (millis() - critical_voltage_start_ms) > battery1_low_timer:get()*1000 then
-            if not gcs_announce_battery_failsafe then
-                gcs:send_text(2, "AUTOB: Battery critical. Bailout/Resume disabled")    
-                gcs_announce_battery_failsafe = true
-            end
             return true
         end
     elseif battery:voltage(0) >= battery1_critical_voltage:get() then
-        if gcs_announce_battery_failsafe then
-            gcs:send_text(6, "AUTOB: Battery critical cleared. Bailout/Resume reenabled") 
-            gcs_announce_battery_failsafe = false
-        end
         critical_voltage_start_ms = 0
     end  
 
@@ -426,6 +417,7 @@ function update()
     if not is_battery_critical and battery_critical_failsafed() then
         --is_battery_critical will not change from true ---> false. Needs reboot.
         is_battery_critical = true
+        gcs:send_text(2, "AUTOB: Battery critical. Bailout/Resume disabled") 
     end
 
     -- ==========================================================
