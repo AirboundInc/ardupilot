@@ -70,16 +70,29 @@ local pre_bailout_mode = nil
 local first_pitch_exceeded_t = nil
 local is_battery_critical = false
 local critical_voltage_start_ms = 0
-local gcs_announce_autobailout = false
-local gcs_announce_battery_monitor_not_configured = false
 local autob_count = 0
 local max_autob_count = p_autobailout_count:get()
 
+--- Attitude Stability 
 local WINDOW_SIZE     = 50
 local pitch_error_buf = {}
 local pitch_angle_buf = {}
 local buf_idx         = 1
 local post_bailout_sample_count = 0 --used to ensure sufficient samples have been collected to decide on resuming mode
+
+-- Parachute state variables
+local trigger_para_script = false
+local first_para_pitch_exceeded_t = nil
+local PARA_CHAN_HIGH = 1850
+local last_para_warn_t = 0 
+local backtransition_complete_time_ms = nil
+
+--- Arming Check
+local arm_state = {was_armed = false}
+
+--- GCS Flags
+local gcs_announce_autobailout = false
+local gcs_announce_battery_monitor_not_configured = false
 
 local function buf_avg(buf)
     local sum, count = 0, 0
@@ -94,13 +107,6 @@ local function buf_max(buf)
     if mx == -math.huge then return 0 end
     return mx
 end
-
--- Parachute state variables
-local trigger_para_script = false
-local first_para_pitch_exceeded_t = nil
-local PARA_CHAN_HIGH = 1850
-local last_para_warn_t = 0 
-local backtransition_complete_time_ms = nil
 
 -- Helper: Radians to Degrees
 local function rad2deg(r) return r * 57.2958 end
@@ -197,6 +203,21 @@ function para_deploy()
     if trigger_para_script then
         para_trigger_rc_chan:set_override(PARA_CHAN_HIGH)
     end
+end
+
+function arming_check()
+    if not arming:is_armed() then
+        arm_state.was_armed = false
+    end
+
+    local arming = not arm_state.was_armed and arming:is_armed()
+    if arming then
+        if is_battery_critical then
+            gcs:send_text(2, "AUTOB: Battery critical. Bailout/Resume disabled") 
+        end
+        arm_state.was_armed = true
+    end
+
 end
 
 function battery_critical_failsafed()
@@ -416,10 +437,12 @@ function update()
 
     if not is_battery_critical and battery_critical_failsafed() then
         --is_battery_critical will not change from true ---> false. Needs reboot.
+        -- All flights beyond battery failsafe is deemed risky. Hence autobailout is disabled
         is_battery_critical = true
         gcs:send_text(2, "AUTOB: Battery critical. Bailout/Resume disabled") 
     end
 
+    arming_check()
     -- ==========================================================
     -- LOGIC: MONITORING (Checking Pitch)
     -- ==========================================================
