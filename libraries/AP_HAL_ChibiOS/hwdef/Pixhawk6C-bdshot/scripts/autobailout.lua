@@ -68,18 +68,31 @@ local autobailout_active = false
 local last_mode_idx = 0
 local pre_bailout_mode = nil
 local first_pitch_exceeded_t = nil
+local is_battery_critical = false
 local critical_voltage_start_ms = 0
-local gcs_announce_autobailout = false
-local gcs_announce_battery_failsafe = false
-local gcs_announce_battery_monitor_not_configured = false
 local autob_count = 0
 local max_autob_count = p_autobailout_count:get()
 
+--- Attitude Stability 
 local WINDOW_SIZE     = 50
 local pitch_error_buf = {}
 local pitch_angle_buf = {}
 local buf_idx         = 1
 local post_bailout_sample_count = 0 --used to ensure sufficient samples have been collected to decide on resuming mode
+
+-- Parachute state variables
+local trigger_para_script = false
+local first_para_pitch_exceeded_t = nil
+local PARA_CHAN_HIGH = 1850
+local last_para_warn_t = 0 
+local backtransition_complete_time_ms = nil
+
+--- Arming Check
+local arm_state = {was_armed = false}
+
+--- GCS Flags
+local gcs_announce_autobailout = false
+local gcs_announce_battery_monitor_not_configured = false
 
 local function buf_avg(buf)
     local sum, count = 0, 0
@@ -94,13 +107,6 @@ local function buf_max(buf)
     if mx == -math.huge then return 0 end
     return mx
 end
-
--- Parachute state variables
-local trigger_para_script = false
-local first_para_pitch_exceeded_t = nil
-local PARA_CHAN_HIGH = 1850
-local last_para_warn_t = 0 
-local backtransition_complete_time_ms = nil
 
 -- Helper: Radians to Degrees
 local function rad2deg(r) return r * 57.2958 end
@@ -199,6 +205,21 @@ function para_deploy()
     end
 end
 
+function arming_check()
+    if not arming:is_armed() then
+        arm_state.was_armed = false
+    end
+
+    local arming = not arm_state.was_armed and arming:is_armed()
+    if arming then
+        if is_battery_critical then
+            gcs:send_text(2, "AUTOB: Battery critical. Bailout/Resume disabled") 
+        end
+        arm_state.was_armed = true
+    end
+
+end
+
 function battery_critical_failsafed()
 
     battery1_monitor = Parameter()
@@ -220,17 +241,9 @@ function battery_critical_failsafed()
         if critical_voltage_start_ms == 0 then
             critical_voltage_start_ms = millis()
         elseif battery1_low_timer:get() > 0 and (millis() - critical_voltage_start_ms) > battery1_low_timer:get()*1000 then
-            if not gcs_announce_battery_failsafe then
-                gcs:send_text(2, "AUTOB: Battery critical. Bailout/Resume disabled")    
-                gcs_announce_battery_failsafe = true
-            end
             return true
         end
     elseif battery:voltage(0) >= battery1_critical_voltage:get() then
-        if gcs_announce_battery_failsafe then
-            gcs:send_text(6, "AUTOB: Battery critical cleared. Bailout/Resume reenabled") 
-            gcs_announce_battery_failsafe = false
-        end
         critical_voltage_start_ms = 0
     end  
 
@@ -422,8 +435,14 @@ function update()
 
     update_autoresume_count()
 
-    local is_battery_critical = battery_critical_failsafed()
+    if not is_battery_critical and battery_critical_failsafed() then
+        --is_battery_critical will not change from true ---> false. Needs reboot.
+        -- All flights beyond battery failsafe is deemed risky. Hence autobailout is disabled
+        is_battery_critical = true
+        gcs:send_text(2, "AUTOB: Battery critical. Bailout/Resume disabled") 
+    end
 
+    arming_check()
     -- ==========================================================
     -- LOGIC: MONITORING (Checking Pitch)
     -- ==========================================================
@@ -458,7 +477,8 @@ function update()
             post_bailout_sample_count = math.min(post_bailout_sample_count, WINDOW_SIZE)
             local avg_lim  = p_avg_lim:get()  or 20
             local peak_lim = p_peak_lim:get() or 30
-            if not is_battery_critical and post_bailout_sample_count >= WINDOW_SIZE and avg_err < avg_lim and peak_ang < peak_lim and autob_count <= max_autob_count then
+            local is_pitch_stable = post_bailout_sample_count >= WINDOW_SIZE and avg_err < avg_lim and peak_ang < peak_lim
+            if is_battery_critical or (is_pitch_stable and autob_count <= max_autob_count) then
                 if pre_bailout_mode and vehicle:set_mode(pre_bailout_mode) then
                     local recovered_mode = pre_bailout_mode
                     autobailout_active = false
