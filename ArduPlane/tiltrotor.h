@@ -175,6 +175,9 @@ private:
     // time when we were last in a fw control mode
     uint32_t last_fw_mode_ms;
 
+    // last time PHID/PITE/PHIF debug logs were written (rate limit to 50Hz)
+    uint32_t last_dbg_log_ms;
+
     // throttle (0 to 1) that was last commanded in fw control mode
     float last_fw_throttle = 0;
 
