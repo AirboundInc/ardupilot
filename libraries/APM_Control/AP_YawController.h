@@ -38,6 +38,9 @@ public:
     // desired_rate is in deg/sec. scaler is the surface speed scaler
     float get_rate_out(float desired_rate, float scaler, bool disable_integrator);
 
+    // maximum coordinated-turn yaw rate demand (deg/s), 0 means no cap
+    float get_coordination_rate_max() const { return _crd_max; }
+
     void reset_I();
 
     void reset_rate_PID();
@@ -77,6 +80,7 @@ private:
     AP_Int16 _imax;
     AP_Int8  _rate_enable;
     AP_Float _K_HDG;
+    AP_Float _crd_max;
     bool _heading_locked = false;
     uint32_t _heading_lock_timer_ms = 0;
     uint32_t _last_hdg_hold_call_ms = 0;   // last time get_heading_hold_rate() ran
