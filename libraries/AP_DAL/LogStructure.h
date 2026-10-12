@@ -75,6 +75,9 @@ struct log_RFRN {
     uint8_t wheelencoder_enabled:1;
     uint8_t takeoff_expected:1;
     uint8_t touchdown_expected:1;
+    uint8_t drag_ok;
+    float drag_tilt;
+    uint8_t drag_mode;
     uint8_t _end;
 };
 
@@ -392,7 +395,7 @@ struct log_RBOH {
     { LOG_RFRF_MSG, RLOG_SIZE(RFRF),                          \
       "RFRF", "BB", "FTypes,Slow", "--", "--" }, \
     { LOG_RFRN_MSG, RLOG_SIZE(RFRN),                            \
-      "RFRN", "IIIfIfffBBB", "HLat,HLon,HAlt,E2T,AM,TX,TY,TZ,VC,EKT,Flags", "DUm????????", "GGB--------" }, \
+      "RFRN", "IIIfIfffBBBBfB", "HLat,HLon,HAlt,E2T,AM,TX,TY,TZ,VC,EKT,Flags,DOk,DTlt,DEn", "DUm???????????", "GGB-----------" }, \
     { LOG_REV2_MSG, RLOG_SIZE(REV2),                                   \
       "REV2", "B", "Event", "-", "-" }, \
     { LOG_RSO2_MSG, RLOG_SIZE(RSO2),                         \

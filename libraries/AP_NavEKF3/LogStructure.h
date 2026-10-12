@@ -21,6 +21,11 @@
     LOG_XKY0_MSG, \
     LOG_XKY1_MSG
 
+// tilt-corrected drag wind estimation messages, allocated in the upper message ID range
+#define LOG_IDS_FROM_NAVEKF3_DRAG \
+    LOG_XKDG_MSG, \
+    LOG_XKWH_MSG
+
 // @LoggerMessage: XKF0
 // @Description: EKF3 beacon sensor diagnostics
 // @Field: TimeUS: Time since system startup
@@ -428,6 +433,62 @@ struct PACKED log_XKV {
     float v11;
 };
 
+// @LoggerMessage: XKDG
+// @Description: EKF3 tilt-corrected drag wind estimation (Q_TILT_DRG_EN)
+// @Field: TimeUS: Time since system startup
+// @Field: C: EKF3 core this data is for
+// @Field: Tlt: thrust-weighted rotor tilt used, positive toward the nose
+// @Field: Ok: vertical flight gate held for the whole drag sample
+// @Field: AXC: rotor-tilt-corrected X specific force (drag only)
+// @Field: IX: X drag innovation (predicted - measured)
+// @Field: IY: Y drag innovation (predicted - measured)
+// @Field: TX: X drag innovation test ratio (above 1 is rejected)
+// @Field: TY: Y drag innovation test ratio (above 1 is rejected)
+// @Field: Src: wind source (0: none, wind held; 1: vertical flight drag; 2: fixed wing sideslip)
+// @Field: Age: time since the wind source last updated the wind
+// @Field: WN: wind velocity north
+// @Field: WE: wind velocity east
+// @Field: Spd: wind speed
+// @Field: Dir: direction the wind is coming from
+struct PACKED log_XKDG {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    uint8_t core;
+    float tilt;
+    uint8_t ok;
+    float axc;
+    float innov_x;
+    float innov_y;
+    float test_ratio_x;
+    float test_ratio_y;
+    uint8_t src;
+    uint32_t age_ms;
+    float wind_n;
+    float wind_e;
+    float wind_spd;
+    float wind_dir;
+};
+
+// @LoggerMessage: XKWH
+// @Description: EKF3 wind handover between vertical flight drag and fixed wing sideslip wind estimation
+// @Field: TimeUS: Time since system startup
+// @Field: C: EKF3 core this data is for
+// @Field: To: new wind source (1: vertical flight drag; 2: fixed wing sideslip)
+// @Field: Fr: wind was fresh and kept (1) or stale and reset (0)
+// @Field: Age: time since the previous wind source last updated the wind
+// @Field: WN: wind velocity north at handover
+// @Field: WE: wind velocity east at handover
+struct PACKED log_XKWH {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    uint8_t core;
+    uint8_t to;
+    uint8_t fresh;
+    uint32_t age_ms;
+    float wind_n;
+    float wind_e;
+};
+
 #if HAL_NAVEKF3_AVAILABLE
 #define LOG_STRUCTURE_FROM_NAVEKF3        \
     { LOG_XKF0_MSG, sizeof(log_XKF0), \
@@ -456,7 +517,11 @@ struct PACKED log_XKV {
     { LOG_XKV1_MSG, sizeof(log_XKV), \
       "XKV1","QBffffffffffff","TimeUS,C,V00,V01,V02,V03,V04,V05,V06,V07,V08,V09,V10,V11", "s#------------", "F-------------" , true }, \
     { LOG_XKV2_MSG, sizeof(log_XKV), \
-      "XKV2","QBffffffffffff","TimeUS,C,V12,V13,V14,V15,V16,V17,V18,V19,V20,V21,V22,V23", "s#------------", "F-------------" , true },
+      "XKV2","QBffffffffffff","TimeUS,C,V12,V13,V14,V15,V16,V17,V18,V19,V20,V21,V22,V23", "s#------------", "F-------------" , true }, \
+    { LOG_XKDG_MSG, sizeof(log_XKDG), \
+      "XKDG", "QBfBfffffBIffff", "TimeUS,C,Tlt,Ok,AXC,IX,IY,TX,TY,Src,Age,WN,WE,Spd,Dir", "s#d-ooo---snnnh", "F-0-000---C0000", true }, \
+    { LOG_XKWH_MSG, sizeof(log_XKWH), \
+      "XKWH", "QBBBIff", "TimeUS,C,To,Fr,Age,WN,WE", "s#--snn", "F---C00", true },
 #else
   #define LOG_STRUCTURE_FROM_NAVEKF3
 #endif

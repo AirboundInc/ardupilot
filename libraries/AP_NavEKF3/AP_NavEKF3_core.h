@@ -201,6 +201,9 @@ public:
     // returns true if wind state estimation is active
     bool getWind(Vector3f &wind) const;
 
+    // return the drag shadow wind estimate for GCS display (Q_TILT_DRG_EN=1), false if not active
+    bool getDragDisplayWind(Vector3f &wind) const;
+
     // return earth magnetic field estimates in measurement units / 1000
     void getMagNED(Vector3f &magNED) const;
 
@@ -668,6 +671,9 @@ private:
 
     struct drag_elements : EKF_obs_element_t {
         Vector2f accelXY;       // measured specific force along the X and Y body axes (m/sec**2)
+        float accelZ;           // measured specific force along the Z body axis (m/sec**2)
+        float rotorTilt;        // mean thrust-weighted rotor tilt over the sample, + toward the nose (rad)
+        bool vtolOk;            // vertical flight gate held for the whole sample
     };
 
     // bias estimates for the IMUs that are enabled but not being used
@@ -1048,7 +1054,15 @@ private:
     bool EKFGSF_getYaw(ftype &yaw, ftype &yawVariance) const;
 
     // Fusion of body frame X and Y axis drag specific forces for multi-rotor wind estimation
-    void FuseDragForces();
+    void FuseDragForces(bool tiltCorrected);
+
+    // tilt-corrected drag wind estimation (Q_TILT_DRG_EN)
+    // E5/E6: bias corrected sample means with the rotor thrust removed from X
+    void calcDragMeasurement();
+    // E8/E10: predicted drag specific force and its slope wrt airspeed for one body axis
+    bool dragModel(uint8_t axis, ftype relWindBody, ftype meaAcc, ftype &predAccel, ftype &Kacc) const;
+    // drag wind estimate in a separate 2-state filter that never writes EKF states
+    void FuseDragShadow();
     void SelectDragFusion();
     void SampleDragData(const imu_elements &imu);
 
@@ -1435,6 +1449,35 @@ private:
 	uint32_t lastDragPassTime_ms;       // system time that drag samples were last successfully fused
     bool dragFusionEnabled;
 
+    // tilt-corrected drag wind estimation (Q_TILT_DRG_EN)
+    enum class WindSource : uint8_t {
+        NONE = 0,   // no source active, wind held
+        DRAG = 1,   // vertical flight drag
+        BETA = 2,   // fixed wing synthetic sideslip
+    };
+    static constexpr uint8_t DRAG_MODE_SHADOW = 1;
+    static constexpr uint8_t DRAG_MODE_EKF = 2;
+    static constexpr uint8_t DRAG_MODE_LEGACY = 255;
+    uint8_t dragMode;                   // Q_TILT_DRG_EN from the vehicle, DRAG_MODE_LEGACY if not provided
+    WindSource windSource;              // wind source that currently owns the wind
+    uint32_t windSourceStart_ms;        // time the current wind source took over
+    uint32_t lastBetaPassTime_ms;       // time sideslip was last fused
+    uint32_t shadowPassTime_ms;         // time the shadow drag filter last fused a sample
+    uint32_t shadowLastTime_ms;         // time of the last shadow filter prediction
+    Vector2F shadowWind;                // shadow drag wind estimate NE (m/s)
+    ftype shadowP[2][2];                // shadow drag wind covariance ((m/s)**2)
+    Vector2F dragMeaAcc;                // tilt-corrected XY specific force for the current sample (m/sec**2)
+    ftype dragTiltSum;                  // rotor tilt accumulator for the drag down sampler (rad)
+    bool dragOkAll;                     // vertical flight gate accumulator for the drag down sampler
+    struct {
+        Vector2F innov;                 // drag innovations of the current sample
+        Vector2F testRatio;             // drag innovation test ratios of the current sample
+        WindSource src;                 // wind source active for the current sample
+    } dragLog;
+
+    // switch the wind to a new source, carrying it over only if it is fresh (E12, E13)
+    void windSourceHandover(WindSource newSource);
+
     // height source selection logic
     AP_NavEKF_Source::SourceZ activeHgtSource;  // active height source
     AP_NavEKF_Source::SourceZ prevHgtSource;    // previous height source used to detect changes in source
@@ -1635,6 +1678,8 @@ private:
     void Log_Write_XKF4(uint64_t time_us) const;
     void Log_Write_XKF5(uint64_t time_us) const;
     void Log_Write_XKFS(uint64_t time_us) const;
+    void Log_Write_XKDG() const;
+    void Log_Write_XKWH(WindSource to, bool fresh, uint32_t age_ms, const Vector2F &wind) const;
     void Log_Write_Quaternion(uint64_t time_us) const;
     void Log_Write_Beacon(uint64_t time_us);
     void Log_Write_BodyOdom(uint64_t time_us);

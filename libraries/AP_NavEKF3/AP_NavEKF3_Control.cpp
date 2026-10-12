@@ -62,6 +62,10 @@ void NavEKF3_core::setWindMagStateLearningMode()
     const bool canEstimateWind = ((finalInflightYawInit && dragFusionEnabled) || assume_zero_sideslip()) &&
                                  !onGround &&
                                  PV_AidingMode != AID_NONE;
+    // tilt-corrected drag wind estimation: after landing the next flight phase starts from a reset wind
+    if (onGround) {
+        windSource = WindSource::NONE;
+    }
     if (!inhibitWindStates && !canEstimateWind) {
         inhibitWindStates = true;
         lastAspdEstIsValid = false;

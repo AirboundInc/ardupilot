@@ -313,7 +313,12 @@ float GCS_MAVLINK_Plane::vfr_hud_climbrate() const
 
 void GCS_MAVLINK_Plane::send_wind() const
 {
-    const Vector3f wind = AP::ahrs().wind_estimate();
+    Vector3f wind = AP::ahrs().wind_estimate();
+    Vector3f drag_wind;
+    if (AP::ahrs().get_drag_display_wind(drag_wind)) {
+        // Q_TILT_DRG_EN=1: show the shadow drag wind during vertical flight (display only)
+        wind = drag_wind;
+    }
     mavlink_msg_wind_send(
         chan,
         degrees(atan2f(-wind.y, -wind.x)), // use negative, to give

@@ -196,6 +196,18 @@ bool NavEKF3_core::getWind(Vector3f &wind) const
     return !inhibitWindStates;
 }
 
+// return the drag shadow wind estimate for GCS display, valid only while the shadow drag estimator owns the wind
+bool NavEKF3_core::getDragDisplayWind(Vector3f &wind) const
+{
+    if (dragMode != DRAG_MODE_SHADOW || windSource != WindSource::DRAG) {
+        return false;
+    }
+    wind.x = shadowWind.x;
+    wind.y = shadowWind.y;
+    wind.z = 0.0f;
+    return true;
+}
+
 // return the NED velocity of the body frame origin in m/s
 //
 void NavEKF3_core::getVelNED(Vector3f &vel) const

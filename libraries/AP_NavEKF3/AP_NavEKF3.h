@@ -122,6 +122,9 @@ public:
     // estimation is active
     bool getWind(Vector3f &wind) const;
 
+    // return the drag shadow wind estimate for GCS display (Q_TILT_DRG_EN=1), false if not active
+    bool getDragDisplayWind(Vector3f &wind) const;
+
     // return earth magnetic field estimates in measurement units / 1000
     void getMagNED(Vector3f &magNED) const;
 
@@ -451,6 +454,8 @@ private:
     AP_Enum<LogLevel> _log_level;   // log verbosity level
     AP_Float _gpsVAccThreshold;     // vertical accuracy threshold to use GPS as an altitude source
     AP_Int32 _options;              // bit mask of processing options
+    AP_Float _windHoAge;            // max age (s) of the wind carried across a VTOL/FW wind source handover
+    AP_Float _windHoSigma;          // wind 1-sigma (m/s) applied after a fresh wind source handover
 
     // enum for processing options
     enum class Options {

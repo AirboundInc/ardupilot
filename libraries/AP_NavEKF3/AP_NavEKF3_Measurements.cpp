@@ -1443,19 +1443,19 @@ void NavEKF3_core::SampleDragData(const imu_elements &imu)
 {
 #if EK3_FEATURE_DRAG_FUSION
     // Average and down sample to 5Hz
-    const ftype bcoef_x = frontend->_ballisticCoef_x;
-    const ftype bcoef_y = frontend->_ballisticCoef_y;
-    const ftype mcoef = frontend->_momentumDragCoef.get();
-    const bool using_bcoef_x = bcoef_x > 1.0f;
-    const bool using_bcoef_y = bcoef_y > 1.0f;
-    const bool using_mcoef = mcoef > 0.001f;
-    if (!using_bcoef_x && !using_bcoef_y && !using_mcoef) {
+    const bool using_bcoef_x = frontend->_ballisticCoef_x > 1.0f;
+    const bool using_bcoef_y = frontend->_ballisticCoef_y > 1.0f;
+    const bool using_mcoef = frontend->_momentumDragCoef.get() > 0.001f;
+    const bool coefsSet = using_bcoef_x || using_bcoef_y || using_mcoef;
+
+    // Q_TILT_DRG_EN from the vehicle. The EKF fuses drag as stock when the vehicle
+    // doesn't provide it, or tilt-corrected in EKF mode, but never in off or shadow mode
+    dragMode = dal.get_drag_mode();
+    dragFusionEnabled = coefsSet && (dragMode == DRAG_MODE_LEGACY || dragMode == DRAG_MODE_EKF);
+    if (!coefsSet || dragMode == 0) {
         // nothing to do
-        dragFusionEnabled = false;
         return;
     }
-
-    dragFusionEnabled = true;
 
     // down-sample the drag specific force data by accumulating and calculating the mean when
     // sufficient samples have been collected
@@ -1465,14 +1465,22 @@ void NavEKF3_core::SampleDragData(const imu_elements &imu)
     // note acceleration is accumulated as a delta velocity
     dragDownSampled.accelXY.x += imu.delVel.x;
     dragDownSampled.accelXY.y += imu.delVel.y;
+    dragDownSampled.accelZ += imu.delVel.z;
     dragDownSampled.time_ms += imu.time_ms;
     dragSampleTimeDelta += imu.delVelDT;
+
+    // E5: rotor tilt is averaged and the vertical flight gate must hold for the whole sample
+    dragTiltSum += dal.get_drag_tilt();
+    dragOkAll = dragOkAll && dal.get_drag_vtol_ok();
 
     // calculate and store means from accumulated values
     if (dragSampleTimeDelta > 0.2f - 0.5f * EKF_TARGET_DT) {
         // note conversion from accumulated delta velocity to acceleration
         dragDownSampled.accelXY.x /= dragSampleTimeDelta;
         dragDownSampled.accelXY.y /= dragSampleTimeDelta;
+        dragDownSampled.accelZ /= dragSampleTimeDelta;
+        dragDownSampled.rotorTilt = dragTiltSum / dragSampleCount;
+        dragDownSampled.vtolOk = (dragMode == DRAG_MODE_LEGACY) || dragOkAll;
         dragDownSampled.time_ms /= dragSampleCount;
 
         // write to buffer
@@ -1481,8 +1489,11 @@ void NavEKF3_core::SampleDragData(const imu_elements &imu)
         // reset accumulators
         dragSampleCount = 0;
         dragDownSampled.accelXY.zero();
+        dragDownSampled.accelZ = 0;
         dragDownSampled.time_ms = 0;
         dragSampleTimeDelta = 0.0f;
+        dragTiltSum = 0;
+        dragOkAll = true;
     }
 #endif // EK3_FEATURE_DRAG_FUSION
 }

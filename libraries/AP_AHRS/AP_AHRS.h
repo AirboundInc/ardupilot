@@ -659,6 +659,23 @@ public:
         return fly_forward;
     }
 
+    /*
+     * rotor tilt for EKF3 tilt-corrected drag wind estimation, set by
+     * the vehicle every loop (dual axis tiltrotor). mode is
+     * Q_TILT_DRG_EN; 255 means not provided, and EKF3 behaves as stock
+     */
+    void set_drag_tilt(float tilt_rad, bool vtol_ok, uint8_t mode) {
+        drag_tilt_rad = tilt_rad;
+        drag_vtol_ok = vtol_ok;
+        drag_mode = mode;
+    }
+    float get_drag_tilt(void) const { return drag_tilt_rad; }
+    bool get_drag_vtol_ok(void) const { return drag_vtol_ok; }
+    uint8_t get_drag_mode(void) const { return drag_mode; }
+
+    // wind from the drag shadow estimator, for GCS display only
+    bool get_drag_display_wind(Vector3f &wind) const;
+
     /* we modify our behaviour based on what sort of vehicle the
      * vehicle code tells us we are.  This information is also pulled
      * from AP_AHRS by other libraries
@@ -855,6 +872,11 @@ private:
      * use to provide additional and/or improved estimates.
      */
     bool fly_forward; // true if we can assume the vehicle will be flying forward on its X axis
+
+    // EKF3 tilt-corrected drag wind estimation inputs, see set_drag_tilt()
+    float drag_tilt_rad = 0;
+    bool drag_vtol_ok = false;
+    uint8_t drag_mode = 255;
 
     // poke AP_Notify based on values from status
     void update_notify_from_filter_status(const nav_filter_status &status);

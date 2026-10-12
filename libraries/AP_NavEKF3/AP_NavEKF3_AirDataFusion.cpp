@@ -3,6 +3,8 @@
 #include "AP_NavEKF3.h"
 #include "AP_NavEKF3_core.h"
 #include <AP_DAL/AP_DAL.h>
+#include <GCS_MAVLink/GCS.h>
+#include <AP_Logger/AP_Logger_config.h>
 
 /********************************************************
 *                   RESET FUNCTIONS                     *
@@ -231,6 +233,33 @@ void NavEKF3_core::SelectBetaDragFusion()
         sideSlipFusionDelayed = false;
     }
 
+#if EK3_FEATURE_DRAG_FUSION
+    // tilt-corrected drag wind estimation (Q_TILT_DRG_EN): decide which source owns the wind.
+    // Drag in vertical flight, sideslip in fixed wing, neither (wind held) during transitions.
+    // The handover is done before sideslip fusion so the first fixed wing fusion starts from it.
+    // (stock behaviour only takes a drag sample from the buffer while the wind states are in use)
+    const bool haveDrag = (dragMode != DRAG_MODE_LEGACY || !inhibitWindStates) &&
+                          storedDrag.recall(dragSampleDelayed, imuDataDelayed.time_ms);
+    const bool tiltMode = (dragMode == DRAG_MODE_SHADOW || dragMode == DRAG_MODE_EKF);
+    bool dragActive = false;
+    if (tiltMode) {
+        // E4: the EKF also needs its wind states running to fuse drag
+        dragActive = haveDrag && dragSampleDelayed.vtolOk && !assume_zero_sideslip() &&
+                     (dragMode == DRAG_MODE_SHADOW || !inhibitWindStates);
+        const bool betaActive = assume_zero_sideslip() && !inhibitWindStates;
+        WindSource wanted = WindSource::NONE;
+        if (betaActive) {
+            wanted = WindSource::BETA;
+        } else if (dragActive) {
+            wanted = WindSource::DRAG;
+        }
+        if (wanted != WindSource::NONE && wanted != windSource) {
+            windSourceHandover(wanted);
+        }
+        dragLog.src = wanted;
+    }
+#endif
+
     // set true when the fusion time interval has triggered
     bool f_timeTrigger = ((imuSampleTime_ms - prevBetaDragStep_ms) >= frontend->betaAvg_ms);
 
@@ -259,8 +288,26 @@ void NavEKF3_core::SelectBetaDragFusion()
 
 #if EK3_FEATURE_DRAG_FUSION
     // fusion of XY body frame aero specific forces is done at a slower rate and only if alternative methods of wind estimation are not available
-    if (!inhibitWindStates && storedDrag.recall(dragSampleDelayed,imuDataDelayed.time_ms)) {
-        FuseDragForces();
+    if (haveDrag) {
+        if (dragMode == DRAG_MODE_LEGACY) {
+            if (!inhibitWindStates) {
+                FuseDragForces(false);
+            }
+        } else if (tiltMode) {
+            calcDragMeasurement();
+            dragLog.innov.zero();
+            dragLog.testRatio.zero();
+            if (dragActive) {
+                if (dragMode == DRAG_MODE_EKF) {
+                    FuseDragForces(true);
+                } else {
+                    FuseDragShadow();
+                }
+            }
+#if HAL_LOGGING_ENABLED
+            Log_Write_XKDG();
+#endif
+        }
     }
     dragTimeout = (imuSampleTime_ms - lastDragPassTime_ms) > frontend->dragFailTimeLimit_ms;
 #endif
@@ -424,6 +471,7 @@ void NavEKF3_core::FuseSideslip()
             statesArray[j] = statesArray[j] - Kfusion[j] * innovBeta;
         }
         stateStruct.quat.normalize();
+        lastBetaPassTime_ms = imuSampleTime_ms;
 
         // correct the covariance P = (I - K*H)*P
         // take advantage of the empty columns in KH to reduce the
@@ -468,25 +516,60 @@ void NavEKF3_core::FuseSideslip()
 
 #if EK3_FEATURE_DRAG_FUSION
 /*
+  E8: predicted drag specific force along one body axis (0 = X, 1 = Y), and
+  E10: its derivative wrt airspeed, evaluated at the airspeed implied by the measurement.
+  Drag can be modelled as an arbitrary combination of bluff body drag that is proportional
+  to speed squared, and rotor momentum drag that is proportional to speed.
+  Returns false if no drag model is configured for this axis.
+*/
+bool NavEKF3_core::dragModel(uint8_t axis, ftype relWindBody, ftype meaAcc, ftype &predAccel, ftype &Kacc) const
+{
+    const ftype bcoef = (axis == 0) ? frontend->_ballisticCoef_x : frontend->_ballisticCoef_y;
+    const ftype mcoef = frontend->_momentumDragCoef.get();
+    const bool using_bcoef = bcoef > 1.0f;
+    const bool using_mcoef = mcoef > 0.001f;
+    const ftype density_ratio = sqrtF(dal.get_EAS2TAS());
+    const ftype rho = fmaxF(1.225f * density_ratio, 0.1f); // air density
+
+    // predicted sign of drag force
+    const ftype dragForceSign = is_positive(relWindBody) ? -1.0f : 1.0f;
+
+    if (using_mcoef && using_bcoef) {
+        // mixed bluff body and propeller momentum drag
+        const ftype airSpd = (bcoef / rho) * (- mcoef + sqrtF(sq(mcoef) + 2.0f * (rho / bcoef) * fabsF(meaAcc)));
+        Kacc = fmaxF(1e-1f, (rho / bcoef) * airSpd + mcoef * density_ratio);
+        predAccel = (0.5f / bcoef) * rho * sq(relWindBody) * dragForceSign - relWindBody * mcoef * density_ratio;
+    } else if (using_mcoef) {
+        // propeller momentum drag only
+        Kacc = fmaxF(1e-1f, mcoef * density_ratio);
+        predAccel = - relWindBody * mcoef * density_ratio;
+    } else if (using_bcoef) {
+        // bluff body drag only
+        const ftype airSpd = sqrtF((2.0f * bcoef * fabsF(meaAcc)) / rho);
+        Kacc = fmaxF(1e-1f, (rho / bcoef) * airSpd);
+        predAccel = (0.5f / bcoef) * rho * sq(relWindBody) * dragForceSign;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+/*
  * Fuse X and Y body axis specific forces using explicit algebraic equations generated with SymPy.
  * See derivation/generate_2.py for derivation
  * Output for change reference: derivation/generated/acc_bf_generated.cpp
 */
-void NavEKF3_core::FuseDragForces()
+/*
+  tiltCorrected is false for stock behaviour. When true (Q_TILT_DRG_EN=2) the measurement
+  is the rotor-tilt-corrected specific force, and a rejected or badly conditioned axis
+  doesn't prevent fusion of the other axis.
+*/
+void NavEKF3_core::FuseDragForces(bool tiltCorrected)
 {
-    // drag model parameters
-    const ftype bcoef_x = frontend->_ballisticCoef_x;
-    const ftype bcoef_y = frontend->_ballisticCoef_y;
-    const ftype mcoef = frontend->_momentumDragCoef.get();
-    const bool using_bcoef_x = bcoef_x > 1.0f;
-    const bool using_bcoef_y = bcoef_y > 1.0f;
-    const bool using_mcoef = mcoef > 0.001f;
-
     ZERO_FARRAY(Kfusion);
     Vector24 Hfusion; // Observation Jacobians
     const ftype R_ACC = sq(fmaxF(frontend->_dragObsNoise, 0.5f));
-    const ftype density_ratio = sqrtF(dal.get_EAS2TAS());
-    const ftype rho = fmaxF(1.225f * density_ratio, 0.1f); // air density
+    bool fusedAny = false;
 
     // get latest estimated orientation
     const ftype &q0 = stateStruct.quat[0];
@@ -510,35 +593,17 @@ void NavEKF3_core::FuseDragForces()
 
     // perform sequential fusion of XY specific forces
     for (uint8_t axis_index = 0; axis_index < 2; axis_index++) {
-        // correct accel data for bias
-        const ftype mea_acc = dragSampleDelayed.accelXY[axis_index]  - stateStruct.accel_bias[axis_index] / dtEkfAvg;
+        // correct accel data for bias, and for rotor tilt when tilt corrected (E6)
+        const ftype mea_acc = tiltCorrected ? dragMeaAcc[axis_index] :
+                              dragSampleDelayed.accelXY[axis_index]  - stateStruct.accel_bias[axis_index] / dtEkfAvg;
 
         // Acceleration in m/s/s predicted using vehicle and wind velocity estimates
         // Initialised to measured value and updated later using available drag model
         ftype predAccel = mea_acc;
 
-        // predicted sign of drag force
-        const ftype dragForceSign = is_positive(rel_wind_body[axis_index]) ? -1.0f : 1.0f;
-
         if (axis_index == 0) {
-            // drag can be modelled as an arbitrary  combination of bluff body drag that proportional to
-            // speed squared, and rotor momentum drag that is proportional to speed.
             ftype Kaccx; // Derivative of specific force wrt airspeed
-            if (using_mcoef && using_bcoef_x) {
-                // mixed bluff body and propeller momentum drag
-                const ftype airSpd = (bcoef_x / rho) * (- mcoef + sqrtF(sq(mcoef) + 2.0f * (rho / bcoef_x) * fabsF(mea_acc)));
-                Kaccx = fmaxF(1e-1f, (rho / bcoef_x) * airSpd + mcoef * density_ratio);
-                predAccel = (0.5f / bcoef_x) * rho * sq(rel_wind_body[0]) * dragForceSign - rel_wind_body[0] * mcoef * density_ratio;
-            } else if (using_mcoef) {
-                // propeller momentum drag only
-                Kaccx = fmaxF(1e-1f, mcoef * density_ratio);
-                predAccel = - rel_wind_body[0] * mcoef * density_ratio;
-            } else if (using_bcoef_x) {
-                // bluff body drag only
-                const ftype airSpd = sqrtF((2.0f * bcoef_x * fabsF(mea_acc)) / rho);
-                Kaccx = fmaxF(1e-1f, (rho / bcoef_x) * airSpd);
-                predAccel = (0.5f / bcoef_x) * rho * sq(rel_wind_body[0]) * dragForceSign;
-            } else {
+            if (!dragModel(0, rel_wind_body[0], mea_acc, predAccel, Kaccx)) {
                 // skip this axis
                 continue;
             }
@@ -581,6 +646,9 @@ void NavEKF3_core::FuseDragForces()
             // calculate innovation variance and exit if badly conditioned
             innovDragVar.x = (-HK13*HK21*HK24 + HK14*HK21*HK29 + HK15*HK18*HK21 - HK16*HK21*HK30 + HK17*HK21*HK31 - HK20*HK22 + HK22*HK23 + HK26*HK27 - HK27*HK28 + R_ACC);
             if (innovDragVar.x < R_ACC) {
+                if (tiltCorrected) {
+                    continue;
+                }
                 return;
             }
             const ftype HK32 = Kaccx / innovDragVar.x;
@@ -604,25 +672,12 @@ void NavEKF3_core::FuseDragForces()
 
 
         } else if (axis_index == 1) {
-            // drag can be modelled as an arbitrary combination of bluff body drag that proportional to
-            // speed squared, and rotor momentum drag that is proportional to speed.
             ftype Kaccy; // Derivative of specific force wrt airspeed
-            if (using_mcoef && using_bcoef_y) {
-                // mixed bluff body and propeller momentum drag
-                const ftype airSpd = (bcoef_y / rho) * (- mcoef + sqrtF(sq(mcoef) + 2.0f * (rho / bcoef_y) * fabsF(mea_acc)));
-                Kaccy = fmaxF(1e-1f, (rho / bcoef_y) * airSpd + mcoef * density_ratio);
-                predAccel = (0.5f / bcoef_y) * rho * sq(rel_wind_body[1]) * dragForceSign - rel_wind_body[1] * mcoef * density_ratio;
-            } else if (using_mcoef) {
-                // propeller momentum drag only
-                Kaccy = fmaxF(1e-1f, mcoef * density_ratio);
-                predAccel = - rel_wind_body[1] * mcoef * density_ratio;
-            } else if (using_bcoef_y) {
-                // bluff body drag only
-                const ftype airSpd = sqrtF((2.0f * bcoef_y * fabsF(mea_acc)) / rho);
-                Kaccy = fmaxF(1e-1f, (rho / bcoef_y) * airSpd);
-                predAccel = (0.5f / bcoef_y) * rho * sq(rel_wind_body[1]) * dragForceSign;
-            } else {
+            if (!dragModel(1, rel_wind_body[1], mea_acc, predAccel, Kaccy)) {
                 // nothing more to do
+                if (tiltCorrected) {
+                    continue;
+                }
                 return;
             }
 
@@ -664,6 +719,9 @@ void NavEKF3_core::FuseDragForces()
             innovDragVar.y = (HK12*HK19*HK20 + HK14*HK19*HK29 + HK15*HK18*HK19 + HK16*HK19*HK30 - HK17*HK19*HK31 + HK22*HK23 - HK23*HK24 + HK26*HK27 - HK27*HK28 + R_ACC);
             if (innovDragVar.y < R_ACC) {
                 // calculation is badly conditioned
+                if (tiltCorrected) {
+                    continue;
+                }
                 return;
             }
             const ftype HK32 = Kaccy / innovDragVar.y;
@@ -688,9 +746,14 @@ void NavEKF3_core::FuseDragForces()
 
         innovDrag[axis_index] = predAccel - mea_acc;
         dragTestRatio[axis_index] = sq(innovDrag[axis_index]) / (25.0f * innovDragVar[axis_index]);
+        dragLog.innov[axis_index] = innovDrag[axis_index];
+        dragLog.testRatio[axis_index] = dragTestRatio[axis_index];
 
         // if the innovation consistency check fails then don't fuse the sample
         if (dragTestRatio[axis_index] > 1.0f) {
+            if (tiltCorrected) {
+                continue;
+            }
             return;
         }
 
@@ -734,10 +797,169 @@ void NavEKF3_core::FuseDragForces()
                 P[i][j] = P[i][j] - KHP[i][j];
             }
         }
+        fusedAny = true;
     }
 
     // record time of successful fusion
-    lastDragPassTime_ms = imuSampleTime_ms;
+    if (!tiltCorrected || fusedAny) {
+        lastDragPassTime_ms = imuSampleTime_ms;
+    }
+}
+
+/*
+  E5: bias corrected 0.2s mean specific forces of the current drag sample
+  E6: remove the forward component of the rotor thrust from X. Thrust is along the
+  rotor axis tilted by rotorTilt toward the nose, so its X part is -AZ*tan(tilt).
+  Y is unchanged as the rotors only vector fore and aft.
+*/
+void NavEKF3_core::calcDragMeasurement()
+{
+    const ftype ax = dragSampleDelayed.accelXY.x - stateStruct.accel_bias.x / dtEkfAvg;
+    const ftype ay = dragSampleDelayed.accelXY.y - stateStruct.accel_bias.y / dtEkfAvg;
+    const ftype az = dragSampleDelayed.accelZ - stateStruct.accel_bias.z / dtEkfAvg;
+    dragMeaAcc.x = ax + az * tanF(dragSampleDelayed.rotorTilt);
+    dragMeaAcc.y = ay;
+}
+
+/*
+  shadow drag wind estimator (Q_TILT_DRG_EN=1). Same measurement, drag model, noise and gate
+  as the EKF drag fusion, but a separate 2-state wind filter that uses the EKF attitude and
+  velocity and never writes EKF states, so it has no effect on the EKF or the vehicle.
+*/
+void NavEKF3_core::FuseDragShadow()
+{
+    const ftype R_ACC = sq(fmaxF(frontend->_dragObsNoise, 0.5f));
+
+    // prediction: wind random walk, using the same process noise as the EKF wind states
+    const ftype predDt = 0.001f * (ftype)(imuDataDelayed.time_ms - shadowLastTime_ms);
+    shadowLastTime_ms = imuDataDelayed.time_ms;
+    // a long gap (gate closed) is capped rather than skipped, so the wind uncertainty still grows
+    if (is_positive(predDt)) {
+        const ftype windVelNoise = dtEkfAvg * constrain_ftype(frontend->_windVelProcessNoise, 0.0f, 1.0f) *
+                                   (1.0f + constrain_ftype(frontend->_wndVarHgtRateScale, 0.0f, 1.0f) * fabsF(hgtRate));
+        const ftype windVelVar = sq(windVelNoise) * (MIN(predDt, 60.0f) / dtEkfAvg);
+        shadowP[0][0] += windVelVar;
+        shadowP[1][1] += windVelVar;
+    }
+
+    // E7: body frame velocity relative to the shadow wind
+    const Vector3F relWindBody = prevTnb * Vector3F(stateStruct.velocity.x - shadowWind.x,
+                                                    stateStruct.velocity.y - shadowWind.y,
+                                                    stateStruct.velocity.z);
+    bool fusedAny = false;
+    for (uint8_t axis = 0; axis < 2; axis++) {
+        ftype predAccel, Kacc;
+        if (!dragModel(axis, relWindBody[axis], dragMeaAcc[axis], predAccel, Kacc)) {
+            continue;
+        }
+
+        // E10: derivative of the predicted drag wrt wind N,E is +Kacc * row 'axis' of the nav to body matrix
+        const ftype h0 = Kacc * prevTnb[axis][0];
+        const ftype h1 = Kacc * prevTnb[axis][1];
+        const ftype PHt0 = shadowP[0][0] * h0 + shadowP[0][1] * h1;
+        const ftype PHt1 = shadowP[1][0] * h0 + shadowP[1][1] * h1;
+        const ftype innovVar = h0 * PHt0 + h1 * PHt1 + R_ACC;
+
+        // E9: innovation and 5-sigma consistency check
+        const ftype innov = predAccel - dragMeaAcc[axis];
+        const ftype testRatio = sq(innov) / (25.0f * innovVar);
+        dragLog.innov[axis] = innov;
+        dragLog.testRatio[axis] = testRatio;
+        if (testRatio > 1.0f) {
+            continue;
+        }
+
+        // E11: state and covariance update
+        const ftype K0 = PHt0 / innovVar;
+        const ftype K1 = PHt1 / innovVar;
+        shadowWind.x -= K0 * innov;
+        shadowWind.y -= K1 * innov;
+        const ftype HP0 = h0 * shadowP[0][0] + h1 * shadowP[1][0];
+        const ftype HP1 = h0 * shadowP[0][1] + h1 * shadowP[1][1];
+        shadowP[0][0] -= K0 * HP0;
+        shadowP[0][1] -= K0 * HP1;
+        shadowP[1][0] -= K1 * HP0;
+        shadowP[1][1] -= K1 * HP1;
+        fusedAny = true;
+    }
+
+    // keep the covariance symmetric and bounded, as is done for the EKF wind states
+    shadowP[0][1] = shadowP[1][0] = 0.5f * (shadowP[0][1] + shadowP[1][0]);
+    for (uint8_t i = 0; i < 2; i++) {
+        shadowP[i][i] = constrain_ftype(shadowP[i][i], WIND_VEL_VARIANCE_MIN, WIND_VEL_VARIANCE_MAX);
+    }
+
+    // own pass time, so dragTimeout and the EKF status are unaffected
+    if (fusedAny) {
+        shadowPassTime_ms = imuSampleTime_ms;
+    }
+}
+
+/*
+  switch the wind to a new source (vertical flight drag <-> fixed wing sideslip).
+  E12: the wind is fresh if the previous source updated it during its own phase and recently.
+  E13: fresh -> keep the wind and reset its uncertainty to EK3_WIND_HO_SIG,
+       stale -> reset the wind to zero with a large uncertainty.
+  EKF mode applies this to the EKF wind states. Shadow mode only starts the shadow filter from
+  the fixed wing EKF wind, and logs what would have been handed to the EKF.
+*/
+void NavEKF3_core::windSourceHandover(WindSource newSource)
+{
+    uint32_t lastPass_ms = 0;
+    if (windSource == WindSource::DRAG) {
+        lastPass_ms = (dragMode == DRAG_MODE_EKF) ? lastDragPassTime_ms : shadowPassTime_ms;
+    } else if (windSource == WindSource::BETA) {
+        lastPass_ms = lastBetaPassTime_ms;
+    }
+    const uint32_t age_ms = imuSampleTime_ms - lastPass_ms;
+    const bool fresh = windSource != WindSource::NONE &&
+                       lastPass_ms != 0 &&
+                       lastPass_ms >= windSourceStart_ms &&
+                       age_ms <= (uint32_t)(1000.0f * frontend->_windHoAge);
+
+    // the wind being handed over
+    const Vector2F windFrom = (windSource == WindSource::DRAG && dragMode == DRAG_MODE_SHADOW) ?
+                              shadowWind : stateStruct.wind_vel;
+    const ftype handoverVar = sq(MAX(frontend->_windHoSigma.get(), 0.5f));
+
+    if (dragMode == DRAG_MODE_EKF) {
+        zeroRows(P, 22, 23);
+        zeroCols(P, 22, 23);
+        if (fresh) {
+            P[22][22] = P[23][23] = handoverVar;
+        } else {
+            stateStruct.wind_vel.zero();
+            P[22][22] = P[23][23] = WIND_VEL_VARIANCE_MAX;
+        }
+    } else if (newSource == WindSource::DRAG) {
+        // start the shadow filter from the fixed wing EKF wind (read only)
+        if (fresh) {
+            shadowWind = windFrom;
+        } else {
+            shadowWind.zero();
+        }
+        shadowP[0][0] = shadowP[1][1] = fresh ? handoverVar : WIND_VEL_VARIANCE_MAX;
+        shadowP[0][1] = shadowP[1][0] = 0;
+        shadowLastTime_ms = imuDataDelayed.time_ms;
+    }
+
+#if HAL_LOGGING_ENABLED
+    Log_Write_XKWH(newSource, fresh, age_ms, windFrom);
+#endif
+
+    if ((int8_t)core_index == frontend->getPrimaryCoreIndex()) {
+        const char *mode_str = (dragMode == DRAG_MODE_SHADOW) ? " (shadow)" : "";
+        const char *src_str = (newSource == WindSource::DRAG) ? "drag" : "sideslip";
+        if (fresh) {
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "EKF3 wind%s %s: kept %.1fm/s from %.0f", mode_str, src_str,
+                          (double)windFrom.length(), (double)wrap_360(degrees(atan2F(-windFrom.y, -windFrom.x))));
+        } else {
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "EKF3 wind%s %s: reset", mode_str, src_str);
+        }
+    }
+
+    windSource = newSource;
+    windSourceStart_ms = imuSampleTime_ms;
 }
 #endif // EK3_FEATURE_DRAG_FUSION
 

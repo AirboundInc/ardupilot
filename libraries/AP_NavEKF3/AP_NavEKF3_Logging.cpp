@@ -89,6 +89,60 @@ void NavEKF3_core::Log_Write_XKF2(uint64_t time_us) const
     AP::logger().WriteBlock(&pkt2, sizeof(pkt2));
 }
 
+#if EK3_FEATURE_DRAG_FUSION
+// tilt-corrected drag wind estimation, written for every drag sample (Q_TILT_DRG_EN = 1 or 2)
+void NavEKF3_core::Log_Write_XKDG() const
+{
+    if (frontend->_log_level != NavEKF3::LogLevel::ALL) {
+        return;
+    }
+
+    // EKF wind in EKF mode or in fixed wing, shadow wind while the shadow drag estimator owns it
+    const Vector2F wind = (dragMode == DRAG_MODE_SHADOW && windSource != WindSource::BETA) ?
+                          shadowWind : stateStruct.wind_vel;
+    uint32_t lastPass_ms = lastBetaPassTime_ms;
+    if (windSource == WindSource::DRAG) {
+        lastPass_ms = (dragMode == DRAG_MODE_EKF) ? lastDragPassTime_ms : shadowPassTime_ms;
+    }
+
+    const struct log_XKDG pkt {
+        LOG_PACKET_HEADER_INIT(LOG_XKDG_MSG),
+        time_us      : dal.micros64(),
+        core         : DAL_CORE(core_index),
+        tilt         : degrees(dragSampleDelayed.rotorTilt),
+        ok           : dragSampleDelayed.vtolOk,
+        axc          : (float)dragMeaAcc.x,
+        innov_x      : (float)dragLog.innov.x,
+        innov_y      : (float)dragLog.innov.y,
+        test_ratio_x : (float)dragLog.testRatio.x,
+        test_ratio_y : (float)dragLog.testRatio.y,
+        src          : (uint8_t)dragLog.src,
+        age_ms       : imuSampleTime_ms - lastPass_ms,
+        wind_n       : (float)wind.x,
+        wind_e       : (float)wind.y,
+        wind_spd     : (float)wind.length(),
+        wind_dir     : (float)wrap_360(degrees(atan2F(-wind.y, -wind.x))),
+    };
+    AP::logger().WriteBlock(&pkt, sizeof(pkt));
+}
+
+// wind handover between vertical flight drag and fixed wing sideslip wind estimation
+void NavEKF3_core::Log_Write_XKWH(WindSource to, bool fresh, uint32_t age_ms, const Vector2F &wind) const
+{
+    const struct log_XKWH pkt {
+        LOG_PACKET_HEADER_INIT(LOG_XKWH_MSG),
+        time_us : dal.micros64(),
+        core    : DAL_CORE(core_index),
+        to      : (uint8_t)to,
+        fresh   : fresh,
+        age_ms  : age_ms,
+        wind_n  : (float)wind.x,
+        wind_e  : (float)wind.y,
+    };
+    AP::logger().WriteBlock(&pkt, sizeof(pkt));
+}
+#endif // EK3_FEATURE_DRAG_FUSION
+
 void NavEKF3_core::Log_Write_XKFS(uint64_t time_us) const
 {
     // Write sensor selection EKF packet

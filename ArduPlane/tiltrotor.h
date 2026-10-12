@@ -44,6 +44,9 @@ public:
     void dual_axis_output();
     bool in_vtol_transition(uint32_t now) const;
 
+    // rotor tilt and vertical-flight gate for EKF3 tilt-corrected drag wind estimation
+    void update_drag_tilt(bool is_vtol, bool backtrans_hold, float adj_l_cd, float adj_r_cd);
+
     // hold the Q_TILT_THR_FT throttle steady for Q_TILT_FTHLD_MS, then
     // linearly blend to the FBWA/commanded throttle over the following
     // Q_TILT_FTBLD_MS, during a forward transition (dual axis tiltrotor)
@@ -123,6 +126,12 @@ public:
     // FBWA/commanded throttle after the fwd_trans_hold_ms hold period,
     // during a forward transition (dual axis tiltrotor)
     AP_Float fwd_trans_blend_ms;
+
+    // EKF3 tilt-corrected drag wind estimation: 0 off, 1 shadow, 2 EKF
+    AP_Int8 drag_en;
+
+    // max thrust-weighted rotor vectoring angle for drag wind estimation (deg)
+    AP_Float drag_max;
 
     float current_tilt;
     float current_throttle;

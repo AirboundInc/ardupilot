@@ -174,6 +174,17 @@ public:
         return _RFRN.fly_forward;
     }
 
+    // EKF3 tilt-corrected drag wind estimation inputs from the vehicle
+    float get_drag_tilt(void) const {
+        return _RFRN.drag_tilt;
+    }
+    bool get_drag_vtol_ok(void) const {
+        return _RFRN.drag_ok;
+    }
+    uint8_t get_drag_mode(void) const {
+        return _RFRN.drag_mode;
+    }
+
     bool get_takeoff_expected(void) const {
         return _RFRN.takeoff_expected;
     }

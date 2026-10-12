@@ -69,6 +69,9 @@ void AP_DAL::start_frame(AP_DAL::FrameType frametype)
     _RFRN.EAS2TAS = ahrs.get_EAS2TAS();
     _RFRN.vehicle_class = (uint8_t)ahrs.get_vehicle_class();
     _RFRN.fly_forward = ahrs.get_fly_forward();
+    _RFRN.drag_tilt = ahrs.get_drag_tilt();
+    _RFRN.drag_ok = ahrs.get_drag_vtol_ok();
+    _RFRN.drag_mode = ahrs.get_drag_mode();
     _RFRN.takeoff_expected = ahrs.get_takeoff_expected();
     _RFRN.touchdown_expected = ahrs.get_touchdown_expected();
     _RFRN.ahrs_airspeed_sensor_enabled = ahrs.airspeed_sensor_enabled(ahrs.get_active_airspeed_index());

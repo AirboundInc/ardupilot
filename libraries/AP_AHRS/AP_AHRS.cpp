@@ -841,6 +841,17 @@ float AP_AHRS::get_error_yaw(void) const
     return 0;
 }
 
+// wind from the EKF3 drag shadow estimator, for GCS display only
+bool AP_AHRS::get_drag_display_wind(Vector3f &wind) const
+{
+#if HAL_NAVEKF3_AVAILABLE
+    if (active_EKF_type() == EKFType::THREE) {
+        return EKF3.getDragDisplayWind(wind);
+    }
+#endif
+    return false;
+}
+
 // return a wind estimation vector, in m/s
 bool AP_AHRS::_wind_estimate(Vector3f &wind) const
 {

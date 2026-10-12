@@ -143,6 +143,22 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @Increment: 0.1
     AP_GROUPINFO("HVPOW", 18, Tiltrotor, vectored_hover_power, 1.0),
 
+    // @Param: DRG_EN
+    // @DisplayName: Tilt-corrected drag wind estimation
+    // @Description: Wind estimation from rotor-tilt-corrected accelerometer drag in vertical flight (dual axis tiltrotor). 0: Off, the EKF never fuses drag. 1: Shadow, a separate estimate that is logged and shown on the GCS during vertical flight, with no effect on flight. 2: EKF, drag is fused into the EKF wind in vertical flight and the wind is handed over to and from fixed wing sideslip estimation.
+    // @Values: 0:Off,1:Shadow,2:EKF
+    // @User: Advanced
+    AP_GROUPINFO("DRG_EN", 19, Tiltrotor, drag_en, 0),
+
+    // @Param: DRG_MAX
+    // @DisplayName: Max rotor tilt for drag wind estimation
+    // @Description: Drag measurements are only used for wind estimation while the thrust-weighted rotor vectoring angle is within this limit
+    // @Units: deg
+    // @Range: 5 30
+    // @Increment: 1
+    // @User: Advanced
+    AP_GROUPINFO("DRG_MAX", 20, Tiltrotor, drag_max, 15),
+
     AP_GROUPEND
 };
 
@@ -809,13 +825,43 @@ void Tiltrotor::bicopter_output(void)
 }
 
 /*
+  rotor tilt and vertical-flight gate for EKF3 tilt-corrected drag wind estimation
+  E1: per-rotor tilt from the PHID angle after the servo limit, + = thrust toward the nose
+  E3: thrust-weighted equivalent tilt
+  E4: drag is only valid in true vertical flight with small vectoring
+ */
+void Tiltrotor::update_drag_tilt(bool is_vtol, bool backtrans_hold, float adj_l_cd, float adj_r_cd)
+{
+    const float tilt_l = -constrain_float(adj_l_cd, -SERVO_MAX, SERVO_MAX) * 0.01f;
+    const float tilt_r = -constrain_float(adj_r_cd, -SERVO_MAX, SERVO_MAX) * 0.01f;
+
+    // weights are thrust, not ESC command: undo the MOT_THST_EXPO curve
+    const float thrust_l = motors->thr_lin.actuator_to_thrust(motors->get_throttle_out_left());
+    const float thrust_r = motors->thr_lin.actuator_to_thrust(motors->get_throttle_out_right());
+    const float thrust_sum = thrust_l + thrust_r;
+    const float tilt_eff = is_positive(thrust_sum) ? (thrust_l * tilt_l + thrust_r * tilt_r) / thrust_sum
+                                                   : 0.5f * (tilt_l + tilt_r);
+
+    const bool ok = drag_en > 0 && is_vtol && !quadplane.assisted_flight && !backtrans_hold &&
+                    current_tilt <= 0.01f && fabsf(tilt_eff) <= drag_max &&
+                    motors->armed() && thrust_sum > 0.05f;
+
+    plane.ahrs.set_drag_tilt(radians(tilt_eff), ok, (uint8_t)drag_en.get());
+}
+
+/*
   control dual-axis tiltrotor. Axis 1 (V22-style 0-90 transition tilt)
   is driven by continuous_update(). This function handles Axis 2
   (independent attitude vectoring servos) called from servos.cpp.
  */
 void Tiltrotor::dual_axis_output(void)
 {
-    if (type != TILT_TYPE_DUAL_AXIS || quadplane.motor_test.running) {
+    if (type != TILT_TYPE_DUAL_AXIS) {
+        return;
+    }
+    if (quadplane.motor_test.running) {
+        // no drag wind estimation while motors are under test
+        plane.ahrs.set_drag_tilt(0, false, (uint8_t)drag_en.get());
         return;
     }
 
@@ -1027,8 +1073,9 @@ void Tiltrotor::dual_axis_output(void)
                                         constrain_float(tilt_left_adjusted,  -SERVO_MAX, SERVO_MAX));
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRightVec,
                                         constrain_float(tilt_right_adjusted, -SERVO_MAX, SERVO_MAX));
-        
-        
+
+        update_drag_tilt(is_vtol, force_backtrans_hold, tilt_left_adjusted, tilt_right_adjusted);
+
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
 
@@ -1039,6 +1086,7 @@ void Tiltrotor::dual_axis_output(void)
     // track FW mode time and clear backtrans/fwdtrans timers so the next
     // transition re-arms them
     last_fw_mode_ms = now;
+    plane.ahrs.set_drag_tilt(0, false, (uint8_t)drag_en.get());
     transition->backtrans_start_ms = 0;
     fwd_trans_start_ms = 0;
 

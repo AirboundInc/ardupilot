@@ -743,6 +743,22 @@ const AP_Param::GroupInfo NavEKF3::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("OPTIONS",  11, NavEKF3, _options, 0),
 
+    // @Param: WIND_HO_AGE
+    // @DisplayName: Wind handover maximum age
+    // @Description: Used with Q_TILT_DRG_EN. At each switch between vertical flight drag and fixed wing sideslip wind estimation, the wind is kept only if the previous source updated it within this time, otherwise it is reset to zero with a large uncertainty.
+    // @Units: s
+    // @Range: 1 60
+    // @User: Advanced
+    AP_GROUPINFO("WIND_HO_AGE", 12, NavEKF3, _windHoAge, 20),
+
+    // @Param: WIND_HO_SIG
+    // @DisplayName: Wind handover uncertainty
+    // @Description: Used with Q_TILT_DRG_EN. Wind 1-sigma uncertainty applied when a fresh wind is handed over, so that the new wind source can correct it.
+    // @Units: m/s
+    // @Range: 0.5 10
+    // @User: Advanced
+    AP_GROUPINFO("WIND_HO_SIG", 13, NavEKF3, _windHoSigma, 2.5),
+
     AP_GROUPEND
 };
 
@@ -1321,6 +1337,15 @@ bool NavEKF3::getWind(Vector3f &wind) const
         return false;
     }
     return core[primary].getWind(wind);
+}
+
+// return the drag shadow wind estimate for GCS display, if active
+bool NavEKF3::getDragDisplayWind(Vector3f &wind) const
+{
+    if (core == nullptr) {
+        return false;
+    }
+    return core[primary].getDragDisplayWind(wind);
 }
 
 // return earth magnetic field estimates in measurement units / 1000
