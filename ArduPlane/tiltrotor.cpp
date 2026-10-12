@@ -873,9 +873,15 @@ void Tiltrotor::dual_axis_output(void)
             // what the pilot/FBWA throttle or the blend would otherwise be
             const float esc_throttle = plane.arming.is_armed_and_safety_off()
                 ? get_fwd_trans_throttle(now, commanded_throttle_pct) : 0.0f;
+            // override only the collective, keep the VTOL mixer's roll differential
+            // faded out as the motors tilt forward
+            const float roll_diff = plane.arming.is_armed_and_safety_off()
+                ? 50.0f * (quadplane.motors->get_throttle_out_left() - quadplane.motors->get_throttle_out_right())
+                  * cosf(current_tilt * M_PI_2)
+                : 0.0f;
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttle,      esc_throttle);
-            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(esc_throttle, 0, 100));
-            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(esc_throttle, 0, 100));
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(esc_throttle + roll_diff, 0, 100));
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(esc_throttle - roll_diff, 0, 100));
         } else {
             // still hovering, not yet in a forward transition
             // (k_throttle was already restored to the raw commanded value above)
