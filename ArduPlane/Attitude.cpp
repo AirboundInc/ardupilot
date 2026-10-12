@@ -511,7 +511,23 @@ int16_t Plane::calc_nav_yaw_coordinated()
         #endif
          const float heading_hold_rate = yawController.get_heading_hold_rate(allow_heading_lock, g.acro_yaw_rate);
 
-       commanded_rudder = yawController.get_rate_out(yaw_rate+coordination_yaw_rate+heading_hold_rate,  speed_scaler, false);
+            float yaw_scaler = speed_scaler;
+            bool yaw_disable_I = false;
+    #if HAL_QUADPLANE_ENABLED
+            if (quadplane.tiltrotor.is_dual_axis()) {
+                // yaw is actuated by differential thrust, whose authority doesn't
+                // scale with dynamic pressure: don't apply the surface speed scaler
+                yaw_scaler = 1.0f;
+                // dual_axis_output() only applies RUDD_DT_GAIN differential thrust
+                // in FW flight; while hovering, transitioning or Q-assisted the
+                // rudder output does nothing, so don't let the integrator wind up
+                if (quadplane.in_vtol_mode() || quadplane.in_assisted_flight() ||
+                    (quadplane.transition != nullptr && !quadplane.transition->complete())) {
+                    yaw_disable_I = true;
+                }
+            }
+    #endif
+         commanded_rudder = yawController.get_rate_out(yaw_rate+coordination_yaw_rate+heading_hold_rate,  yaw_scaler, yaw_disable_I);
          using_rate_controller = true;
      } else {
         if (control_mode == &mode_stabilize && rudder_in != 0) {

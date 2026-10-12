@@ -72,6 +72,8 @@ public:
 
     bool is_vectored() const { return enabled() && _is_vectored; }
 
+    bool is_dual_axis() const { return enabled() && type == TILT_TYPE_DUAL_AXIS; }
+
     bool has_fw_motor() const { return _have_fw_motor; }
 
     bool has_vtol_motor() const { return _have_vtol_motor; }
@@ -175,6 +177,13 @@ private:
     // time when we were last in a fw control mode
     uint32_t last_fw_mode_ms;
 
+    // time of the first FW tick after VTOL/transition/assist (dual axis):
+    // used to ramp in differential thrust and the post-transition roll limit
+    uint32_t fw_entry_ms = 0;
+
+    // rate limit for the per-loop PHID/PITE/PHIF debug logs
+    uint32_t last_dbg_log_ms = 0;
+
     // throttle (0 to 1) that was last commanded in fw control mode
     float last_fw_throttle = 0;
 
@@ -216,6 +225,8 @@ public:
     bool show_vtol_view() const override;
 
     bool use_multirotor_control_in_fwd_transition() const override;
+
+    bool set_FW_roll_limit(int32_t& roll_limit_cd) override;
 
 private:
 
