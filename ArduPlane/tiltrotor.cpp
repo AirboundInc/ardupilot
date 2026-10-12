@@ -1010,6 +1010,8 @@ void Tiltrotor::dual_axis_output(void)
         }
 
 #if HAL_LOGGING_ENABLED
+        if (now - last_dbg_log_ms >= 20) {   // 50 Hz
+            last_dbg_log_ms = now;
         // Add logging for desired thrust vectoring angles
         AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,ExtraEl,AdjL,AdjR,PitchErr,isVTOL,ExtraPit",
                 "sdddddddd", // seconds, degrees
@@ -1027,6 +1029,7 @@ void Tiltrotor::dual_axis_output(void)
                 "F0000", // micro (1e-6), no mult (1e0)
                 "Qffff", // uint64_t, float
                 AP_HAL::micros64(), des_pitch_cd/100, des_pitch_cd2/100,pitch_cd/100,pitch_cd2/100);
+        }
 #endif
         
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
@@ -1090,12 +1093,15 @@ void Tiltrotor::dual_axis_output(void)
     float tilt_right = constrain_float((elevator - aileron) * gain, -1.0f, 1.0f) * SERVO_MAX;
 
 #if HAL_LOGGING_ENABLED
+    if (now - last_dbg_log_ms >= 20) {   // 50 Hz
+        last_dbg_log_ms = now;
         // Add logging for desired thrust vectoring angles
         AP::logger().WriteStreaming("PHIF", "TimeUS,DesL,DesR",
                 "sdd", // seconds, degrees
                 "F00", // micro (1e-6), no mult (1e0)
                 "Qff", // uint64_t, float
                 AP_HAL::micros64(), tilt_left/100, tilt_right/100);
+        }
 #endif
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec, tilt_left);
