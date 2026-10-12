@@ -3,6 +3,7 @@
 
 bool ModeRTL::_enter()
 {
+    speed_state = SpeedState::CRUISE;
     plane.prev_WP_loc = plane.current_loc;
     plane.do_RTL(plane.get_RTL_altitude_cm());
     plane.rtl.done_climb = false;
@@ -40,6 +41,15 @@ bool ModeRTL::_enter()
     return true;
 }
 
+void ModeRTL::_exit()
+{
+    if (speed_state == SpeedState::REDUCED) {
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "cruise airspeed restored");
+    }
+    speed_state = SpeedState::CRUISE;
+}
+
+
 void ModeRTL::update()
 {
     plane.calc_nav_roll();
@@ -76,6 +86,9 @@ void ModeRTL::update()
 
 void ModeRTL::navigate()
 {
+
+    update_speed_reduction();
+
 #if HAL_QUADPLANE_ENABLED
     if (plane.quadplane.available()) {
         if (plane.quadplane.rtl_mode == QuadPlane::RTL_MODE::VTOL_APPROACH_QRTL) {
@@ -137,6 +150,49 @@ void ModeRTL::navigate()
         }
     }
 }
+
+
+// select between AIRSPEED_CRUISE and RTL_ARSPD based on distance to the RTL destination
+void ModeRTL::update_speed_reduction()
+{
+    const float dist_hi = plane.g2.rtl_arspd_dist_hi;
+    const float dist_lo = plane.g2.rtl_arspd_dist_lo;
+
+    // disabled or invalid band
+    if (!is_positive(plane.g2.rtl_arspd) || dist_hi <= dist_lo) {
+        if (speed_state == SpeedState::REDUCED) {
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "RTL: cruise airspeed restored");
+        }
+        speed_state = SpeedState::CRUISE;
+        return;
+    }
+
+    // distance to home or rally point, updated by Plane::navigate()
+    const float dist = plane.auto_state.wp_distance;
+
+    switch (speed_state) {
+    case SpeedState::CRUISE:
+        if (dist <= dist_lo) {
+            speed_state = SpeedState::RESTORED;
+        } else if (dist <= dist_hi) {
+            speed_state = SpeedState::REDUCED;
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "RTL: airspeed reduced to %.1f m/s", (double)plane.g2.rtl_arspd);
+        }
+        break;
+    case SpeedState::REDUCED:
+        if (dist <= dist_lo) {
+            speed_state = SpeedState::RESTORED;
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "RTL: cruise airspeed restored %.0fm", (double)dist);
+        } else if (dist > dist_hi) {
+            speed_state = SpeedState::CRUISE;
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "RTL: cruise airspeed restored");
+        }
+        break;
+    case SpeedState::RESTORED:
+        break;
+    }
+}
+
 
 #if HAL_QUADPLANE_ENABLED
 // Switch to QRTL if enabled and within radius

@@ -182,6 +182,15 @@ const AP_Param::GroupInfo AP_YawController::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("_HDGTC", 7, AP_YawController, _K_HDG, 0),
 
+    // @Param: 2SRV_CRDMAX
+    // @DisplayName: Coordinated turn yaw rate maximum
+    // @Description: Maximum yaw rate demand (deg/s) allowed from the coordinated-turn feedforward term (gravity * tan(bank) / airspeed) used by the yaw rate controller. Limits how hard a steep bank at low airspeed can drive commanded yaw, such as right after a quadplane forward transition. 0 disables the cap.
+    // @Units: deg/s
+    // @Range: 0 180
+    // @Increment: 1
+    // @User: Advanced
+    AP_GROUPINFO("2SRV_CRDMAX", 8, AP_YawController, _crd_max, 0),
+
     AP_GROUPEND
 };
 

@@ -178,6 +178,10 @@ private:
     // throttle (0 to 1) that was last commanded in fw control mode
     float last_fw_throttle = 0;
 
+    // armed state from the previous update(), to detect the arming edge
+    bool was_armed = false;
+
+
     // To notify the state
     bool backtrans_done_reported = false;
 

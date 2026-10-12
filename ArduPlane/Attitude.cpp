@@ -497,22 +497,24 @@ int16_t Plane::calc_nav_yaw_coordinated()
         // yaw rate controller enabled (YAW_RATE_ENABLE=1): route pilot rudder
         // + turn-coordination feedforward through the filtered rate PID in
         // all FW modes instead of the washout-based YAW2SRV_DAMP/INT damper
-         const float rudd_expo = rudder_in_expo(true);
-         const float yaw_rate = (rudd_expo/SERVO_MAX) * g.acro_yaw_rate;
-         // add in the coordinated turn yaw rate to make it easier to fly while tuning the yaw rate controller
-         const float coordination_yaw_rate = degrees(GRAVITY_MSS * tanf(radians(nav_roll_cd*0.01f))/MAX(aparm.airspeed_min,smoothed_airspeed));
-        
+        const float rudd_expo = rudder_in_expo(true);
+        const float yaw_rate = (rudd_expo/SERVO_MAX) * g.acro_yaw_rate;
+        // add in the coordinated turn yaw rate to make it easier to fly while tuning the yaw rate controller
+        float coordination_yaw_rate = degrees(GRAVITY_MSS * tanf(radians(nav_roll_cd*0.01f))/MAX(aparm.airspeed_min,smoothed_airspeed));
+        const float coordination_rate_max = yawController.get_coordination_rate_max();
+        if (is_positive(coordination_rate_max)) {
+            coordination_yaw_rate = constrain_float(coordination_yaw_rate, -coordination_rate_max, coordination_rate_max);
+        }
         bool allow_heading_lock = (rudder_in == 0 && abs(nav_roll_cd) < 500);
-        #if HAL_QUADPLANE_ENABLED
-                if (quadplane.available() && quadplane.transition != nullptr &&
-                    !quadplane.transition->complete()) {
-                    allow_heading_lock = false;
-                }
-        #endif
-         const float heading_hold_rate = yawController.get_heading_hold_rate(allow_heading_lock, g.acro_yaw_rate);
-
-       commanded_rudder = yawController.get_rate_out(yaw_rate+coordination_yaw_rate+heading_hold_rate,  speed_scaler, false);
-         using_rate_controller = true;
+#if HAL_QUADPLANE_ENABLED
+        if (quadplane.available() && quadplane.transition != nullptr &&
+            !quadplane.transition->complete()) {
+            allow_heading_lock = false;
+        }
+#endif
+        const float heading_hold_rate = yawController.get_heading_hold_rate(allow_heading_lock, g.acro_yaw_rate);
+        commanded_rudder = yawController.get_rate_out(yaw_rate+coordination_yaw_rate+heading_hold_rate,  speed_scaler, false);
+        using_rate_controller = true;
      } else {
         if (control_mode == &mode_stabilize && rudder_in != 0) {
             disable_integrator = true;
