@@ -1002,12 +1002,8 @@ void Tiltrotor_Transition_DualAxis::update()
 
     if (elapsed_ms < hold_ms) {
         set_stage(Stage::FWD_HOLD);
-        plane.nav_pitch_cd = 0.0f;
-        plane.nav_roll_cd = 0.0f;
     } else if (elapsed_ms < hold_ms + blend_ms) {
-        set_stage(Stage::FWD_BLEND); 
-        plane.nav_pitch_cd = 0.0f;
-        plane.nav_roll_cd = 0.0f;
+        set_stage(Stage::FWD_BLEND);
     } else {
         set_stage(Stage::FW);
         fwd_trans_start_ms = 0;
@@ -1057,19 +1053,42 @@ void Tiltrotor_Transition_DualAxis::VTOL_update()
 
     if (elapsed_ms < hold_ms) {
         set_stage(Stage::BACK_HOLD);
-        plane.nav_pitch_cd = 0.0f;
-        plane.nav_roll_cd = 0.0f;
     } else if (elapsed_ms < hold_ms + blend_ms) {
         set_stage(Stage::BACK_BLEND);
-        plane.nav_pitch_cd = 0.0f;
-        plane.nav_roll_cd = 0.0f;
     } else {
         set_stage(Stage::VTOL);
         back_trans_start_ms = 0;
     }
 
+    if (hold_level_attitude() && quadplane.pos_control->is_active_xy()) {
+        // the mode's run() has already updated the position controller this
+        // tick; reset its XY targets to the current state and decay its
+        // integrator so it resumes from where the vehicle is when the hold
+        // ends. The Z controller keeps running through the transition
+        quadplane.pos_control->relax_velocity_controller_xy();
+    }
+
     // assistance stays reset while it is not being checked
     quadplane.assist.reset();
+}
+
+/*
+  true while a transition stage holds roll and pitch at zero and the yaw
+  rate at zero, for both the VTOL and the fixed wing controllers
+ */
+bool Tiltrotor_Transition_DualAxis::hold_level_attitude() const
+{
+    switch (stage) {
+    case Stage::FWD_HOLD:
+    case Stage::FWD_BLEND:
+    case Stage::BACK_HOLD:
+    case Stage::BACK_BLEND:
+        return true;
+    case Stage::VTOL:
+    case Stage::FW:
+        break;
+    }
+    return false;
 }
 
 void Tiltrotor_Transition_DualAxis::restart()
@@ -1251,6 +1270,14 @@ void Tiltrotor_Transition_DualAxis::set_last_fw_pitch(void)
  */
 bool Tiltrotor_Transition_DualAxis::set_VTOL_roll_pitch_limit(int32_t& roll_cd, int32_t& pitch_cd)
 {
+    if (hold_level_attitude()) {
+        // level hold for modes that set nav_roll/pitch in run(). Returning
+        // true makes the caller mark the XY position controller as limited
+        roll_cd = 0;
+        pitch_cd = 0;
+        return true;
+    }
+
     bool ret = false;
     const int16_t angle_max = quadplane.aparm.angle_max;
 
@@ -1316,6 +1343,19 @@ bool Tiltrotor_Transition_DualAxis::set_VTOL_roll_pitch_limit(int32_t& roll_cd, 
  */
 void Tiltrotor_Transition_DualAxis::set_FW_roll_pitch(int32_t& nav_pitch_cd, int32_t& nav_roll_cd)
 {
+    if (hold_level_attitude()) {
+        // runs ahead of every mode's run(), VTOL modes included, so this is
+        // the level hold for modes that set nav_roll/pitch in update()
+        nav_roll_cd = 0;
+        nav_pitch_cd = 0;
+        if (!quadplane.in_vtol_mode()) {
+            // keep TECS from winding up against a pitch it cannot have
+            plane.TECS_controller.set_pitch_max(0);
+            plane.TECS_controller.set_pitch_min(0);
+        }
+        return;
+    }
+
     if (quadplane.in_vtol_mode() || quadplane.in_vtol_airbrake()) {
         return;
     }

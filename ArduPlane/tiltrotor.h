@@ -287,6 +287,7 @@ public:
     MAV_VTOL_STATE get_mav_vtol_state() const override;
     bool set_VTOL_roll_pitch_limit(int32_t& roll_cd, int32_t& pitch_cd) override;
     void set_FW_roll_pitch(int32_t& nav_pitch_cd, int32_t& nav_roll_cd) override;
+    bool hold_level_attitude() const override;
     void set_last_fw_pitch(void) override;
 
     // records that fixed wing outputs are being driven this loop, which is

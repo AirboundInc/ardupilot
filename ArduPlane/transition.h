@@ -52,6 +52,10 @@ public:
 
     virtual bool set_VTOL_roll_pitch_limit(int32_t& nav_roll_cd, int32_t& nav_pitch_cd) { return false; }
 
+    // true while the transition holds roll/pitch at zero and yaw rate at zero
+    // for both the VTOL and the fixed wing controllers
+    virtual bool hold_level_attitude() const { return false; }
+
     virtual bool allow_weathervane() { return true; }
 
     virtual void set_last_fw_pitch(void) {}

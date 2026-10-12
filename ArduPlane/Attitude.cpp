@@ -493,6 +493,18 @@ int16_t Plane::calc_nav_yaw_coordinated()
             millis() - plane.guided_state.last_forced_rpy_ms.z < 3000) {
         commanded_rudder = plane.guided_state.forced_rpy_cd.z;
     }
+#if HAL_QUADPLANE_ENABLED
+    else if (quadplane.available() && quadplane.transition->hold_level_attitude()) {
+        // transition holds heading: zero yaw rate demand, no pilot rudder
+        if (yawController.rate_control_enabled()) {
+            commanded_rudder = yawController.get_rate_out(0, speed_scaler, false);
+            using_rate_controller = true;
+        } else {
+            // damper only: no rate setpoint exists, so drop the pilot rudder
+            commanded_rudder = yawController.get_servo_out(speed_scaler, false);
+        }
+    }
+#endif
     else if (g.acro_yaw_rate > 0 && yawController.rate_control_enabled()) {
         // yaw rate controller enabled (YAW_RATE_ENABLE=1): route pilot rudder
         // + turn-coordination feedforward through the filtered rate PID in

@@ -1440,6 +1440,11 @@ float QuadPlane::get_pilot_input_yaw_rate_cds(void) const
  */
 float QuadPlane::get_desired_yaw_rate_cds(bool should_weathervane)
 {
+    if (transition->hold_level_attitude()) {
+        // hold the current heading through the transition
+        return 0;
+    }
+
     float yaw_cds = 0, pilot_yaw_cds = 0, wvane_yaw_cds = 0;
     if (assisted_flight) {
         // use bank angle to get desired yaw rate
@@ -2815,13 +2820,14 @@ void QuadPlane::vtol_position_controller(void)
         // setup scaling of roll and pitch angle P gains to match fixed wing gains
         setup_rp_fw_angle_gains();
 
-        if (have_target_yaw) {
+        if (have_target_yaw && !transition->hold_level_attitude()) {
             attitude_control->input_euler_angle_roll_pitch_yaw(plane.nav_roll_cd,
                                                                plane.nav_pitch_cd,
                                                                target_yaw_deg*100, true);
         } else {
             attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
                                                                           plane.nav_pitch_cd,
+                                                                          transition->hold_level_attitude() ? 0 :
                                                                           desired_auto_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
         }
         if ((plane.auto_state.wp_distance < position2_dist_threshold) && tiltrotor.tilt_angle_achieved() &&
@@ -2868,6 +2874,7 @@ void QuadPlane::vtol_position_controller(void)
         set_pilot_yaw_rate_time_constant();
         attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
                                                                       plane.nav_pitch_cd,
+                                                                      transition->hold_level_attitude() ? 0 :
                                                                       get_pilot_input_yaw_rate_cds() + get_weathervane_yaw_rate_cds());
         break;
     }
@@ -3390,10 +3397,17 @@ void QuadPlane::waypoint_controller(void)
 
     // call attitude controller
     disable_yaw_rate_time_constant();
-    attitude_control->input_euler_angle_roll_pitch_yaw(plane.nav_roll_cd,
-                                                       plane.nav_pitch_cd,
-                                                       wp_nav->get_yaw(),
-                                                       true);
+    if (transition->hold_level_attitude()) {
+        // hold the current heading through the transition
+        attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd,
+                                                                      plane.nav_pitch_cd,
+                                                                      0);
+    } else {
+        attitude_control->input_euler_angle_roll_pitch_yaw(plane.nav_roll_cd,
+                                                           plane.nav_pitch_cd,
+                                                           wp_nav->get_yaw(),
+                                                           true);
+    }
 
     // climb based on altitude error
     set_climb_rate_cms(assist_climb_rate_cms());

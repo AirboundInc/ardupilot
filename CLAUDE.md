@@ -104,6 +104,15 @@ Consequences:
   QLOITER/QRTL/QLAND/AUTO/GUIDED after the position controller and before
   `stabilize_*`) or `set_FW_roll_pitch()` (FW side, called before every mode's
   `run()`). `dual_axis_output()` is too late in the tick for that.
+- **Level hold during transitions:** `Transition::hold_level_attitude()` is
+  true in `FWD_HOLD`/`FWD_BLEND`/`BACK_HOLD`/`BACK_BLEND`. Roll/pitch are
+  zeroed in `set_FW_roll_pitch()` (runs before every mode's `run()`, VTOL
+  modes included, so it covers modes that set `nav_*` in `update()`) and in
+  `set_VTOL_roll_pitch_limit()` (modes that set `nav_*` in `run()`). Yaw rate
+  is zeroed in `QuadPlane::get_desired_yaw_rate_cds()`, at the position
+  controller attitude call sites in `quadplane.cpp`/`mode_qrtl.cpp`, and for
+  the rudder in `Plane::calc_nav_yaw_coordinated()`. `VTOL_update()` relaxes
+  the XY position controller during back stages; Z keeps running.
 
 ## Gotchas
 
