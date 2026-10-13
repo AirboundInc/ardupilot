@@ -466,15 +466,6 @@ void Tiltrotor::update(void)
         continuous_update();
     }
 
-    if (fw_rtl_at_min_airspeed()) {
-        // without an airspeed sensor TECS ignores its airspeed target and
-        // flies a pitch-to-throttle map around TRIM_THROTTLE, so the
-        // AIRSPEED_MIN hold would do nothing. Have it use the synthetic
-        // airspeed estimate instead. The flag lasts one TECS update, so it
-        // is set every loop
-        plane.TECS_controller.use_synthetic_airspeed();
-    }
-
     if (type == TILT_TYPE_VECTORED_YAW) {
         vectoring();
     }
