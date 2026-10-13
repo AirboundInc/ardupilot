@@ -236,6 +236,11 @@ void Plane::calc_airspeed_errors()
 #if HAL_QUADPLANE_ENABLED
     } else if (control_mode == &mode_qrtl && quadplane.in_vtol_land_approach()) {
         target_airspeed_cm = quadplane.get_land_airspeed() * 100;
+    } else if (quadplane.tiltrotor.fw_rtl_at_min_airspeed()) {
+        // dual axis tiltrotor in FW RTL: arrive slow, its back transition
+        // does not wait for airspeed
+        gcs().send_text(MAV_SEVERITY_INFO, "FW RTL: at min airspeed");
+        target_airspeed_cm = aparm.airspeed_min * 100;
 #endif
     } else {
         // Normal airspeed target for all other cases

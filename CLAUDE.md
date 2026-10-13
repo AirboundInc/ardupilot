@@ -64,8 +64,9 @@ machine's own state without downcasting.
 
 `Stage`: `VTOL`, `BACK`, `FWD`, `FW`.
 
-A VTOL<->FW **mode edge** starts a transition and **airspeed against
-`AIRSPEED_MIN`** (`aparm.airspeed_min`, formerly `ARSPD_FBW_MIN`) ends it.
+A VTOL<->FW **mode edge** starts a transition. The forward one ends on
+**airspeed against `AIRSPEED_MIN`** (`aparm.airspeed_min`, formerly
+`ARSPD_FBW_MIN`), the back one on the **tilt reaching vertical**.
 `update()` drives the FW side, `VTOL_update()` the VTOL side; the edge is
 detected by the stage still holding a value from the other side.
 
@@ -73,12 +74,15 @@ detected by the stage still holding a value from the other side.
   `Stage::FW`**, the VTOL mixer in `VTOL`, `FWD` and `BACK`.
 - Forward: `FWD` until airspeed >= `AIRSPEED_MIN`, ESCs on the FBWA/commanded
   throttle. No airspeed estimate means it stays in `FWD`.
-- Back: `BACK` until airspeed < `AIRSPEED_MIN`. Q-modes don't run TECS, so
-  `update_back_trans_tecs()` runs it (`update_50hz()` + `update_pitch_throttle()`)
-  with `AIRSPEED_MIN` as the airspeed target, the height at the edge as the
-  height target and pitch limits pinned to 0; its throttle feeds
-  `hold_stabilize()`. No airspeed estimate, or `AIRSPEED_MIN <= 0`, completes
-  it at once (AB-Mod/AB-v2 defaults set `AIRSPEED_MIN 0`).
+- Back: **not gated on airspeed**. `BACK` slews the tilt to 0 at
+  `Q_TILT_RATE_UP` (ahead of the other VTOL tilt strategies in
+  `continuous_update()`) and ends when `current_tilt` reaches 0. Slowing down
+  happens in fixed wing flight before the switch: the pilot in FBWA etc., and
+  **only FW RTL** holds the airspeed setpoint at `AIRSPEED_MIN`
+  (`Tiltrotor::fw_rtl_at_min_airspeed()`, used in `calc_airspeed_errors()`).
+  All Airbound boards fly with `ARSPD_TYPE 0`, where TECS ignores its airspeed
+  target unless `TECS_SYNAIRSPEED` is set, so `Tiltrotor::update()` calls
+  `TECS_controller.use_synthetic_airspeed()` every loop in FW RTL.
 - The old time-based hold/blend (`Q_TILT_THR_FT/THR_BT/FTHLD_MS/FTBLD_MS/
   FWHLD_MS/BTDLY_MS`, indices 13, 14, 16-19) is gone; don't reuse the indices.
 - A back transition starts **only if fixed wing outputs were driven within the
@@ -157,7 +161,7 @@ Consequences:
 ## Logging
 
 - Stage changes emit `gcs().send_text()` ("Fwd trans: waiting for 9.0 m/s",
-  "Back trans: slowing to 9.0 m/s (FW yaw ctrl)", "Fwd trans done", …). These also
+  "Back trans: tilting up (FW yaw ctrl)", "Fwd trans done", …). These also
   land in the `.bin` `MSG` log, so they double as searchable markers.
 - `get_log_transition_state()` feeds the generic quadplane log's
   `transition_state` field, so `Stage` is logged without extra plumbing.
@@ -175,7 +179,8 @@ Consequences:
 - `DualAxisTiltrotorTransitionStages` — dual axis stage machine on the ground
   (no SITL flight model exists for `Q_TILT_TYPE=4`), driven by mode edges and
   by toggling `AIRSPEED_MIN` around the ~0 ground airspeed: forward waits
-  for it, back completes below it, `AIRSPEED_MIN 0` completes both at once.
+  for it; back ends on the tilt reaching vertical even with `AIRSPEED_MIN 0`.
+  The FW RTL airspeed hold has no test (no dual axis flight model).
 
 Both tests found real defects when first run: the null dereference on live
 `Q_TILT_TYPE` change, the phantom boot back transition, and the tailsitter

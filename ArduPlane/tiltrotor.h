@@ -45,6 +45,10 @@ public:
     void bicopter_output();
     void dual_axis_output();
 
+    // true in FW RTL on a dual axis tiltrotor, which then holds
+    // AIRSPEED_MIN so the back transition into QRTL starts slow
+    bool fw_rtl_at_min_airspeed() const;
+
     // most recent k_throttle value written by AP_MotorsTiltrotorDualAxis's
     // mixer inside dual_axis_output(), before it gets restored, for debug logging
     float get_last_dual_axis_mixout_throttle() const { return dual_axis_mixout_throttle; }
@@ -196,12 +200,13 @@ private:
 /*
   Transition controller for dual axis tiltrotors (Q_TILT_TYPE=DualAxis).
 
-  Runs its own stage machine, started by a VTOL<->FW mode edge and ended
-  by airspeed against AIRSPEED_MIN. The VTOL mixer runs in every stage
-  except FW, so the forward transition flies on the VTOL mixer until
-  airspeed reaches AIRSPEED_MIN, and the back transition hands over from
-  the FW mixer at once while TECS, with AIRSPEED_MIN as its airspeed
-  target, sets the throttle until airspeed falls below it.
+  Runs its own stage machine, started by a VTOL<->FW mode edge. The VTOL
+  mixer runs in every stage except FW, so the forward transition flies on
+  the VTOL mixer until airspeed reaches AIRSPEED_MIN. The back transition
+  hands over from the FW mixer at once and ends when the tilt, coming up
+  at Q_TILT_RATE_UP, reaches vertical; slowing down for it is done in
+  fixed wing flight beforehand, by the pilot or by FW RTL holding
+  AIRSPEED_MIN (Tiltrotor::fw_rtl_at_min_airspeed()).
 
   It also selects, per stage, which controllers drive the vehicle and what
   throttle they use: the multicopter attitude/rate controller through
@@ -234,7 +239,7 @@ public:
     // update_controllers()
     enum class Stage : uint8_t {
         VTOL,   // steady hover, no transition active
-        BACK,   // just left FW: VTOL mixer, TECS holds AIRSPEED_MIN until airspeed drops below it
+        BACK,   // just left FW: VTOL mixer while the tilt comes up at Q_TILT_RATE_UP
         FWD,    // just left VTOL: VTOL mixer until airspeed reaches AIRSPEED_MIN
         FW,     // transition complete, FW mixer
     };
@@ -275,10 +280,6 @@ private:
     // when there is no estimate
     bool airspeed_reached() const;
 
-    // runs TECS with AIRSPEED_MIN as the airspeed target and the height at
-    // the start of the back transition as the height target, and stores
-    // its throttle in back_trans_throttle_pct
-    void update_back_trans_tecs();
 
     // runs the FW yaw controller during the BACK stage when
     // Q_TILT_FWHLD_EN is set, otherwise leaves the rudder as the active
@@ -287,10 +288,6 @@ private:
 
     Stage stage = Stage::VTOL;
 
-    // TECS height target for the back transition, the height above home
-    // when it started, and the TECS throttle it produced (percent)
-    int32_t back_trans_hgt_dem_cm = 0;
-    float back_trans_throttle_pct = 0;
 
     // last time fixed wing outputs were driven, zero if never. A back
     // transition starts only while this is within FW_OUTPUT_TIMEOUT_MS, so

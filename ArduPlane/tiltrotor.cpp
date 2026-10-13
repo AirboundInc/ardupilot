@@ -101,7 +101,7 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
 
     // @Param: FWHLD_EN
     // @DisplayName: Fixed wing yaw control during back transition
-    // @Description: Dual axis tiltrotor: run the fixed wing yaw controller on the rudder through the back transition, until airspeed falls below AIRSPEED_MIN
+    // @Description: Dual axis tiltrotor: run the fixed wing yaw controller on the rudder through the back transition, until the tilt reaches vertical
     // @Values: 0:Disabled,1:Enabled
     // @User: Standard
     AP_GROUPINFO("FWHLD_EN", 15, Tiltrotor, fw_control_hold_en, 0),
@@ -349,6 +349,15 @@ void Tiltrotor::continuous_update(void)
          to forward flight and should put the rotors all the way forward
     */
 
+    if (dual_axis_transition != nullptr &&
+        dual_axis_transition->get_stage() == Tiltrotor_Transition_DualAxis::Stage::BACK) {
+        // dual axis back transition: straight up at Q_TILT_RATE_UP, ahead of
+        // the strategies below, which may hold some forward tilt and so
+        // keep the stage from ever ending
+        slew(0);
+        return;
+    }
+
 #if QAUTOTUNE_ENABLED
     if (plane.control_mode == &plane.mode_qautotune) {
         slew(0);
@@ -455,6 +464,15 @@ void Tiltrotor::update(void)
         binary_update();
     } else {
         continuous_update();
+    }
+
+    if (fw_rtl_at_min_airspeed()) {
+        // without an airspeed sensor TECS ignores its airspeed target and
+        // flies a pitch-to-throttle map around TRIM_THROTTLE, so the
+        // AIRSPEED_MIN hold would do nothing. Have it use the synthetic
+        // airspeed estimate instead. The flag lasts one TECS update, so it
+        // is set every loop
+        plane.TECS_controller.use_synthetic_airspeed();
     }
 
     if (type == TILT_TYPE_VECTORED_YAW) {
@@ -927,8 +945,7 @@ void Tiltrotor_Transition_DualAxis::set_stage(Stage new_stage)
         gcs().send_text(MAV_SEVERITY_INFO, "Back trans done");
         break;
     case Stage::BACK:
-        gcs().send_text(MAV_SEVERITY_INFO, "Back trans: slowing to %.1f m/s%s",
-                         float(plane.aparm.airspeed_min),
+        gcs().send_text(MAV_SEVERITY_INFO, "Back trans: tilting up%s",
                          tiltrotor.fw_control_hold_en > 0 ? " (FW yaw ctrl)" : "");
         break;
     case Stage::FWD:
@@ -979,8 +996,9 @@ void Tiltrotor_Transition_DualAxis::update()
 /*
   VTOL-side driver, called every loop from QuadPlane::update() while
   in_vtol_mode(). Starts BACK on the FW->VTOL edge and completes to VTOL
-  once airspeed falls below AIRSPEED_MIN, or at once without an airspeed
-  estimate or with AIRSPEED_MIN at zero.
+  once the tilt, coming up at Q_TILT_RATE_UP, reaches vertical. Airspeed
+  does not gate it: slowing down is done in fixed wing flight before the
+  switch, by the pilot or by FW RTL holding AIRSPEED_MIN.
  */
 void Tiltrotor_Transition_DualAxis::VTOL_update()
 {
@@ -988,11 +1006,7 @@ void Tiltrotor_Transition_DualAxis::VTOL_update()
 
     if (stage == Stage::FW || stage == Stage::FWD) {
         if (last_fw_output_ms != 0 && (now - last_fw_output_ms) < FW_OUTPUT_TIMEOUT_MS) {
-            // first tick since leaving FW mode: start a fresh back
-            // transition, holding the current height
-            Vector3f rel_pos_ned;
-            back_trans_hgt_dem_cm = plane.ahrs.get_relative_position_NED_home(rel_pos_ned)
-                ? int32_t(-rel_pos_ned.z * 100) : 0;
+            // first tick since leaving FW mode: start a fresh back transition
             set_stage(Stage::BACK);
         } else {
             // no recent fixed wing outputs, so this is a boot, a forced
@@ -1003,14 +1017,10 @@ void Tiltrotor_Transition_DualAxis::VTOL_update()
         }
     }
 
-    if (stage == Stage::BACK) {
-        // with AIRSPEED_MIN at zero no airspeed is below it, so there is
-        // nothing to slow to and the back transition completes at once
-        if (plane.aparm.airspeed_min > 0 && airspeed_reached()) {
-            update_back_trans_tecs();
-        } else {
-            set_stage(Stage::VTOL);
-        }
+    if (stage == Stage::BACK && is_zero(tiltrotor.current_tilt)) {
+        // Tiltrotor::update() slews the tilt after this, so this sees last
+        // tick's tilt and the stage ends one tick after it reaches vertical
+        set_stage(Stage::VTOL);
     }
 
     if (hold_level_attitude() && quadplane.pos_control->is_active_xy()) {
@@ -1026,25 +1036,14 @@ void Tiltrotor_Transition_DualAxis::VTOL_update()
 }
 
 /*
-  Q-modes do not run TECS, so run it here through the back transition.
-  Pitch is held level, so its limits are pinned at zero to keep its pitch
-  loop from winding up, and only its throttle is used.
+  a dual axis tiltrotor's back transition does not wait for airspeed, so
+  FW RTL holds AIRSPEED_MIN to arrive slow for the switch to QRTL. In the
+  other fixed wing modes the pilot slows down before switching to a VTOL
+  mode.
  */
-void Tiltrotor_Transition_DualAxis::update_back_trans_tecs()
+bool Tiltrotor::fw_rtl_at_min_airspeed() const
 {
-    plane.TECS_controller.update_50hz();
-    plane.TECS_controller.set_pitch_max(0);
-    plane.TECS_controller.set_pitch_min(0);
-    plane.TECS_controller.update_pitch_throttle(back_trans_hgt_dem_cm,
-                                                plane.aparm.airspeed_min * 100,
-                                                AP_FixedWing::FlightStage::NORMAL,
-                                                0,
-                                                0,
-                                                0,
-                                                plane.tecs_hgt_afe(),
-                                                plane.aerodynamic_load_factor,
-                                                plane.g.pitch_trim.get());
-    back_trans_throttle_pct = constrain_float(plane.TECS_controller.get_throttle_demand(), 0, 100);
+    return plane.control_mode->mode_number() == plane.mode_rtl.mode_number();
 }
 
 /*
