@@ -1120,7 +1120,6 @@ void Tiltrotor_Transition_DualAxis::update_controllers(float pilot_vtol_throttle
         break;
 
     case Stage::FW:
-        quadplane.motors_output(true);
         break;
     }
 }
