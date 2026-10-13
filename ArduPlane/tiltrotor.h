@@ -1,5 +1,5 @@
 /*
-   This program is free software: you can redistribute it and/or modify
+   This program constexpris free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation, either version 3 of the License, or
    (at your option) any later version.
@@ -125,6 +125,11 @@ public:
     // FBWA/commanded throttle after the fwd_trans_hold_ms hold period,
     // during a forward transition (dual axis tiltrotor)
     AP_Float fwd_trans_blend_ms;
+
+    // Time after a forward transition completes over which the FW roll limit
+    // ramps from LEVEL_ROLL_LIMIT up to ROLL_LIMIT_DEG (dual axis tiltrotor).
+    // 0 disables the ramp
+    AP_Int16 roll_ramp_ms;
 
     float current_tilt;
     float current_throttle;

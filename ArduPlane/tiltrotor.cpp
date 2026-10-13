@@ -143,6 +143,15 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @Increment: 0.1
     AP_GROUPINFO("HVPOW", 18, Tiltrotor, vectored_hover_power, 1.0),
 
+    // @Param: RLRMP_MS
+    // @DisplayName: Post-transition roll limit ramp time
+    // @Description: Dual axis tiltrotor only. After a forward transition completes (or Q assist ends), the fixed wing roll limit ramps from LEVEL_ROLL_LIMIT up to ROLL_LIMIT_DEG over this time, so the first turn doesn't demand a large coordinated yaw rate while airspeed is still low. 0 disables the ramp.
+    // @Units: ms
+    // @Range: 0 10000
+    // @Increment: 100
+    // @User: Standard
+    AP_GROUPINFO("RLRMP_MS", 19, Tiltrotor, roll_ramp_ms, 3000),
+
     AP_GROUPEND
 };
 
@@ -1041,6 +1050,7 @@ void Tiltrotor::dual_axis_output(void)
     // first FW tick after VTOL/transition/assist: restart the DT ramp
     if (now - last_fw_mode_ms > 100) {
         fw_entry_ms = now;
+        plane.yawController.reset_I();
     }
 
     // track FW mode time and clear backtrans/fwdtrans timers so the next
@@ -1173,13 +1183,18 @@ bool Tiltrotor_Transition::set_FW_roll_limit(int32_t& roll_limit_cd)
     if (!tiltrotor.is_dual_axis() || !complete() || quadplane.in_vtol_mode()) {
         return false;
     }
-    constexpr uint32_t ROLL_RAMP_MS = 3000;
-    const uint32_t since_fw_ms = AP_HAL::millis() - tiltrotor.fw_entry_ms;
-    if (since_fw_ms >= ROLL_RAMP_MS) {
+    const int16_t ramp_param_ms = tiltrotor.roll_ramp_ms.get();
+    if (ramp_param_ms <= 0) {
+        // ramp disabled
         return false;
     }
-    const float lim = linear_interpolate(plane.g.level_roll_limit * 100, roll_limit_cd,
-                                         since_fw_ms, 0, ROLL_RAMP_MS);
+    const uint32_t ramp_ms = uint32_t(ramp_param_ms);
+    const uint32_t since_fw_ms = AP_HAL::millis() - tiltrotor.fw_entry_ms;
+    if (since_fw_ms >= ramp_ms) {
+        return false;
+    }
+    float lim = linear_interpolate(plane.g.level_roll_limit * 100, roll_limit_cd,
+                                   since_fw_ms, 0, ramp_ms);
     roll_limit_cd = MIN(roll_limit_cd, int32_t(lim));
     return true;
 }
