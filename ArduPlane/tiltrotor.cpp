@@ -96,56 +96,18 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("FWGAIN", 12, Tiltrotor, vectoring_gain_fw, 0),
 
-    // @Param: BTDLY_MS
-    // @DisplayName: Back transition delay for running fixed wing controller
-    // @Description: How long, after the Q_TILT_FWHLD_MS throttle hold period ends, to blend from the held fixed wing throttle to the active VTOL controller's commanded throttle following a backtransition into any VTOL mode    // @Range: 0 10000
-    // @User: Standard
-    AP_GROUPINFO("BTDLY_MS", 13, Tiltrotor, back_trans_delay_ms, 1000),
-
-    // @Param: FWHLD_MS
-    // @DisplayName: Fixed wing throttle hold time after back transition
-    // @Description: How long to hold the last fixed wing throttle steady after a backtransition into any VTOL mode, before blending to the active VTOL controller's commanded throttle over Q_TILT_BTDLY_MS    // @Range: 0 10000
-    // @User: Standard
-    AP_GROUPINFO("FWHLD_MS", 14, Tiltrotor, fw_throttle_hold_ms, 500),
+    // 13 and 14 were BTDLY_MS and FWHLD_MS, the dual axis back transition
+    // throttle hold and blend times. Do not reuse
 
     // @Param: FWHLD_EN
-    // @DisplayName: Fixed wing controller hold enable
-    // @Description: Enable/Disable for running fixed wing controller during Q_TILT_FWHLD_MS in backtransition
+    // @DisplayName: Fixed wing yaw control during back transition
+    // @Description: Dual axis tiltrotor: run the fixed wing yaw controller on the rudder through the back transition, until airspeed falls below AIRSPEED_MIN
     // @Values: 0:Disabled,1:Enabled
     // @User: Standard
     AP_GROUPINFO("FWHLD_EN", 15, Tiltrotor, fw_control_hold_en, 0),
 
-    // @Param: THR_BT
-    // @DisplayName: Backtransition hold throttle
-    // @Description: Fixed throttle percentage to hold during the Q_TILT_FWHLD_MS hold window after a backtransition into VTOL flight, instead of holding the last fixed wing throttle
-    // @Units: %
-    // @Range: 0 100
-    // @User: Standard
-    AP_GROUPINFO("THR_BT", 16, Tiltrotor, back_trans_hold_throttle, 30),
-
-    // @Param: THR_FT
-    // @DisplayName: Forward transition hold throttle
-    // @Description: Fixed throttle percentage to hold during the Q_TILT_FTHLD_MS hold window at the start of a forward transition (dual axis tiltrotor), before blending to the FBWA/commanded throttle over Q_TILT_FTBLD_MS. Applies regardless of the Q_FTRANS_MODE used to complete the transition.
-    // @Units: %
-    // @Range: 0 100
-    // @User: Standard
-    AP_GROUPINFO("THR_FT", 17, Tiltrotor, fwd_trans_hold_throttle, 30),
-
-    // @Param: FTHLD_MS
-    // @DisplayName: Forward transition throttle hold time
-    // @Description: How long to hold the Q_TILT_THR_FT throttle steady at the start of a forward transition (dual axis tiltrotor), before blending to the FBWA/commanded throttle over Q_TILT_FTBLD_MS
-    // @Units: ms
-    // @Range: 0 10000
-    // @User: Standard
-    AP_GROUPINFO("FTHLD_MS", 18, Tiltrotor, fwd_trans_hold_ms, 500),
-
-    // @Param: FTBLD_MS
-    // @DisplayName: Forward transition throttle blend time
-    // @Description: How long, after the Q_TILT_FTHLD_MS throttle hold period ends, to blend from the held Q_TILT_THR_FT throttle to the FBWA/commanded throttle during a forward transition (dual axis tiltrotor)
-    // @Units: ms
-    // @Range: 0 10000
-    // @User: Standard
-    AP_GROUPINFO("FTBLD_MS", 19, Tiltrotor, fwd_trans_blend_ms, 1000),
+    // 16 to 19 were THR_BT, THR_FT, FTHLD_MS and FTBLD_MS, the dual axis
+    // time based transition throttle hold and blend. Do not reuse
 
     // @Param: HVPOW
     // @DisplayName: Tiltrotor vector thrust gain power in hover
@@ -513,14 +475,15 @@ void Tiltrotor::write_log()
         LOG_PACKET_HEADER_INIT(LOG_TILT_MSG),
         time_us      : AP_HAL::micros64(),
         current_tilt : current_tilt * 90.0,
-        backtrans_elapsed_ms : dual_axis_transition ? dual_axis_transition->backtrans_elapsed_ms : 0,
-        fw_throttle  : last_fw_throttle,
-        pilot_throttle : dual_axis_transition ? dual_axis_transition->backtrans_pilot_throttle : 0,
-        blend_throttle : dual_axis_transition ? dual_axis_transition->backtrans_blend_throttle : 0,
-        fwdtrans_elapsed_ms : dual_axis_transition ? dual_axis_transition->fwdtrans_elapsed_ms : 0,
-        fwdtrans_commanded_throttle : dual_axis_transition ? dual_axis_transition->fwdtrans_commanded_throttle : 0,
-        fwdtrans_blend_throttle : dual_axis_transition ? dual_axis_transition->fwdtrans_blend_throttle : 0,
+        stage        : dual_axis_transition ? uint8_t(dual_axis_transition->get_stage()) : uint8_t(0),
+        airspeed     : plane.logger.quiet_nanf(),
+        target_airspeed : float(plane.aparm.airspeed_min),
+        trans_throttle : dual_axis_transition ? dual_axis_transition->trans_throttle_pct : 0,
     };
+    float aspeed;
+    if (plane.ahrs.airspeed_estimate(aspeed)) {
+        pkt.airspeed = aspeed;
+    }
 
     if (type != TILT_TYPE_VECTORED_YAW) {
         // Left and right tilt are invalid
@@ -858,13 +821,13 @@ void Tiltrotor::dual_axis_output(void)
     static_cast<AP_MotorsTiltrotorDualAxis*>(motors)->set_elbow_tilt_angle(elbow_position);
     // motors is guaranteed to be an AP_MotorsTiltrotorDualAxis instance here:
     // quadplane.cpp only allocates that class when type == TILT_TYPE_DUAL_AXIS
-
-    // VTOL controller mixer
-    if (quadplane.in_vtol_mode() || quadplane.assisted_flight) {
-        run_vtol_mixer();
-    }
-    else{
+    // the VTOL mixer runs in VTOL flight and through both transitions,
+    // the FW mixer only once the forward transition has reached
+    // AIRSPEED_MIN
+    if (dual_axis_transition->get_stage() == Tiltrotor_Transition_DualAxis::Stage::FW) {
         run_fw_mixer();
+    } else {
+        run_vtol_mixer();
     }
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft,  axis1_pos);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, axis1_pos);
@@ -960,18 +923,14 @@ void Tiltrotor_Transition_DualAxis::set_stage(Stage new_stage)
     case Stage::VTOL:
         gcs().send_text(MAV_SEVERITY_INFO, "Back trans done");
         break;
-    case Stage::BACK_HOLD:
-        gcs().send_text(MAV_SEVERITY_INFO, "Back trans: throttle hold%s",
+    case Stage::BACK:
+        gcs().send_text(MAV_SEVERITY_INFO, "Back trans: slowing to %.1f m/s%s",
+                         float(plane.aparm.airspeed_min),
                          tiltrotor.fw_control_hold_en > 0 ? " (FW yaw ctrl)" : "");
         break;
-    case Stage::BACK_BLEND:
-        gcs().send_text(MAV_SEVERITY_INFO, "Back trans: throttle blend");
-        break;
-    case Stage::FWD_HOLD:
-        gcs().send_text(MAV_SEVERITY_INFO, "Fwd trans: throttle hold");
-        break;
-    case Stage::FWD_BLEND:
-        gcs().send_text(MAV_SEVERITY_INFO, "Fwd trans: throttle blend");
+    case Stage::FWD:
+        gcs().send_text(MAV_SEVERITY_INFO, "Fwd trans: waiting for %.1f m/s",
+                         float(plane.aparm.airspeed_min));
         break;
     case Stage::FW:
         gcs().send_text(MAV_SEVERITY_INFO, "Fwd trans done");
@@ -979,37 +938,30 @@ void Tiltrotor_Transition_DualAxis::set_stage(Stage new_stage)
     }
 }
 
+bool Tiltrotor_Transition_DualAxis::airspeed_reached() const
+{
+    float aspeed;
+    return plane.ahrs.airspeed_estimate(aspeed) && aspeed >= plane.aparm.airspeed_min;
+}
+
 /*
   forward-side driver, called every loop from QuadPlane::update() while
-  !in_vtol_mode(). Advances FWD_HOLD -> FWD_BLEND -> FW purely by elapsed
-  time against Q_TILT_FTHLD_MS/FTBLD_MS, started on the VTOL->FW edge --
-  no airspeed-wait involved.
+  !in_vtol_mode(). Starts FWD on the VTOL->FW edge and completes to FW once
+  airspeed reaches AIRSPEED_MIN. Without an airspeed estimate it stays in
+  FWD, on the VTOL mixer.
  */
 void Tiltrotor_Transition_DualAxis::update()
 {
-    const uint32_t now = AP_HAL::millis();
-
-    if (stage == Stage::VTOL || stage == Stage::BACK_HOLD || stage == Stage::BACK_BLEND) {
+    if (stage == Stage::VTOL || stage == Stage::BACK) {
         // first tick since leaving VTOL mode: start a fresh forward transition
-        fwd_trans_start_ms = now;
-        back_trans_start_ms = 0;
-        set_stage(Stage::FWD_HOLD);
+        set_stage(Stage::FWD);
     }
 
-    const uint32_t hold_ms = uint32_t(tiltrotor.fwd_trans_hold_ms);
-    const uint32_t blend_ms = uint32_t(tiltrotor.fwd_trans_blend_ms);
-    const uint32_t elapsed_ms = now - fwd_trans_start_ms;
-
-    if (elapsed_ms < hold_ms) {
-        set_stage(Stage::FWD_HOLD);
-    } else if (elapsed_ms < hold_ms + blend_ms) {
-        set_stage(Stage::FWD_BLEND);
-    } else {
+    if (stage == Stage::FWD && airspeed_reached()) {
         set_stage(Stage::FW);
-        fwd_trans_start_ms = 0;
     }
 
-    quadplane.assisted_flight = (stage == Stage::FWD_HOLD || stage == Stage::FWD_BLEND);
+    quadplane.assisted_flight = (stage == Stage::FWD);
 
     if (stage != Stage::FW) {
         // TECS uses a synthetic airspeed through the forward transition:
@@ -1023,41 +975,39 @@ void Tiltrotor_Transition_DualAxis::update()
 
 /*
   VTOL-side driver, called every loop from QuadPlane::update() while
-  in_vtol_mode(). Advances BACK_HOLD -> BACK_BLEND -> VTOL purely by
-  elapsed time against Q_TILT_FWHLD_MS/BTDLY_MS, started on the FW->VTOL
-  edge.
+  in_vtol_mode(). Starts BACK on the FW->VTOL edge and completes to VTOL
+  once airspeed falls below AIRSPEED_MIN, or at once without an airspeed
+  estimate or with AIRSPEED_MIN at zero.
  */
 void Tiltrotor_Transition_DualAxis::VTOL_update()
 {
     const uint32_t now = AP_HAL::millis();
 
-    if (stage == Stage::FW || stage == Stage::FWD_HOLD || stage == Stage::FWD_BLEND) {
+    if (stage == Stage::FW || stage == Stage::FWD) {
         if (last_fw_output_ms != 0 && (now - last_fw_output_ms) < FW_OUTPUT_TIMEOUT_MS) {
-            // first tick since leaving FW mode: start a fresh back transition
-            back_trans_start_ms = now;
-            fwd_trans_start_ms = 0;
-            set_stage(Stage::BACK_HOLD);
+            // first tick since leaving FW mode: start a fresh back
+            // transition, holding the current height
+            Vector3f rel_pos_ned;
+            back_trans_hgt_dem_cm = plane.ahrs.get_relative_position_NED_home(rel_pos_ned)
+                ? int32_t(-rel_pos_ned.z * 100) : 0;
+            set_stage(Stage::BACK);
         } else {
-            // no recent fixed wing outputs, so this is a boot or a forced
-            // stage reset rather than a back transition
+            // no recent fixed wing outputs, so this is a boot, a forced
+            // stage reset or a forward transition abandoned before reaching
+            // AIRSPEED_MIN, rather than a back transition
             stage = Stage::VTOL;
-            back_trans_start_ms = 0;
-            fwd_trans_start_ms = 0;
             return;
         }
     }
 
-    const uint32_t hold_ms = uint32_t(tiltrotor.fw_throttle_hold_ms);
-    const uint32_t blend_ms = uint32_t(tiltrotor.back_trans_delay_ms);
-    const uint32_t elapsed_ms = now - back_trans_start_ms;
-
-    if (elapsed_ms < hold_ms) {
-        set_stage(Stage::BACK_HOLD);
-    } else if (elapsed_ms < hold_ms + blend_ms) {
-        set_stage(Stage::BACK_BLEND);
-    } else {
-        set_stage(Stage::VTOL);
-        back_trans_start_ms = 0;
+    if (stage == Stage::BACK) {
+        // with AIRSPEED_MIN at zero no airspeed is below it, so there is
+        // nothing to slow to and the back transition completes at once
+        if (plane.aparm.airspeed_min > 0 && airspeed_reached()) {
+            update_back_trans_tecs();
+        } else {
+            set_stage(Stage::VTOL);
+        }
     }
 
     if (hold_level_attitude() && quadplane.pos_control->is_active_xy()) {
@@ -1073,16 +1023,36 @@ void Tiltrotor_Transition_DualAxis::VTOL_update()
 }
 
 /*
+  Q-modes do not run TECS, so run it here through the back transition.
+  Pitch is held level, so its limits are pinned at zero to keep its pitch
+  loop from winding up, and only its throttle is used.
+ */
+void Tiltrotor_Transition_DualAxis::update_back_trans_tecs()
+{
+    plane.TECS_controller.update_50hz();
+    plane.TECS_controller.set_pitch_max(0);
+    plane.TECS_controller.set_pitch_min(0);
+    plane.TECS_controller.update_pitch_throttle(back_trans_hgt_dem_cm,
+                                                plane.aparm.airspeed_min * 100,
+                                                AP_FixedWing::FlightStage::NORMAL,
+                                                0,
+                                                0,
+                                                0,
+                                                plane.tecs_hgt_afe(),
+                                                plane.aerodynamic_load_factor,
+                                                plane.g.pitch_trim.get());
+    back_trans_throttle_pct = constrain_float(plane.TECS_controller.get_throttle_demand(), 0, 100);
+}
+
+/*
   true while a transition stage holds roll and pitch at zero and the yaw
   rate at zero, for both the VTOL and the fixed wing controllers
  */
 bool Tiltrotor_Transition_DualAxis::hold_level_attitude() const
 {
     switch (stage) {
-    case Stage::FWD_HOLD:
-    case Stage::FWD_BLEND:
-    case Stage::BACK_HOLD:
-    case Stage::BACK_BLEND:
+    case Stage::FWD:
+    case Stage::BACK:
         return true;
     case Stage::VTOL:
     case Stage::FW:
@@ -1094,15 +1064,11 @@ bool Tiltrotor_Transition_DualAxis::hold_level_attitude() const
 void Tiltrotor_Transition_DualAxis::restart()
 {
     stage = Stage::VTOL;
-    fwd_trans_start_ms = 0;
-    back_trans_start_ms = 0;
 }
 
 void Tiltrotor_Transition_DualAxis::force_transition_complete()
 {
     stage = Stage::FW;
-    fwd_trans_start_ms = 0;
-    back_trans_start_ms = 0;
     set_last_fw_pitch();
     quadplane.assist.reset();
 }
@@ -1119,11 +1085,9 @@ MAV_VTOL_STATE Tiltrotor_Transition_DualAxis::get_mav_vtol_state() const
     switch (stage) {
     case Stage::VTOL:
         return MAV_VTOL_STATE_MC;
-    case Stage::BACK_HOLD:
-    case Stage::BACK_BLEND:
+    case Stage::BACK:
         return MAV_VTOL_STATE_TRANSITION_TO_MC;
-    case Stage::FWD_HOLD:
-    case Stage::FWD_BLEND:
+    case Stage::FWD:
         return MAV_VTOL_STATE_TRANSITION_TO_FW;
     case Stage::FW:
         return MAV_VTOL_STATE_FW;
@@ -1132,128 +1096,59 @@ MAV_VTOL_STATE Tiltrotor_Transition_DualAxis::get_mav_vtol_state() const
 }
 
 /*
-  run the FW yaw controller during the BACK_HOLD window when
-  Q_TILT_FWHLD_EN is set. Q-modes centre the rudder rather than calling
-  stabilize_yaw(), and dual_axis_output() runs after them, so this is what
-  puts the rudder under yaw control for the hold.
+  run the FW yaw controller through the BACK stage when Q_TILT_FWHLD_EN is
+  set. Q-modes centre the rudder rather than calling stabilize_yaw(), and
+  dual_axis_output() runs after them, so this is what puts the rudder
+  under yaw control for the back transition.
  */
 void Tiltrotor_Transition_DualAxis::update_yaw_authority() const
 {
-    if (stage == Stage::BACK_HOLD && tiltrotor.fw_control_hold_en > 0) {
+    if (stage == Stage::BACK && tiltrotor.fw_control_hold_en > 0) {
         plane.stabilize_yaw();
     }
 }
 
 /*
-  after a backtransition: hold the Q_TILT_THR_BT throttle steady for
-  Q_TILT_FWHLD_MS, then linearly blend from that throttle to the pilot's
-  vertical throttle demand over the following Q_TILT_BTDLY_MS. Both
-  throttles are 0-100 percent.
-*/
-float Tiltrotor_Transition_DualAxis::get_back_trans_throttle(uint32_t now, float pilot_throttle_pct)
-{
-    backtrans_pilot_throttle = pilot_throttle_pct;
-
-    const uint32_t hold_ms = uint32_t(tiltrotor.fw_throttle_hold_ms);
-    const uint32_t delay_ms = uint32_t(tiltrotor.back_trans_delay_ms);
-    if (back_trans_start_ms == 0 || (hold_ms == 0 && delay_ms == 0)) {
-        backtrans_elapsed_ms = 0;
-        backtrans_blend_throttle = pilot_throttle_pct;
-        return pilot_throttle_pct;
-    }
-
-    const float hold_throttle_pct = tiltrotor.back_trans_hold_throttle;
-
-    backtrans_elapsed_ms = now - back_trans_start_ms;
-
-    if (backtrans_elapsed_ms < hold_ms) {
-        // still in the throttle hold period, keep it steady at the configured hold throttle
-        backtrans_blend_throttle = hold_throttle_pct;
-        return backtrans_blend_throttle;
-    }
-
-    const uint32_t blend_elapsed_ms = backtrans_elapsed_ms - hold_ms;
-    const float progress = (delay_ms == 0) ? 1.0f : constrain_float(blend_elapsed_ms / (float)delay_ms, 0.0f, 1.0f);
-    backtrans_blend_throttle = hold_throttle_pct + (pilot_throttle_pct - hold_throttle_pct) * progress;
-    return backtrans_blend_throttle;
-}
-
-/*
-  at the start of a forward transition: hold the Q_TILT_THR_FT throttle
-  steady for Q_TILT_FTHLD_MS, then linearly blend to the FBWA/commanded
-  throttle over the following Q_TILT_FTBLD_MS. This depends only on the
-  forward transition being active, not on Q_FTRANS_MODE.
-*/
-float Tiltrotor_Transition_DualAxis::get_fwd_trans_throttle(uint32_t now, float commanded_throttle_pct)
-{
-    fwdtrans_commanded_throttle = commanded_throttle_pct;
-
-    const uint32_t hold_ms = uint32_t(tiltrotor.fwd_trans_hold_ms);
-    const uint32_t blend_ms = uint32_t(tiltrotor.fwd_trans_blend_ms);
-    if (fwd_trans_start_ms == 0 || (hold_ms == 0 && blend_ms == 0)) {
-        fwdtrans_elapsed_ms = 0;
-        fwdtrans_blend_throttle = commanded_throttle_pct;
-        return commanded_throttle_pct;
-    }
-
-    const float hold_throttle_pct = tiltrotor.fwd_trans_hold_throttle;
-
-    fwdtrans_elapsed_ms = now - fwd_trans_start_ms;
-
-    if (fwdtrans_elapsed_ms < hold_ms) {
-        // still in the throttle hold period, keep it steady at the configured hold throttle
-        fwdtrans_blend_throttle = hold_throttle_pct;
-        return fwdtrans_blend_throttle;
-    }
-
-    const uint32_t blend_elapsed_ms = fwdtrans_elapsed_ms - hold_ms;
-    const float progress = (blend_ms == 0) ? 1.0f : constrain_float(blend_elapsed_ms / (float)blend_ms, 0.0f, 1.0f);
-    fwdtrans_blend_throttle = hold_throttle_pct + (commanded_throttle_pct - hold_throttle_pct) * progress;
-    return fwdtrans_blend_throttle;
-}
-
-/*
   run the controllers the current stage calls for and return the ESC
   throttle percentage to command. Called once per loop from
-  Tiltrotor::dual_axis_output(), which applies the throttle and drives the
-  tilt servos.
+  Tiltrotor::run_vtol_mixer(), so only outside the FW stage.
  */
 float Tiltrotor_Transition_DualAxis::update_controllers(float pilot_vtol_throttle_pct, float commanded_fw_throttle_pct)
 {
-    const uint32_t now = AP_HAL::millis();
-
     switch (stage) {
     case Stage::VTOL:
         // steady hover: QuadPlane::update() already ran the rate controller
         // this tick, so this pushes out that mix without recomputing it
         quadplane.motors_output(false);
-        return pilot_vtol_throttle_pct;
+        trans_throttle_pct = pilot_vtol_throttle_pct;
+        break;
 
-    case Stage::BACK_HOLD:
-    case Stage::BACK_BLEND: {
-        const float throttle_pct = get_back_trans_throttle(now, pilot_vtol_throttle_pct);
-        quadplane.hold_stabilize(throttle_pct * 0.01f);
+    case Stage::BACK:
+        // the multicopter attitude/rate controller holds level on the TECS
+        // throttle, which slows the vehicle to AIRSPEED_MIN
+        trans_throttle_pct = back_trans_throttle_pct;
+        quadplane.hold_stabilize(trans_throttle_pct * 0.01f);
         quadplane.motors_output(true);
         update_yaw_authority();
-        return throttle_pct;
-    }
+        break;
 
-    case Stage::FWD_HOLD:
-    case Stage::FWD_BLEND:
+    case Stage::FWD:
         // the multicopter attitude/rate controller runs through the forward
         // transition on the live throttle, and its own throttle output is
-        // discarded by dual_axis_output(). The hold and blend apply only to
-        // the ESC throttle sent to the boom motors
+        // discarded by dual_axis_output(). The ESCs get the FBWA/commanded
+        // throttle
         quadplane.hold_stabilize(pilot_vtol_throttle_pct * 0.01f);
         quadplane.motors_output(true);
-        return get_fwd_trans_throttle(now, commanded_fw_throttle_pct);
+        trans_throttle_pct = commanded_fw_throttle_pct;
+        break;
 
     case Stage::FW:
         quadplane.motors_output(true);
+        trans_throttle_pct = commanded_fw_throttle_pct;
         break;
     }
 
-    return commanded_fw_throttle_pct;
+    return trans_throttle_pct;
 }
 
 void Tiltrotor_Transition_DualAxis::set_last_fw_pitch(void)
@@ -1338,53 +1233,23 @@ bool Tiltrotor_Transition_DualAxis::set_VTOL_roll_pitch_limit(int32_t& roll_cd, 
 }
 
 /*
-  set FW pitch limits during the forward transition: a groundspeed gated
-  limit during FWD_HOLD, relaxing during FWD_BLEND.
+  level hold through the transition stages. Runs ahead of every mode's
+  run(), VTOL modes included, so this is the level hold for modes that set
+  nav_roll/pitch in update(). Once FW is reached the FW pitch limits are
+  the mode's own.
  */
 void Tiltrotor_Transition_DualAxis::set_FW_roll_pitch(int32_t& nav_pitch_cd, int32_t& nav_roll_cd)
 {
-    if (hold_level_attitude()) {
-        // runs ahead of every mode's run(), VTOL modes included, so this is
-        // the level hold for modes that set nav_roll/pitch in update()
-        nav_roll_cd = 0;
-        nav_pitch_cd = 0;
-        if (!quadplane.in_vtol_mode()) {
-            // keep TECS from winding up against a pitch it cannot have
-            plane.TECS_controller.set_pitch_max(0);
-            plane.TECS_controller.set_pitch_min(0);
-        }
+    if (!hold_level_attitude()) {
         return;
     }
-
-    if (quadplane.in_vtol_mode() || quadplane.in_vtol_airbrake()) {
-        return;
+    nav_roll_cd = 0;
+    nav_pitch_cd = 0;
+    if (!quadplane.in_vtol_mode()) {
+        // keep TECS from winding up against a pitch it cannot have
+        plane.TECS_controller.set_pitch_max(0);
+        plane.TECS_controller.set_pitch_min(0);
     }
-
-    if (stage == Stage::FW) {
-        return;
-    }
-
-    if (!plane.control_mode->does_auto_throttle()) {
-        // don't limit pitch when in manually controlled modes like FBWA, ACRO
-        return;
-    }
-
-    float max_pitch;
-    if (stage == Stage::FWD_HOLD) {
-        if (plane.ahrs.groundspeed() < 3.0) {
-            // until we have some ground speed limit to zero pitch
-            max_pitch = 0.0;
-        } else {
-            max_pitch = quadplane.transition_pitch_max;
-        }
-    } else {
-        max_pitch = (quadplane.transition_pitch_max+1.0)*2.0;
-    }
-
-    plane.TECS_controller.set_pitch_max(max_pitch);
-    plane.TECS_controller.set_pitch_min(-max_pitch);
-
-    nav_pitch_cd = constrain_int32(nav_pitch_cd, -max_pitch*100.0, max_pitch*100.0);
 }
 
 void Tiltrotor::run_vtol_mixer(void){
@@ -1485,10 +1350,6 @@ void Tiltrotor::run_fw_mixer(void){
         : plane.control_mode->does_auto_throttle()
         ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
         : plane.get_throttle_input(true);
-
-    // // remember the throttle we were using in FW flight so it can be
-    // // blended with the pilot's vertical throttle after a backtransition
-    // last_fw_throttle = throttle * 0.01f;
 
     const float rud_gain  = float(plane.g2.rudd_dt_gain) * 0.01f;
     const float rudder_dt = rud_gain * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);

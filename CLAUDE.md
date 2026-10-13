@@ -30,6 +30,8 @@ python3.8 Tools/autotest/autotest.py --no-configure --speedup=20 \
 - MAVProxy was installed into it with `pip install --no-deps --only-binary :all: MAVProxy`
   (the harness imports `MAVProxy.modules.lib.mp_util` unconditionally).
 - Windows python cannot run the harness (needs `pexpect`).
+- Under WSL/Linux the plain upstream flow also works: `./waf plane`, then
+  `python3 Tools/autotest/autotest.py --no-configure --speedup=20 test.QuadPlane.<Test>`.
 
 Two environment limitations, both pre-existing and unrelated to vehicle code:
 
@@ -60,21 +62,29 @@ machine's own state without downcasting.
 
 ### Dual axis stage machine
 
-`Stage`: `VTOL`, `BACK_HOLD`, `BACK_BLEND`, `FWD_HOLD`, `FWD_BLEND`, `FW`.
+`Stage`: `VTOL`, `BACK`, `FWD`, `FW`.
 
-Stages are sub-windows of a single elapsed-time timer started by a VTOL<->FW
-**mode edge** — there is no airspeed wait. `update()` drives the FW side,
-`VTOL_update()` the VTOL side; the edge is detected by the stage still holding
-a value from the other side.
+A VTOL<->FW **mode edge** starts a transition and **airspeed against
+`AIRSPEED_MIN`** (`aparm.airspeed_min`, formerly `ARSPD_FBW_MIN`) ends it.
+`update()` drives the FW side, `VTOL_update()` the VTOL side; the edge is
+detected by the stage still holding a value from the other side.
 
-- Forward: `Q_TILT_FTHLD_MS` hold at `Q_TILT_THR_FT`, then `Q_TILT_FTBLD_MS`
-  blend to the FBWA/commanded throttle.
-- Back: `Q_TILT_FWHLD_MS` hold at `Q_TILT_THR_BT`, then `Q_TILT_BTDLY_MS`
-  blend to the VTOL controller's demand.
+- Mixer selection in `dual_axis_output()` is by stage: the **FW mixer only in
+  `Stage::FW`**, the VTOL mixer in `VTOL`, `FWD` and `BACK`.
+- Forward: `FWD` until airspeed >= `AIRSPEED_MIN`, ESCs on the FBWA/commanded
+  throttle. No airspeed estimate means it stays in `FWD`.
+- Back: `BACK` until airspeed < `AIRSPEED_MIN`. Q-modes don't run TECS, so
+  `update_back_trans_tecs()` runs it (`update_50hz()` + `update_pitch_throttle()`)
+  with `AIRSPEED_MIN` as the airspeed target, the height at the edge as the
+  height target and pitch limits pinned to 0; its throttle feeds
+  `hold_stabilize()`. No airspeed estimate, or `AIRSPEED_MIN <= 0`, completes
+  it at once (AB-Mod/AB-v2 defaults set `AIRSPEED_MIN 0`).
+- The old time-based hold/blend (`Q_TILT_THR_FT/THR_BT/FTHLD_MS/FTBLD_MS/
+  FWHLD_MS/BTDLY_MS`, indices 13, 14, 16-19) is gone; don't reuse the indices.
 - A back transition starts **only if fixed wing outputs were driven within the
-  last 2 s** (`last_fw_output_ms`, set from `dual_axis_output()`). Without this,
-  the `Stage::FW` that `force_transition_complete()` leaves at boot reads as a
-  FW->VTOL edge and the first entry into a VTOL mode holds `Q_TILT_THR_BT`.
+  last 2 s** (`last_fw_output_ms`, set from `run_fw_mixer()`, so only in
+  `Stage::FW`). Without this, the `Stage::FW` that `force_transition_complete()`
+  leaves at boot reads as a FW->VTOL edge.
 
 `update_controllers()` is the single place that selects controllers per stage.
 It is called once per loop from `Tiltrotor::dual_axis_output()` and returns the
@@ -98,14 +108,15 @@ Consequences:
 - **No Q-mode calls `stabilize_yaw()`** (they centre the rudder instead; QRTL is
   the exception). So the transition can take yaw by calling it from
   `dual_axis_output()`, which runs later and overwrites the centred rudder.
-  This is how `Q_TILT_FWHLD_EN` works without touching any mode file.
+  This is how `Q_TILT_FWHLD_EN` (FW yaw control through `BACK`) works
+  without touching any mode file.
 - To **command** roll/pitch from a transition stage, write `nav_roll_cd`/
   `nav_pitch_cd` from `set_VTOL_roll_pitch_limit()` (VTOL side, called by
   QLOITER/QRTL/QLAND/AUTO/GUIDED after the position controller and before
   `stabilize_*`) or `set_FW_roll_pitch()` (FW side, called before every mode's
   `run()`). `dual_axis_output()` is too late in the tick for that.
 - **Level hold during transitions:** `Transition::hold_level_attitude()` is
-  true in `FWD_HOLD`/`FWD_BLEND`/`BACK_HOLD`/`BACK_BLEND`. Roll/pitch are
+  true in `FWD`/`BACK`. Roll/pitch are
   zeroed in `set_FW_roll_pitch()` (runs before every mode's `run()`, VTOL
   modes included, so it covers modes that set `nav_*` in `update()`) and in
   `set_VTOL_roll_pitch_limit()` (modes that set `nav_*` in `run()`). Yaw rate
@@ -145,13 +156,13 @@ Consequences:
 
 ## Logging
 
-- Stage changes emit `gcs().send_text()` ("Fwd trans: throttle hold",
-  "Back trans: throttle hold (FW yaw ctrl)", "Fwd trans done", …). These also
+- Stage changes emit `gcs().send_text()` ("Fwd trans: waiting for 9.0 m/s",
+  "Back trans: slowing to 9.0 m/s (FW yaw ctrl)", "Fwd trans done", …). These also
   land in the `.bin` `MSG` log, so they double as searchable markers.
 - `get_log_transition_state()` feeds the generic quadplane log's
   `transition_state` field, so `Stage` is logged without extra plumbing.
-- `TILT` log carries the stage timers and throttles. All five throttle fields
-  are percent; `FWThr` is the 0-1 last FW throttle.
+- `TILT` log carries `Stg` (stage), `Aspd`, `TAspd` (`AIRSPEED_MIN`) and
+  `TrThr`, the ESC throttle from the transition controller in percent.
 - Debug messages `PHID`/`PHIF`/`PITE` cover axis 2 vectoring, `QTHR` traces
   `k_throttle` through the pipeline.
 
@@ -162,9 +173,9 @@ Consequences:
 - `VTOLTakeoffTransitionRTL` — mission flying VTOL takeoff, forward transition,
   VTOL RTL back transition, asserting `MAV_VTOL_STATE` at each step.
 - `DualAxisTiltrotorTransitionStages` — dual axis stage machine on the ground
-  (no SITL flight model exists for `Q_TILT_TYPE=4`), driven by mode edges:
-  VTOL-to-VTOL runs no transition, each direction reports hold/blend/done,
-  `Q_TILT_FWHLD_EN` adds the FW yaw hold, zeroed timers complete immediately.
+  (no SITL flight model exists for `Q_TILT_TYPE=4`), driven by mode edges and
+  by toggling `AIRSPEED_MIN` around the ~0 ground airspeed: forward waits
+  for it, back completes below it, `AIRSPEED_MIN 0` completes both at once.
 
 Both tests found real defects when first run: the null dereference on live
 `Q_TILT_TYPE` change, the phantom boot back transition, and the tailsitter

@@ -49,8 +49,9 @@ void ModeQStabilize::run()
 
     float pilot_throttle_scaled = quadplane.get_pilot_throttle();
 
-    // a dual axis tiltrotor's backtransition throttle hold and blend, and its
-    // Q_TILT_FWHLD_EN yaw handling, are applied for every VTOL mode by
+    // a dual axis tiltrotor's back transition throttle, TECS slowing to
+    // AIRSPEED_MIN, and its Q_TILT_FWHLD_EN yaw handling, are applied for
+    // every VTOL mode by
     // Tiltrotor_Transition_DualAxis from Tiltrotor::dual_axis_output()
 
     plane.quadplane.assign_tilt_to_fwd_thr();

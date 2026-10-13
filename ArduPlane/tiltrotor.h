@@ -95,37 +95,9 @@ public:
     AP_Float vectored_hover_power;
     AP_Float vectoring_gain_fw;
 
-    // Time to blend from held FW throttle to pilot throttle after the
-    // fw_throttle_hold_ms hold period, following a backtransition into
-    // VTOL mode (dual axis tiltrotor)
-    AP_Float back_trans_delay_ms;
-
-    // Time to hold the last FW throttle steady after backtransition into
-    // VTOL mode, before blending to pilot throttle over back_trans_delay_ms
-    // (dual axis tiltrotor)
-    AP_Float fw_throttle_hold_ms;
-
-    // Enable/Disable to hold fixed wing controller during fw_throttle_hold_ms in back transition
+    // Run the fixed wing yaw controller on the rudder through the dual
+    // axis back transition
     AP_Int8 fw_control_hold_en;
-
-    // Fixed throttle (percent) to hold during fw_throttle_hold_ms after a
-    // backtransition, instead of the last fixed wing throttle
-    AP_Float back_trans_hold_throttle;
-
-    // Fixed throttle (percent) to hold during fwd_trans_hold_ms at the start
-    // of a forward transition (dual axis tiltrotor), before blending to the
-    // FBWA/commanded throttle over fwd_trans_blend_ms
-    AP_Float fwd_trans_hold_throttle;
-
-    // Time to hold fwd_trans_hold_throttle steady at the start of a forward
-    // transition into fixed wing flight, before blending to the
-    // FBWA/commanded throttle (dual axis tiltrotor)
-    AP_Float fwd_trans_hold_ms;
-
-    // Time to blend from the held fwd_trans_hold_throttle to the
-    // FBWA/commanded throttle after the fwd_trans_hold_ms hold period,
-    // during a forward transition (dual axis tiltrotor)
-    AP_Float fwd_trans_blend_ms;
 
     float current_tilt;
     float current_throttle;
@@ -153,13 +125,10 @@ private:
         float current_tilt;
         float front_left_tilt;
         float front_right_tilt;
-        uint32_t backtrans_elapsed_ms;
-        float fw_throttle;
-        float pilot_throttle;
-        float blend_throttle;
-        uint32_t fwdtrans_elapsed_ms;
-        float fwdtrans_commanded_throttle;
-        float fwdtrans_blend_throttle;
+        uint8_t stage;
+        float airspeed;
+        float target_airspeed;
+        float trans_throttle;
     };
 
     bool setup_complete;
@@ -177,9 +146,6 @@ private:
     // refences for convenience
     QuadPlane& quadplane;
     AP_MotorsMulticopter*& motors;
-
-    // throttle (0 to 1) that was last commanded in fw control mode
-    float last_fw_throttle = 0;
 
     // k_throttle value written by AP_MotorsTiltrotorDualAxis's collective-
     // thrust actuator output inside dual_axis_output(), before it gets
@@ -230,10 +196,12 @@ private:
 /*
   Transition controller for dual axis tiltrotors (Q_TILT_TYPE=DualAxis).
 
-  Runs its own stage machine rather than SLT_Transition's airspeed wait:
-  each transition is a sequence of timed stages started by a VTOL<->FW mode
-  edge, with the stage durations coming from Q_TILT_FTHLD_MS/FTBLD_MS
-  forwards and Q_TILT_FWHLD_MS/BTDLY_MS back.
+  Runs its own stage machine, started by a VTOL<->FW mode edge and ended
+  by airspeed against AIRSPEED_MIN. The VTOL mixer runs in every stage
+  except FW, so the forward transition flies on the VTOL mixer until
+  airspeed reaches AIRSPEED_MIN, and the back transition hands over from
+  the FW mixer at once while TECS, with AIRSPEED_MIN as its airspeed
+  target, sets the throttle until airspeed falls below it.
 
   It also selects, per stage, which controllers drive the vehicle and what
   throttle they use: the multicopter attitude/rate controller through
@@ -261,17 +229,14 @@ public:
     Tiltrotor_Transition_DualAxis(QuadPlane& _quadplane, AP_MotorsMulticopter*& _motors, Tiltrotor& _tiltrotor):
         Transition(_quadplane, _motors), tiltrotor(_tiltrotor) {}
 
-    // stages of the dual axis forward and back transition. Each *_HOLD and
-    // *_BLEND pair is a sub-window of one elapsed-time timer, sequenced by
-    // update()/VTOL_update() and given its controllers and throttle by
+    // stages of the dual axis forward and back transition, sequenced by
+    // update()/VTOL_update() and given their controllers and throttle by
     // update_controllers()
     enum class Stage : uint8_t {
-        VTOL,        // steady hover, no transition active
-        BACK_HOLD,   // just left FW: hold throttle for Q_TILT_FWHLD_MS, optional FW yaw authority
-        BACK_BLEND,  // blend held throttle -> VTOL controller's demand over Q_TILT_BTDLY_MS
-        FWD_HOLD,    // just left VTOL: hold throttle for Q_TILT_FTHLD_MS while tilt ramps forward
-        FWD_BLEND,   // blend held throttle -> FBWA/commanded throttle over Q_TILT_FTBLD_MS
-        FW,          // transition complete, pure fixed wing
+        VTOL,   // steady hover, no transition active
+        BACK,   // just left FW: VTOL mixer, TECS holds AIRSPEED_MIN until airspeed drops below it
+        FWD,    // just left VTOL: VTOL mixer until airspeed reaches AIRSPEED_MIN
+        FW,     // transition complete, FW mixer
     };
     Stage get_stage() const { return stage; }
 
@@ -282,7 +247,7 @@ public:
     bool complete() const override { return stage == Stage::FW; }
     void restart() override;
     uint8_t get_log_transition_state() const override { return static_cast<uint8_t>(stage); }
-    bool active_frwd() const override { return stage == Stage::FWD_HOLD || stage == Stage::FWD_BLEND; }
+    bool active_frwd() const override { return stage == Stage::FWD; }
     bool show_vtol_view() const override;
     MAV_VTOL_STATE get_mav_vtol_state() const override;
     bool set_VTOL_roll_pitch_limit(int32_t& roll_cd, int32_t& pitch_cd) override;
@@ -306,28 +271,26 @@ private:
 
     void set_stage(Stage new_stage);
 
-    // hold the Q_TILT_THR_BT throttle steady for Q_TILT_FWHLD_MS, then
-    // linearly blend to the pilot's vertical throttle demand over the
-    // following Q_TILT_BTDLY_MS
-    float get_back_trans_throttle(uint32_t now, float pilot_throttle_pct);
+    // true if the airspeed estimate is at or above AIRSPEED_MIN, false
+    // when there is no estimate
+    bool airspeed_reached() const;
 
-    // hold the Q_TILT_THR_FT throttle steady for Q_TILT_FTHLD_MS, then
-    // linearly blend to the FBWA/commanded throttle over the following
-    // Q_TILT_FTBLD_MS
-    float get_fwd_trans_throttle(uint32_t now, float commanded_throttle_pct);
+    // runs TECS with AIRSPEED_MIN as the airspeed target and the height at
+    // the start of the back transition as the height target, and stores
+    // its throttle in back_trans_throttle_pct
+    void update_back_trans_tecs();
 
-    // runs the FW yaw controller during the BACK_HOLD window when
+    // runs the FW yaw controller during the BACK stage when
     // Q_TILT_FWHLD_EN is set, otherwise leaves the rudder as the active
     // Q-mode set it
     void update_yaw_authority() const;
 
     Stage stage = Stage::VTOL;
 
-    // start of each transition sequence, zero when that sequence is not
-    // running. Elapsed time against these and Q_TILT_FTHLD_MS/FTBLD_MS
-    // forwards, Q_TILT_FWHLD_MS/BTDLY_MS back, gives HOLD, BLEND or done
-    uint32_t fwd_trans_start_ms = 0;
-    uint32_t back_trans_start_ms = 0;
+    // TECS height target for the back transition, the height above home
+    // when it started, and the TECS throttle it produced (percent)
+    int32_t back_trans_hgt_dem_cm = 0;
+    float back_trans_throttle_pct = 0;
 
     // last time fixed wing outputs were driven, zero if never. A back
     // transition starts only while this is within FW_OUTPUT_TIMEOUT_MS, so
@@ -339,14 +302,9 @@ private:
     uint32_t last_fw_mode_ms = 0;
     int32_t last_fw_nav_pitch_cd = 0;
 
-    // state from the last throttle blend, read by Tiltrotor::write_log()
-    // for the TILT log
-    uint32_t backtrans_elapsed_ms = 0;
-    float backtrans_pilot_throttle = 0;
-    float backtrans_blend_throttle = 0;
-    uint32_t fwdtrans_elapsed_ms = 0;
-    float fwdtrans_commanded_throttle = 0;
-    float fwdtrans_blend_throttle = 0;
+    // ESC throttle returned by the last update_controllers(), percent, for
+    // the TILT log
+    float trans_throttle_pct = 0;
 
     Tiltrotor& tiltrotor;
 

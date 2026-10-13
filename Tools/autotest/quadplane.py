@@ -1800,8 +1800,8 @@ class AutoTestQuadPlane(vehicle_test_suite.TestSuite):
     def DualAxisTiltrotorTransitionStages(self):
         '''Check dual axis tiltrotor forward and back transition stage sequencing'''
         # Q_TILT_TYPE=DualAxis has no SITL flight model, so this exercises the
-        # stage machine on the ground, where it is driven only by VTOL<->FW
-        # mode edges and the Q_TILT_*_MS stage timers.
+        # stage machine on the ground, where it is driven by VTOL<->FW mode
+        # edges and by airspeed (about zero here) against AIRSPEED_MIN.
         self.set_parameters({
             "Q_ENABLE": 1,
             "Q_FRAME_CLASS": 10,   # tailsitter class, as dual axis uses
@@ -1809,13 +1809,8 @@ class AutoTestQuadPlane(vehicle_test_suite.TestSuite):
             "Q_TILT_ENABLE": 1,
             "Q_TILT_TYPE": 4,      # DualAxis
             "Q_TILT_MASK": 0,
-            "Q_TILT_FTHLD_MS": 500,
-            "Q_TILT_FTBLD_MS": 1000,
-            "Q_TILT_FWHLD_MS": 500,
-            "Q_TILT_BTDLY_MS": 1000,
-            "Q_TILT_THR_FT": 30,
-            "Q_TILT_THR_BT": 30,
             "Q_TILT_FWHLD_EN": 0,
+            "AIRSPEED_MIN": 10,
         })
         self.reboot_sitl()
         self.set_message_rate_hz(mavutil.mavlink.MAVLINK_MSG_ID_EXTENDED_SYS_STATE, 10)
@@ -1837,43 +1832,53 @@ class AutoTestQuadPlane(vehicle_test_suite.TestSuite):
                                        mavutil.mavlink.MAV_LANDED_STATE_ON_GROUND)
         self.context_clear_collection('STATUSTEXT')
 
-        self.start_subtest("Forward transition stages on a VTOL to FW mode edge")
-        self.context_collect('STATUSTEXT')
+        self.start_subtest("Forward transition waits for AIRSPEED_MIN")
         self.change_mode('FBWA')
-        self.wait_statustext("Fwd trans: throttle hold", check_context=True, timeout=10)
-        self.wait_statustext("Fwd trans: throttle blend", check_context=True, timeout=10)
+        self.wait_statustext("Fwd trans: waiting for", check_context=True, timeout=10)
+        self.delay_sim_time(3)
+        if self.statustext_in_collections("Fwd trans done"):
+            raise NotAchievedException("Forward transition completed below AIRSPEED_MIN")
+        self.assert_extended_sys_state(mavutil.mavlink.MAV_VTOL_STATE_TRANSITION_TO_FW,
+                                       mavutil.mavlink.MAV_LANDED_STATE_ON_GROUND)
+
+        self.start_subtest("Forward transition completes once airspeed reaches AIRSPEED_MIN")
+        self.set_parameter("AIRSPEED_MIN", 0)
         self.wait_statustext("Fwd trans done", check_context=True, timeout=10)
         self.assert_extended_sys_state(mavutil.mavlink.MAV_VTOL_STATE_FW,
                                        mavutil.mavlink.MAV_LANDED_STATE_ON_GROUND)
         self.context_clear_collection('STATUSTEXT')
 
-        self.start_subtest("Back transition stages on a FW to VTOL mode edge")
+        self.start_subtest("Back transition completes once airspeed is below AIRSPEED_MIN")
+        self.set_parameter("AIRSPEED_MIN", 10)
         self.change_mode('QHOVER')
-        self.wait_statustext("Back trans: throttle hold", check_context=True, timeout=10)
-        self.wait_statustext("Back trans: throttle blend", check_context=True, timeout=10)
+        self.wait_statustext("Back trans: slowing to", check_context=True, timeout=10)
         self.wait_statustext("Back trans done", check_context=True, timeout=10)
         self.assert_extended_sys_state(mavutil.mavlink.MAV_VTOL_STATE_MC,
                                        mavutil.mavlink.MAV_LANDED_STATE_ON_GROUND)
         self.context_clear_collection('STATUSTEXT')
 
-        self.start_subtest("Q_TILT_FWHLD_EN gives the FW yaw controller the hold window")
-        self.set_parameter("Q_TILT_FWHLD_EN", 1)
+        self.start_subtest("Q_TILT_FWHLD_EN gives the FW yaw controller the back transition")
+        self.set_parameters({
+            "Q_TILT_FWHLD_EN": 1,
+            "AIRSPEED_MIN": 0,
+        })
+        self.change_mode('FBWA')
+        self.wait_statustext("Fwd trans done", check_context=True, timeout=10)
+        self.context_clear_collection('STATUSTEXT')
+        self.set_parameter("AIRSPEED_MIN", 10)
+        self.change_mode('QHOVER')
+        self.wait_statustext("(FW yaw ctrl)", check_context=True, timeout=10)
+        self.wait_statustext("Back trans done", check_context=True, timeout=10)
+        self.context_clear_collection('STATUSTEXT')
+
+        self.start_subtest("AIRSPEED_MIN of zero completes the back transition at once")
+        self.set_parameter("AIRSPEED_MIN", 0)
         self.change_mode('FBWA')
         self.wait_statustext("Fwd trans done", check_context=True, timeout=10)
         self.context_clear_collection('STATUSTEXT')
         self.change_mode('QHOVER')
-        self.wait_statustext("(FW yaw ctrl)", check_context=True, timeout=10)
         self.wait_statustext("Back trans done", check_context=True, timeout=10)
-
-        self.start_subtest("Zeroed stage timers complete the transition immediately")
-        self.set_parameters({
-            "Q_TILT_FTHLD_MS": 0,
-            "Q_TILT_FTBLD_MS": 0,
-        })
-        self.context_clear_collection('STATUSTEXT')
-        self.change_mode('FBWA')
-        self.wait_statustext("Fwd trans done", check_context=True, timeout=10)
-        self.assert_extended_sys_state(mavutil.mavlink.MAV_VTOL_STATE_FW,
+        self.assert_extended_sys_state(mavutil.mavlink.MAV_VTOL_STATE_MC,
                                        mavutil.mavlink.MAV_LANDED_STATE_ON_GROUND)
 
     def MAV_CMD_NAV_TAKEOFF(self):
