@@ -45,10 +45,6 @@ public:
     void bicopter_output();
     void dual_axis_output();
 
-    // true in FW RTL on a dual axis tiltrotor, which then holds
-    // AIRSPEED_MIN so the back transition into QRTL starts slow
-    bool fw_rtl_at_min_airspeed() const;
-
     // most recent k_throttle value written by AP_MotorsTiltrotorDualAxis's
     // mixer inside dual_axis_output(), before it gets restored, for debug logging
     float get_last_dual_axis_mixout_throttle() const { return dual_axis_mixout_throttle; }

@@ -1036,17 +1036,6 @@ void Tiltrotor_Transition_DualAxis::VTOL_update()
 }
 
 /*
-  a dual axis tiltrotor's back transition does not wait for airspeed, so
-  FW RTL holds AIRSPEED_MIN to arrive slow for the switch to QRTL. In the
-  other fixed wing modes the pilot slows down before switching to a VTOL
-  mode.
- */
-bool Tiltrotor::fw_rtl_at_min_airspeed() const
-{
-    return plane.control_mode->mode_number() == plane.mode_rtl.mode_number();
-}
-
-/*
   true while a transition stage holds roll and pitch at zero and the yaw
   rate at zero, for both the VTOL and the fixed wing controllers
  */
