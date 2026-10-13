@@ -264,7 +264,7 @@ public:
     // Tiltrotor::dual_axis_output(), after the active Q-mode has set
     // plane.nav_roll_cd/nav_pitch_cd and its own attitude and throttle
     // targets. Both throttles are 0-100 percent.
-    float update_controllers(float pilot_vtol_throttle_pct, float commanded_fw_throttle_pct);
+    void update_controllers(float pilot_vtol_throttle_pct);
 
 
 private:

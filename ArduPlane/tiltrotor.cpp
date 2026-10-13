@@ -824,6 +824,9 @@ void Tiltrotor::dual_axis_output(void)
     // the VTOL mixer runs in VTOL flight and through both transitions,
     // the FW mixer only once the forward transition has reached
     // AIRSPEED_MIN
+    const float raw_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
+    dual_axis_transition->update_controllers(raw_throttle);
+    dual_axis_mixout_throttle = raw_throttle;
     if (dual_axis_transition->get_stage() == Tiltrotor_Transition_DualAxis::Stage::FW) {
         run_fw_mixer();
     } else {
@@ -1113,22 +1116,18 @@ void Tiltrotor_Transition_DualAxis::update_yaw_authority() const
   throttle percentage to command. Called once per loop from
   Tiltrotor::run_vtol_mixer(), so only outside the FW stage.
  */
-float Tiltrotor_Transition_DualAxis::update_controllers(float pilot_vtol_throttle_pct, float commanded_fw_throttle_pct)
+void Tiltrotor_Transition_DualAxis::update_controllers(float pilot_vtol_throttle_pct)
 {
     switch (stage) {
     case Stage::VTOL:
         // steady hover: QuadPlane::update() already ran the rate controller
         // this tick, so this pushes out that mix without recomputing it
         quadplane.motors_output(false);
-        trans_throttle_pct = pilot_vtol_throttle_pct;
         break;
 
     case Stage::BACK:
-        // the multicopter attitude/rate controller holds level on the TECS
-        // throttle, which slows the vehicle to AIRSPEED_MIN
-        trans_throttle_pct = back_trans_throttle_pct;
-        quadplane.hold_stabilize(trans_throttle_pct * 0.01f);
-        quadplane.motors_output(true);
+        quadplane.hold_stabilize(pilot_vtol_throttle_pct * 0.01f);
+        quadplane.motors_output(false);
         update_yaw_authority();
         break;
 
@@ -1139,16 +1138,12 @@ float Tiltrotor_Transition_DualAxis::update_controllers(float pilot_vtol_throttl
         // throttle
         quadplane.hold_stabilize(pilot_vtol_throttle_pct * 0.01f);
         quadplane.motors_output(true);
-        trans_throttle_pct = commanded_fw_throttle_pct;
         break;
 
     case Stage::FW:
         quadplane.motors_output(true);
-        trans_throttle_pct = commanded_fw_throttle_pct;
         break;
     }
-
-    return trans_throttle_pct;
 }
 
 void Tiltrotor_Transition_DualAxis::set_last_fw_pitch(void)
@@ -1253,38 +1248,7 @@ void Tiltrotor_Transition_DualAxis::set_FW_roll_pitch(int32_t& nav_pitch_cd, int
 }
 
 void Tiltrotor::run_vtol_mixer(void){
-    // runs that stage's controllers and returns its ESC throttle.
-    // raw_throttle is the pilot's vertical throttle demand in a VTOL mode,
-    // or the FBWA/TECS commanded throttle in a FW mode
-    const float raw_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
-    const float commanded_throttle_pct = plane.control_mode->does_auto_throttle()
-        ? raw_throttle : plane.get_throttle_input(true);
-    const float throttle = dual_axis_transition->update_controllers(raw_throttle, commanded_throttle_pct);
 
-    // AP_MotorsTiltrotorDualAxis::output_to_motors() reuses k_throttle as
-    // its own collective-thrust actuator output (see AP_MotorsTailsitter.cpp,
-    // which it inherits this behaviour from). Capture it for QTHR debug
-    // logging, then restore k_throttle so it keeps its normal
-    // fixed-wing-forward-throttle meaning for anything else that reads
-    // it this tick (e.g. AETR logging while hovering).
-    dual_axis_mixout_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
-    SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, throttle);
-
-    if (!quadplane.in_vtol_mode()) {
-        // in a FW transition the same blended value goes to the ESCs and
-        // back to k_throttle, so k_throttle and the AETR log carry what is
-        // actually sent to the motors. Throttle stays at zero while
-        // disarmed.
-        const float esc_throttle = plane.arming.is_armed_and_safety_off() ? throttle : 0.0f;
-        SRV_Channels::set_output_scaled(SRV_Channel::k_throttle,      esc_throttle);
-        SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(esc_throttle, 0, 100));
-        SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(esc_throttle, 0, 100));
-    }
-
-
-    // raw attitude-vectoring demand from AP_MotorsTiltrotorDualAxis's
-    // mixer (quadplane.motors_output() above), before this function's
-    // extra pitch feedback/blending is layered on top
     float tilt_left  = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
     float tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
     float tilt_left_adjusted = tilt_left;
@@ -1338,7 +1302,6 @@ void Tiltrotor::run_vtol_mixer(void){
 
 }
 void Tiltrotor::run_fw_mixer(void){
-    quadplane.motors_output(true);
     dual_axis_transition->note_fw_output();
 
     // never command motor throttle while disarmed: this branch runs
