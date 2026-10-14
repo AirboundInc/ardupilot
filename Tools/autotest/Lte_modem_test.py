@@ -31,10 +31,11 @@ STATIC_IP = "10.9.8.7"
 STATIC_PORT = 9999
 
 # ── Expected step order for the happy path ────────────────────────────
-# Allow CIPCLOSE between SOCKET_STATE and final CIPOPEN/CONNECTED
-ALLOWED_STEPS = {"ATI", "CMUX", "BAUD", "CPIN", "CONFIG", "CREG", "HTTPAUTH",
-                 "SIGNAL_GATE", "QENG", "SOCKET_STATE", "CIPOPEN",
-                 "CIPCLOSE", "CONNECTED"}
+# Allow CIPCLOSE between SOCKET_STATE and final CIPOPEN/CONNECTED. Step lines
+# only reach the GCS with LTE_OPTIONS Steps (64) set, which the CI parms do.
+ALLOWED_STEPS = {"RESET", "ATI", "CMUX", "BAUD", "CPIN", "CONFIG", "CREG",
+                 "SIMINFO", "HTTPAUTH", "SIGNAL_GATE", "QENG", "SOCKET_STATE",
+                 "CIPOPEN", "CIPCLOSE", "CONNECTED"}
 # ATI is not required even though it always runs first. AP_LTE starts from
 # init_ardupilot(), before any GCS link exists, so its "step ATI" statustext is
 # emitted into a void and dropped. Reaching BAUD proves ATI completed anyway:

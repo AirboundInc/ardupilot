@@ -120,9 +120,10 @@ jobs:
           # the Lua applet did. Until provisioning is wired up here this job
           # verifies the static-address path all the way to CONNECTED.
           # Two configurations, differing only in LTE_OPTIONS: bit 2 is NoMux.
-          # 6 = Signals|NoMux runs the plain transparent path; 2 = Signals
-          # leaves CMUX on, so the whole AT exchange is GSM 07.10 framed and
-          # the socket rides DLC 2. The mock speaks both.
+          # 70 = Steps|Signals|NoMux runs the plain transparent path; 66 =
+          # Steps|Signals leaves CMUX on, so the whole AT exchange is GSM 07.10
+          # framed and the socket rides DLC 2. The mock speaks both. Steps
+          # (64) puts the step changes the test checks on the GCS.
           cat <<'EOF' > lte_common.parm
           LTE_ENABLE 1
           LTE_SERPORT 0
@@ -136,9 +137,9 @@ jobs:
           LTE_SERVER_PORT 8080
           EOF
           cp lte_common.parm lte_nomux.parm
-          echo "LTE_OPTIONS 6" >> lte_nomux.parm
+          echo "LTE_OPTIONS 70" >> lte_nomux.parm
           cp lte_common.parm lte_cmux.parm
-          echo "LTE_OPTIONS 2" >> lte_cmux.parm
+          echo "LTE_OPTIONS 66" >> lte_cmux.parm
 
       - name: "LTE Happy Path: Boot SITL and Verify"
         shell: bash
