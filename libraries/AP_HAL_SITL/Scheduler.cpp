@@ -221,8 +221,18 @@ void Scheduler::sitl_end_atomic() {
     }
 }
 
+// exit status after a reboot command when started with --reboot-exit
+// (75 = EX_TEMPFAIL from sysexits.h: temporary failure, retry)
+#define SITL_REBOOT_EXIT_CODE 75
+
 void Scheduler::reboot(bool hold_in_bootloader)
 {
+    if (_sitlState->reboot_exit) {
+        // exit so the controlling process (sitl-backend) can log in again
+        // and start a new instance with the new login data
+        ::printf("SITL reboot: exiting with status %d\n", SITL_REBOOT_EXIT_CODE);
+        exit(SITL_REBOOT_EXIT_CODE);
+    }
     HAL_SITL::actually_reboot();
     abort();
 }

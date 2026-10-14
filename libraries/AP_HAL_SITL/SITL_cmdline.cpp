@@ -122,6 +122,7 @@ void SITL_State::_usage(void)
            "\t--craft-id ID            set custom storage craft ID (default AA-TST-<sysid>, e.g. AA-TST-0088)\n"
            "\t--craft-password PASS    set custom storage password\n"
            "\t--sign-enabled 0|1       telemetry to the data server: 1 signed (default), 0 unsigned\n"
+           "\t--reboot-exit            on a reboot command, exit with status 75 instead of restarting in place\n"
            "\t--uin UIN                set custom storage UIN (default UIN_DUMMY_<sysid>, e.g. UIN_DUMMY_088)\n"
            "\t--slave number           set the number of JSON slaves\n"
         );
@@ -291,6 +292,7 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         CMDLINE_AUTH_KEY,
         CMDLINE_AUTH_TIMESTAMP,
         CMDLINE_SIGN_ENABLED,
+        CMDLINE_REBOOT_EXIT,
         CMDLINE_SLAVE,
 #if STORAGE_USE_FLASH
         CMDLINE_SET_STORAGE_FLASH_ENABLED,
@@ -359,6 +361,7 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         {"auth-key",        true,   0, CMDLINE_AUTH_KEY},
         {"auth-timestamp",  true,   0, CMDLINE_AUTH_TIMESTAMP},
         {"sign-enabled",    true,   0, CMDLINE_SIGN_ENABLED},
+        {"reboot-exit",     false,  0, CMDLINE_REBOOT_EXIT},
         {"slave",           true,   0, CMDLINE_SLAVE},
 #if STORAGE_USE_FLASH
         {"set-storage-flash-enabled", true,   0, CMDLINE_SET_STORAGE_FLASH_ENABLED},
@@ -547,6 +550,9 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         case CMDLINE_AUTH_IP:
         case CMDLINE_AUTH_PORT:
         case CMDLINE_AUTH_TIMESTAMP:
+            break;
+        case CMDLINE_REBOOT_EXIT:
+            reboot_exit = true;
             break;
         // read by the Lua telemetry script via get_commandline_arg(): 1 = signed, 0 = unsigned
         case CMDLINE_SIGN_ENABLED:

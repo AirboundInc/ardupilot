@@ -540,6 +540,10 @@ protected:
     // saveable rate of each stream
     AP_Int16        *streamRates;
 
+    // true for a link on a scripting serial device (SCR_SDEV): its stream
+    // rates follow channel 0 rather than its own SRn_* parameters
+    bool            _scripting_link;
+
     void handle_heartbeat(const mavlink_message_t &msg) const;
 
     virtual bool persist_streamrates() const { return false; }

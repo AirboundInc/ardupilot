@@ -114,6 +114,16 @@ bool GCS_MAVLINK::set_signing_key(const uint8_t key[32], uint64_t initial_timest
         return false;
     }
 
+    // The signing timestamp is a counter that must only move forward: the
+    // receiver rejects packets that are not newer than the last one it saw.
+    // Persist the running counter first, then never seed below it, so a new
+    // key (e.g. after a re-login) continues the sequence instead of rewinding it.
+    save_signing_timestamp(true);
+    struct SigningKey old {};
+    if (signing_key_load(old) && old.timestamp > initial_timestamp) {
+        initial_timestamp = old.timestamp;
+    }
+
     struct SigningKey skey {};
     skey.magic = SIGNING_KEY_MAGIC;
     skey.timestamp = initial_timestamp;

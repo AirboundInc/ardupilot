@@ -51,6 +51,10 @@ public:
     const char *uin_arg = nullptr;
     char craft_id_derived[24];   // "AA-TST-0088" from --sysid when --craft-id is not given
     char uin_derived[24];        // "UIN_DUMMY_088" from --sysid when --uin is not given
+
+    // --reboot-exit: a reboot command exits with SITL_REBOOT_EXIT_CODE instead of
+    // re-running itself, so the controlling process can log in again and restart it
+    bool reboot_exit = false;
     int32_t sysid_arg = 0;
 
 

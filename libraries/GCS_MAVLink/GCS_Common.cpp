@@ -137,6 +137,7 @@ GCS_MAVLINK::GCS_MAVLINK(GCS_MAVLINK_Parameters &parameters,
     _port = &uart;
 
     streamRates = parameters.streamRates;
+    _scripting_link = false;
 }
 
 bool GCS_MAVLINK::init(uint8_t instance)
@@ -154,6 +155,9 @@ bool GCS_MAVLINK::init(uint8_t instance)
     if (uartstate == nullptr) {
         return false;
     }
+
+    // ports created by scripting (SCR_SDEV) take their stream rates from channel 0
+    _scripting_link = uartstate->idx >= AP_SERIALMANAGER_SCR_PORT_1;
 
     // and init the gcs instance
 
@@ -3537,6 +3541,10 @@ MAV_RESULT GCS_MAVLINK::handle_preflight_reboot(const mavlink_command_int_t &pac
     // when packet.param1 == 3 we reboot to hold in bootloader
     const bool hold_in_bootloader = is_equal(packet.param1, 3.0f);
 
+    // persist the signing counter now: a reboot must not lose the packets
+    // already sent, or the next session would start behind the receiver
+    save_signing_timestamp(true);
+
 #if AP_VEHICLE_ENABLED
     AP::vehicle()->reboot(hold_in_bootloader);  // not expected to return
 #else
@@ -6524,7 +6532,15 @@ bool GCS_MAVLINK::try_send_message(const enum ap_message id)
 
 uint16_t GCS_MAVLINK::get_interval_for_stream(GCS_MAVLINK::streams id) const
 {
-    const int16_t frate = streamRates[id].get();
+    // a scripting link inherits the stream rates of channel 0 (SR0_*)
+    const GCS_MAVLINK *src = this;
+    if (_scripting_link) {
+        const GCS_MAVLINK *ch0 = gcs().chan(0);
+        if (ch0 != nullptr) {
+            src = ch0;
+        }
+    }
+    const int16_t frate = src->streamRates[id].get();
     if (frate == 0) {
         return 0;
     }
