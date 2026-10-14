@@ -5,7 +5,7 @@ local para_ahrs_pitch_threshold_min = -50
 
 -- 1. SETUP PARAMETER TABLE
 local KEY = 110
-assert(param:add_table(KEY, "AUTOB_", 16), "AUTOB table failed")
+assert(param:add_table(KEY, "AUTOB_", 17), "AUTOB table failed")
 
 -- 2. ADD PARAMETERS
 assert(param:add_param(KEY, 1, "PIT_LIM",  50),  'could not add AUTOB_PIT_LIM')   -- ATT pitch(VTOL frame) threshold to enter bailout (deg)
@@ -24,6 +24,7 @@ assert(param:add_param(KEY, 13, "DBG_EN", 1), 'could not add AUTOB_DBG_EN')  -- 
 assert(param:add_param(KEY, 14, "PRED_INT", 1000), 'could not add AUTOB_PRED_INT')  -- Rate based VTOL pitch prediction interval
 assert(param:add_param(KEY, 15, "PRED_ANG", 105), 'could not add AUTOB_PRED_ANG') -- VTOL frame absolute rate based predicted angle threshold for autobailout
 assert(param:add_param(KEY, 16, "RES_CNT", 5), 'could not add AUTOB_RES_CNT') -- VTOL frame absolute rate based predicted angle threshold for autobailout
+assert(param:add_param(KEY, 17, "DRFT_LIM", 15), 'could not add AUTOB_DRFT_LIM') -- Horizontal drift from the bailout entry point to trigger parachute (m)
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
@@ -50,6 +51,7 @@ local p_dbg_en = bind_param("AUTOB_DBG_EN")
 local p_prediction_interval = bind_param("AUTOB_PRED_INT")
 local p_pred_angle_threshold = bind_param("AUTOB_PRED_ANG")
 local p_autobailout_resume_count = bind_param("AUTOB_RES_CNT")
+local p_drift_lim = bind_param("AUTOB_DRFT_LIM")
 
 -- Read Parachute trigger channel number from FCU parameter list 
 
@@ -94,10 +96,14 @@ end
 
 -- Parachute state variables
 local trigger_para_script = false
-local first_para_pitch_exceeded_t = nil
+local first_para_trigger_t = nil
 local PARA_CHAN_HIGH = 1850
-local last_para_warn_t = 0 
+local last_para_warn_t = 0
 local backtransition_complete_time_ms = nil
+
+local active_bailout_loc = nil
+local drift_dist = -1
+local drift_exceeded = false
 
 -- Helper: Radians to Degrees
 local function rad2deg(r) return r * 57.2958 end
@@ -135,8 +141,37 @@ function is_parachute_angle_threshold_valid(threshold_angle)
     return false
 end
 
+-- Store the entry position of the active bailout and measure the horizontal drift from it
+function update_bailout_drift()
+    if not autobailout_active then
+        active_bailout_loc = nil
+        drift_dist = -1
+        return false
+    end
+
+    local current_loc = ahrs:get_position()
+    if current_loc == nil then
+        return false
+    end
+
+    -- Entered bailout, store the current location as active bailout location
+    if active_bailout_loc == nil then
+        active_bailout_loc = current_loc
+        drift_dist = 0
+        return false
+    end
+
+    drift_dist = active_bailout_loc:get_distance(current_loc)
+
+    local drift_limit = p_drift_lim:get() or 0
+    if drift_limit <= 0 then
+        return false
+    end
+    return drift_dist > drift_limit
+end
+
 function para_deploy()
-    
+
     if p_para_enable:get() ~= 1 then return end
 
     para_trigger_rc_chan = nil
@@ -167,28 +202,33 @@ function para_deploy()
     end
     
     local para_threshold = p_para_ang:get() or -45
-    if not is_parachute_angle_threshold_valid(para_threshold) then
-        gcs:send_text(2, string.format("AUTOB:AUTB_PARA_ANG invalid. Range(%.1f, %.1f)",para_ahrs_pitch_threshold_min, para_ahrs_pitch_threshold_max))    
-        return
+    local para_threshold_valid = is_parachute_angle_threshold_valid(para_threshold)
+    if not para_threshold_valid then
+        gcs:send_text(2, string.format("AUTOB:AUTB_PARA_ANG invalid. Range(%.1f, %.1f)",para_ahrs_pitch_threshold_min, para_ahrs_pitch_threshold_max))
     end
 
     local now = millis():tofloat()
     ahrs_pitch = rad2deg(ahrs:get_pitch() or 0)
     para_ang_timeout = p_para_timeout:get() or 200
-    check_pitch = ahrs_pitch < para_threshold and (trigger_para_script == false) and quadplane:in_vtol_mode() and arming:is_armed()
-    if check_pitch then
-        if first_para_pitch_exceeded_t == nil then
-            first_para_pitch_exceeded_t = millis():tofloat()
+    local para_allowed = (trigger_para_script == false) and quadplane:in_vtol_mode() and arming:is_armed()
+    check_pitch = para_threshold_valid and ahrs_pitch < para_threshold and para_allowed
+    local check_drift = drift_exceeded and para_allowed
+    if check_pitch or check_drift then
+        if first_para_trigger_t == nil then
+            first_para_trigger_t = millis():tofloat()
         else
-            para_time_diff = now - first_para_pitch_exceeded_t
+            para_time_diff = now - first_para_trigger_t
             if para_time_diff > para_ang_timeout then
-                first_para_pitch_exceeded_t = nil
+                first_para_trigger_t = nil
                 trigger_para_script = true
+                if check_drift then
+                    gcs:send_text(2, string.format("AUTOB: drift %.0fm exceeds limit", drift_dist))
+                end
                 gcs:send_text(2, "AUTOB:trigger parachute via rc override")
             end
         end
     else
-        first_para_pitch_exceeded_t = nil
+        first_para_trigger_t = nil
     end
     
     if trigger_para_script then
@@ -312,6 +352,7 @@ end
 
 function update()
     local loop_ms = p_loop_ms:get() or 100
+    drift_exceeded = update_bailout_drift()
     para_deploy()
     if trigger_para_script then return  update, loop_ms end
 
@@ -359,7 +400,7 @@ function update()
     local pitch_deg = rad2deg(ahrs:get_pitch() or 0)
 
     if p_dbg_en:get() == 1 then
-        logger:write('AUTB', 'AvgErr,PeakAng,PitchDeg,QPit,QRateP', 'fffff', avg_err, peak_ang, pitch_deg, actual_vtol_pitch_deg, actual_vtol_pitch_rate)
+        logger:write('AUTB', 'AvgErr,PeakAng,PitchDeg,QPit,QRateP,DrftD', 'ffffff', avg_err, peak_ang, pitch_deg, actual_vtol_pitch_deg, actual_vtol_pitch_rate, drift_dist)
     end
     
     is_vtol_flight = in_vtol_flight()
