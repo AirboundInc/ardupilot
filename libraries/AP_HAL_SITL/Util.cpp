@@ -6,6 +6,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <AP_Common/ExpandingString.h>
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+#include <AP_CustomStorage/AP_CustomStorage.h>
+#endif
 
 extern const AP_HAL::HAL& hal;
 
@@ -104,6 +107,38 @@ void HALSITL::Util::set_cmdline_parameters()
             AP_Param::set_default_by_name(param->name, param->value);
         }
     }
+
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+    // Craft identity goes into custom storage once, so the setters only run
+    // after init() has opened the storage area. Values are written on every
+    // start, so the command line is the source of truth.
+    static bool identity_applied;
+    if (identity_applied) {
+        return;
+    }
+    identity_applied = true;
+
+    if (sitlState->craft_id_arg != nullptr || sitlState->craft_password_arg != nullptr ||
+        sitlState->uin_arg != nullptr) {
+        g_custom_storage.init();
+        // no values are printed: the password must not reach the console
+        if (sitlState->craft_id_arg != nullptr && !g_custom_storage.set_craft_id(sitlState->craft_id_arg)) {
+            fprintf(stderr, "SITL: failed to store craft ID in custom storage\n");
+            exit(1);
+        }
+        if (sitlState->craft_password_arg != nullptr && !g_custom_storage.set_password(sitlState->craft_password_arg)) {
+            fprintf(stderr, "SITL: failed to store password in custom storage\n");
+            exit(1);
+        }
+        if (sitlState->uin_arg != nullptr && !g_custom_storage.set_uin(sitlState->uin_arg)) {
+            fprintf(stderr, "SITL: failed to store UIN in custom storage\n");
+            exit(1);
+        }
+        printf("SITL: custom storage identity set (craft ID %s)\n",
+               sitlState->craft_id_arg != nullptr ? sitlState->craft_id_arg : "unchanged");
+    }
+
+#endif
 }
 #endif
 

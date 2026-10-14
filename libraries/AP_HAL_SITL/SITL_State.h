@@ -43,6 +43,17 @@ public:
     };
     ObjectArray<struct AP_Param::defaults_table_struct> cmdline_param{100};
 
+    // aircraft identity from --craft-id/--craft-password/--uin, written into
+    // custom storage once it is ready (see HALSITL::Util::set_cmdline_parameters).
+    // The strings point into argv and live for the whole run.
+    const char *craft_id_arg = nullptr;
+    const char *craft_password_arg = nullptr;
+    const char *uin_arg = nullptr;
+    char craft_id_derived[24];   // "AA-TST-0088" from --sysid when --craft-id is not given
+    char uin_derived[24];        // "UIN_DUMMY_088" from --sysid when --uin is not given
+    int32_t sysid_arg = 0;
+
+
     /* parse a home location string */
     static bool parse_home(const char *home_str,
                            Location &loc,

@@ -1368,7 +1368,52 @@ int lua_custom_storage_get_craft_id(lua_State *L)
 
     return 1;
 }
+
+/*
+  implement custom_storage:get_uin() -- returns the stored UIN string, or nil
+  if custom storage isn't initialized / nothing has been stored yet.
+ */
+int lua_custom_storage_get_uin(lua_State *L)
+{
+    binding_argcheck(L, 1);
+
+    AP_CustomStorage *storage = AP_CustomStorage::get_singleton();
+    if (storage == nullptr) {
+        return 0;
+    }
+
+    char buf[CUSTOM_PARAM_UIN_LEN + 1];
+    if (!storage->get_uin(buf, sizeof(buf))) {
+        return 0;
+    }
+
+    lua_pushstring(L, buf);
+
+    return 1;
+}
 #endif
+
+/*
+  implement get_commandline_arg(name) -- returns the value given after "name"
+  on the process command line (e.g. get_commandline_arg("--auth-key")), or nil
+  if it is absent. Lets SITL scripts take their configuration as options.
+ */
+int lua_get_commandline_arg(lua_State *L)
+{
+    binding_argcheck(L, 1);
+    const char *name = luaL_checkstring(L, 1);
+
+    uint8_t argc = 0;
+    char * const *argv = nullptr;
+    hal.util->commandline_arguments(argc, argv);
+    for (uint8_t i = 0; argv != nullptr && i + 1 < argc; i++) {
+        if (strcmp(argv[i], name) == 0) {
+            lua_pushstring(L, argv[i + 1]);
+            return 1;
+        }
+    }
+    return 0;
+}
 
 #if HAL_ENABLE_DRONECAN_DRIVERS
 /*

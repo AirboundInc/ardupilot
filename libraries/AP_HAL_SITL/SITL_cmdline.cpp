@@ -9,6 +9,9 @@
 #include <AP_HAL/utility/getopt_cpp.h>
 #include <AP_HAL_SITL/Storage.h>
 #include <AP_Param/AP_Param.h>
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+#include <AP_CustomStorage/AP_CustomStorage.h>
+#endif
 
 #include <SITL/SIM_Multicopter.h>
 #include <SITL/SIM_Helicopter.h>
@@ -116,6 +119,10 @@ void SITL_State::_usage(void)
            "\t--irlock-port PORT       set port num for irlock\n"
            "\t--start-time TIMESTR     set simulation start time in UNIX timestamp\n"
            "\t--sysid ID               set SYSID_THISMAV\n"
+           "\t--craft-id ID            set custom storage craft ID (default AA-TST-<sysid>, e.g. AA-TST-0088)\n"
+           "\t--craft-password PASS    set custom storage password\n"
+           "\t--sign-enabled 0|1       telemetry to the data server: 1 signed (default), 0 unsigned\n"
+           "\t--uin UIN                set custom storage UIN (default UIN_DUMMY_<sysid>, e.g. UIN_DUMMY_088)\n"
            "\t--slave number           set the number of JSON slaves\n"
         );
 }
@@ -276,6 +283,14 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         CMDLINE_IRLOCK_PORT,
         CMDLINE_START_TIME,
         CMDLINE_SYSID,
+        CMDLINE_CRAFT_ID,
+        CMDLINE_CRAFT_PASSWORD,
+        CMDLINE_UIN,
+        CMDLINE_AUTH_IP,
+        CMDLINE_AUTH_PORT,
+        CMDLINE_AUTH_KEY,
+        CMDLINE_AUTH_TIMESTAMP,
+        CMDLINE_SIGN_ENABLED,
         CMDLINE_SLAVE,
 #if STORAGE_USE_FLASH
         CMDLINE_SET_STORAGE_FLASH_ENABLED,
@@ -336,6 +351,14 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         {"irlock-port",     true,   0, CMDLINE_IRLOCK_PORT},
         {"start-time",      true,   0, CMDLINE_START_TIME},
         {"sysid",           true,   0, CMDLINE_SYSID},
+        {"craft-id",        true,   0, CMDLINE_CRAFT_ID},
+        {"craft-password",  true,   0, CMDLINE_CRAFT_PASSWORD},
+        {"uin",             true,   0, CMDLINE_UIN},
+        {"auth-ip",         true,   0, CMDLINE_AUTH_IP},
+        {"auth-port",       true,   0, CMDLINE_AUTH_PORT},
+        {"auth-key",        true,   0, CMDLINE_AUTH_KEY},
+        {"auth-timestamp",  true,   0, CMDLINE_AUTH_TIMESTAMP},
+        {"sign-enabled",    true,   0, CMDLINE_SIGN_ENABLED},
         {"slave",           true,   0, CMDLINE_SLAVE},
 #if STORAGE_USE_FLASH
         {"set-storage-flash-enabled", true,   0, CMDLINE_SET_STORAGE_FLASH_ENABLED},
@@ -516,8 +539,58 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
             }
             temp_cmdline_param = {"SYSID_THISMAV", static_cast<float>(sysid)};
             cmdline_param.push(temp_cmdline_param);
+            sysid_arg = sysid;
             printf("Setting SYSID_THISMAV=%d\n", sysid);
             break;
+        }
+        // login values are read by the Lua login script via get_commandline_arg()
+        case CMDLINE_AUTH_IP:
+        case CMDLINE_AUTH_PORT:
+        case CMDLINE_AUTH_TIMESTAMP:
+            break;
+        // read by the Lua telemetry script via get_commandline_arg(): 1 = signed, 0 = unsigned
+        case CMDLINE_SIGN_ENABLED:
+            if (strcmp(gopt.optarg, "0") != 0 && strcmp(gopt.optarg, "1") != 0) {
+                fprintf(stderr, "--sign-enabled must be 0 or 1\n");
+                exit(1);
+            }
+            break;
+        case CMDLINE_AUTH_KEY:
+            if (strlen(gopt.optarg) != 64) {
+                fprintf(stderr, "--auth-key must be 64 hex characters\n");
+                exit(1);
+            }
+            break;
+        case CMDLINE_CRAFT_ID:
+        case CMDLINE_CRAFT_PASSWORD:
+        case CMDLINE_UIN: {
+#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+            // limits match the custom storage fields in AP_CustomStorage.h
+            size_t max_len = CUSTOM_PARAM_UIN_LEN;
+            const char *name = "--uin";
+            if (opt == CMDLINE_CRAFT_ID) {
+                max_len = CUSTOM_PARAM_CRAFT_ID_LEN;
+                name = "--craft-id";
+            } else if (opt == CMDLINE_CRAFT_PASSWORD) {
+                max_len = CUSTOM_PARAM_PASS_LEN;
+                name = "--craft-password";
+            }
+            if (strlen(gopt.optarg) > max_len) {
+                fprintf(stderr, "%s must be %u characters or less\n", name, unsigned(max_len));
+                exit(1);
+            }
+            if (opt == CMDLINE_CRAFT_ID) {
+                craft_id_arg = gopt.optarg;
+            } else if (opt == CMDLINE_CRAFT_PASSWORD) {
+                craft_password_arg = gopt.optarg;
+            } else {
+                uin_arg = gopt.optarg;
+            }
+            break;
+#else
+            fprintf(stderr, "%s needs custom storage, which this build does not include\n", "--craft-id/--craft-password/--uin");
+            exit(1);
+#endif
         }
 #if STORAGE_USE_POSIX
         case CMDLINE_SET_STORAGE_POSIX_ENABLED:
@@ -550,6 +623,19 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
             _usage();
             exit(1);
         }
+    }
+
+    // Without an explicit --craft-id the craft ID follows the sysid, so
+    // --sysid 88 gives AA-TST-0088 (TST = test server). Done after the loop
+    // because --craft-id may come before or after --sysid.
+    if (craft_id_arg == nullptr && sysid_arg > 0) {
+        snprintf(craft_id_derived, sizeof(craft_id_derived), "AA-TST-%04d", int(sysid_arg));
+        craft_id_arg = craft_id_derived;
+    }
+    // Likewise the UIN: --sysid 251 gives UIN_DUMMY_251, --sysid 88 gives UIN_DUMMY_088
+    if (uin_arg == nullptr && sysid_arg > 0) {
+        snprintf(uin_derived, sizeof(uin_derived), "UIN_DUMMY_%03d", int(sysid_arg));
+        uin_arg = uin_derived;
     }
 
     if (!model_str) {
