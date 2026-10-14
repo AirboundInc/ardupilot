@@ -286,6 +286,17 @@ const AP_Param::GroupInfo AP_Vehicle::var_info[] = {
     AP_SUBGROUPINFO(serial_manager, "SERIAL", 31, AP_Vehicle, AP_SerialManager),
 #endif
 
+#if AP_AIRBOUND_LINK_STATS_ENABLED
+    // @Param: AB_LNK_SENDER
+    // @DisplayName: Airbound per-GCS link stats period
+    // @Description: Seconds between AIRBOUND_LINK_SENDER reports, 0 to disable. Each report is one message per GCS heard on the link in the last 10 s (up to 4), with that GCS's received frames, sequence gaps and repeats.
+    // @Units: s
+    // @Range: 0 60
+    // @User: Advanced
+    // index 50 leaves room for upstream additions after 31
+    AP_GROUPINFO("AB_LNK_SENDER", 50, AP_Vehicle, airbound_link_sender, 0),
+#endif
+
     AP_GROUPEND
 };
 

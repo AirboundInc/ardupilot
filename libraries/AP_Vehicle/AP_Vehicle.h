@@ -302,6 +302,14 @@ public:
     virtual bool set_home(const Location& loc, bool lock) WARN_IF_UNUSED { return false; }
 #endif
 
+#if AP_AIRBOUND_LINK_STATS_ENABLED
+    // seconds between AIRBOUND_LINK_SENDER reports, 0 = off
+    uint8_t airbound_link_sender_period_s() const {
+        const int8_t p = airbound_link_sender;
+        return p > 0 ? p : 0;
+    }
+#endif
+
 protected:
 
     virtual void init_ardupilot() = 0;
@@ -565,6 +573,10 @@ private:
 
     // Bitmask of modes to disable from gcs
     AP_Int32 flight_mode_GCS_block;
+
+#if AP_AIRBOUND_LINK_STATS_ENABLED
+    AP_Int8 airbound_link_sender;
+#endif
 };
 
 namespace AP {

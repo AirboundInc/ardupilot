@@ -201,6 +201,10 @@ class Board:
         env.ENABLE_AIRBOUND_FLIGHT_INFORMATION = True
         env.DEFINES.update(AP_AIRBOUND_FLIGHT_INFORMATION_ENABLED = 1)
 
+        # AIRBOUND_LINK_STATS enabled by default
+        env.ENABLE_AIRBOUND_LINK_STATS = True
+        env.DEFINES.update(AP_AIRBOUND_LINK_STATS_ENABLED = 1)
+
         d = env.get_merged_dict()
         # Always prepend so that arguments passed in the command line get
         # the priority.
