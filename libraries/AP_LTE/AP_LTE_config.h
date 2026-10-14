@@ -2,8 +2,8 @@
 
 #include <AP_HAL/AP_HAL_Boards.h>
 
-// LTE modem driver. Ported from the LTE_modem.lua applet; transparent-mode
-// socket only (no CMUX, no direct push, no PPP).
+// LTE modem driver. Ported from the LTE_modem.lua applet, less its
+// direct-push (QISEND) transport.
 //
 // On unconditionally, on every board and flash size. Only ArduPlane links the
 // library (see ArduPlane/wscript), so this is Plane-only in practice.

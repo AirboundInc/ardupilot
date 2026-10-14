@@ -12,8 +12,8 @@
 
   A null member means "this family does not have that command"; the state
   machine branches on presence exactly as the Lua version did. Format
-  specifiers are C, not Lua: band masks are %llx against a uint64_t because
-  a band above 32 does not fit an unsigned.
+  specifiers are C, not Lua: band masks are %s, the hex text set_BAND()
+  builds, because no integer is wide enough for every band.
 */
 
 struct AP_LTE_HTTP {
@@ -59,7 +59,7 @@ struct AP_LTE_ModemInfo {
     const char *config_extra;
     const char *mccmnc;             // fmt: MCCMNC
     const char *setband;            // fmt: band number
-    const char *setband_mask;       // fmt: band bitmask
+    const char *setband_mask;       // fmt: band bitmask as hex text
     const char *setband_all;
     const char *sim_probe;
     const char *csq_gate;

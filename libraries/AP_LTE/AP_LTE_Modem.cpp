@@ -156,7 +156,7 @@ static const AP_LTE_HTTP simcom_http = {
 // at the call site.
 #define QUECTEL_COMMON_128(NAME, BANNER)                                      \
     QUECTEL_COMMON(NAME, BANNER, nullptr,                                     \
-                   "AT+QCFG=\"band\",0,0x%llx\r\n",                           \
+                   "AT+QCFG=\"band\",0,0x%s\r\n",                           \
                    "AT+QCFG=\"band\",0,0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\r\n")
 
 const AP_LTE_ModemInfo AP_LTE_modem_list[] = {
@@ -182,7 +182,7 @@ const AP_LTE_ModemInfo AP_LTE_modem_list[] = {
         .config_extra = "ATH\r\n",
         .mccmnc = "AT+COPS=1,2,\"%u\"\r\n",
         .setband = nullptr,
-        .setband_mask = "AT+CNBP=,0x%llx\r\n",
+        .setband_mask = "AT+CNBP=,0x%s\r\n",
         .setband_all = "AT+CNBP=,0x480000000000000000000000000000000000000000000042000007FFFFDF3FFF\r\n",
         .sim_probe = "AT+CICCID\r\n",
         .csq_gate = "AT+CPSI?\r\n",
@@ -265,13 +265,13 @@ const AP_LTE_ModemInfo AP_LTE_modem_list[] = {
     { QUECTEL_COMMON_128("EG800Q", "EG800Q") },
     {
         QUECTEL_COMMON("EC20", "EC20C", nullptr,
-                       "AT+QCFG=\"band\",0,%llx,0\r\n",
+                       "AT+QCFG=\"band\",0,%s,0\r\n",
                        "AT+QCFG=\"band\",0,7FFFFFFFFFFFFFFF,0\r\n"),
     },
     {
         // EC25 alone runs a servingcell preflight before opening the socket.
         QUECTEL_COMMON("EC25", "EC25", "AT+QENG=\"servingcell\"\r\n",
-                       "AT+QCFG=\"band\",0,%llx,0\r\n",
+                       "AT+QCFG=\"band\",0,%s,0\r\n",
                        "AT+QCFG=\"band\",bff,00b0e18df,0\r\n"),
     },
 };

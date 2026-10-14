@@ -1,8 +1,8 @@
 /*
   LTE modem driver, ported from the LTE_modem.lua applet.
 
-  Transparent-mode socket only. The applet's CMUX, direct-push (QISEND) and
-  PPP transports are deliberately absent -- see AP_LTE.h.
+  The applet's direct-push (QISEND) transport is deliberately absent -- see
+  AP_LTE.h.
  */
 
 #include "AP_LTE.h"
@@ -91,7 +91,7 @@ const AP_Param::GroupInfo AP_LTE::var_info[] = {
 
     // @Param: TIMEOUT
     // @DisplayName: Data timeout
-    // @Description: Seconds without any data from the modem while connected before the link is declared dead and the modem is reset. 0 disables.
+    // @Description: Seconds without any data from the modem while connected before the link is checked: the socket is reopened if the modem is still registered, re-registered if not, and the modem is reset only if it does not answer. 0 disables.
     // @Units: s
     // @User: Standard
     AP_GROUPINFO("TIMEOUT", 10, AP_LTE, _timeout, 30),
@@ -105,10 +105,10 @@ const AP_Param::GroupInfo AP_LTE::var_info[] = {
 
     // @Param: OPTIONS
     // @DisplayName: Driver options
-    // @Description: Option bits. DirectPush is inert in this driver, which does not have that transport, but keeps its bit position so a value carried over from the Lua applet still means the same thing.
-    // @Bitmask: 0:LogAll,1:Signals,2:NoMux,3:NoSigQuery,4:TCP,5:DirectPush(inert)
+    // @Description: Option bits. DirectPush is inert in this driver, which does not have that transport, but keeps its bit position so a value carried over from the Lua applet still means the same thing. Steps also sends every step change to the GCS; they are always logged as LTET.
+    // @Bitmask: 0:LogAll,1:Signals,2:NoMux,3:NoSigQuery,4:TCP,5:DirectPush(inert),6:Steps
     // @User: Advanced
-    AP_GROUPINFO("OPTIONS", 12, AP_LTE, _options, 6),
+    AP_GROUPINFO("OPTIONS", 12, AP_LTE, _options, 2),
 
     // @Param: IBAUD
     // @DisplayName: Modem initial baud rate
@@ -124,9 +124,9 @@ const AP_Param::GroupInfo AP_LTE::var_info[] = {
 
     // indices 15-19 were LTE_ROUTE_IP0-3 and LTE_ROUTE_MASK, which needed
     // networking:add_route. That binding does not exist in this tree, so the
-    // applet had them permanently disabled. Indices 24 and 25 were
-    // LTE_TX_DEAD and LTE_SOCK_T, both direct-push only. All five are left
-    // free rather than reused, so a downgrade to the applet still lines up.
+    // applet had them permanently disabled. Index 24 was LTE_TX_DEAD, direct
+    // push only. All six are left free rather than reused, so a downgrade to
+    // the applet still lines up.
 
     // @Param: TX_RATE
     // @DisplayName: Uplink rate limit
@@ -155,6 +155,13 @@ const AP_Param::GroupInfo AP_LTE::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("STUCK_T", 23, AP_LTE, _stuck_t, 15),
 
+    // @Param: SOCK_T
+    // @DisplayName: Link check timeout
+    // @Description: Seconds the registration check after a data timeout may go unanswered before the modem is hard reset. 0 leaves it to LTE_STUCK_T.
+    // @Units: s
+    // @User: Advanced
+    AP_GROUPINFO("SOCK_T", 25, AP_LTE, _sock_t, 4),
+
     // @Param: HTTPAUTH
     // @DisplayName: Fetch server address over HTTPS
     // @Description: Fetch the relay server address from the auth endpoint over TLS with full certificate verification before opening the socket. There is no static fallback: a failed login halts the driver.
@@ -176,6 +183,13 @@ const AP_Param::GroupInfo AP_LTE::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("AUTHKEY", 28, AP_LTE, _authkey, 0),
 
+    // @Param: TEST
+    // @DisplayName: Bench fault injection
+    // @Description: Bench only, refused while armed. Starts a fault on the live modem and clears itself. 2 and 3 are undone after 20s and 60s, and at once on arming. 9 ignores modem flow control until the next modem reset.
+    // @Values: 0:None,1:Reset modem,2:Deregister,3:Radio off,4:Close socket,9:Ignore flow control
+    // @User: Advanced
+    AP_GROUPINFO("TEST", 29, AP_LTE, _test, 0),
+
     AP_GROUPEND
 };
 
@@ -195,8 +209,8 @@ AP_LTE::AP_LTE()
     _last_step = Step::HALT;
     _reset_recorded = true;
     _authkey_seen = -1;
-    _track_band = -1;
-    _track_cid = -1;
+    _track_band = INT32_MIN;
+    _track_cid = INT32_MIN;
     _last_mccmnc = INT32_MIN;
     _last_band = INT32_MIN;
     _log_fd = -1;
@@ -292,6 +306,14 @@ void AP_LTE::thread_main()
             continue;
         }
 
+        // saved, or a value set from the GCS would come back on every reboot
+        const int32_t test_id = pget(_test);
+        if (test_id != 0) {
+            _test.set_and_save(0);
+            test_start(test_id);
+        }
+        test_tick();
+
         // Modem and SIM identity into the dataflash log. SIMINFO clears
         // _ltei_ms so a row goes out at every registration; the 0.1Hz repeat
         // covers rows lost to a full logger buffer, which is likely at
@@ -300,14 +322,11 @@ void AP_LTE::thread_main()
             const uint32_t now = AP_HAL::millis();
             if (_ltei_ms == 0 || now - _ltei_ms > 10000) {
                 _ltei_ms = now;
-                // The units/mults arguments are not decorative here. Write()
-                // is overloaded on (name, labels, fmt, ...) and (name, labels,
-                // units, mults, fmt, ...), and when the leading data arguments
-                // are themselves strings the five-string overload wins
-                // resolution silently -- the firmware string lands in fmt and
-                // the logger panics on it at runtime. Passing units and mults
-                // explicitly makes the intended overload the only one.
-                AP::logger().Write("LTEI", "Mdl,FW,Sim,Net", "----", "----", "NNNN",
+                // TimeUS must lead: Write() is also overloaded on (name,
+                // labels, units, mults, fmt, ...), and leading string data
+                // silently selects that one and panics the logger at runtime.
+                AP::logger().Write("LTEI", "TimeUS,Mdl,FW,Sim,Net", "QNNNN",
+                                   AP_HAL::micros64(),
                                    _modem->name,
                                    _fw_short[0] != 0 ? _fw_short :
                                    (_modem_revision[0] != 0 ? _modem_revision : "unknown"),
@@ -349,6 +368,7 @@ const char *AP_LTE::step_name(Step s)
     case Step::CIPOPEN:      return "CIPOPEN";
     case Step::CONNECTED:    return "CONNECTED";
     case Step::HALT:         return "HALT";
+    case Step::RESET:        return "RESET";
     }
     return "?";
 }
@@ -364,9 +384,11 @@ uint32_t AP_LTE::run_step()
     const uint32_t now_ms = AP_HAL::millis();
 
     if (step_changed) {
-        // SIMINFO is silent: it announces itself with the module/firmware/sim
-        // lines it prints, so a step line ahead of them says nothing extra.
-        if (_step != Step::SIMINFO) {
+        // To the GCS only with Steps set: one reconnect printed ~10 of these.
+        AP::logger().Write("LTET", "TimeUS,Step", "QN",
+                           AP_HAL::micros64(), step_name(_step));
+        log_event("{step %s}", step_name(_step));
+        if (option_enabled(OPT_STEPS)) {
             GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: step %s", step_name(_step));
         }
         if (!_reset_recorded && _last_step != Step::ATI &&
@@ -383,6 +405,9 @@ uint32_t AP_LTE::run_step()
             // a reply still in flight from an earlier fire-and-forget command
             // cannot be mistaken for the CIPMODE reply.
             _cipmode_sent = false;
+        }
+        if (_step == Step::NETOPEN) {
+            _netopen_ms = 0;            // each entry sends its own NETOPEN
         }
 
         if (_step == Step::CONNECTED && _step_times_n > 0) {
@@ -407,13 +432,8 @@ uint32_t AP_LTE::run_step()
             }
             GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE longest step: %s (%lums)",
                           max_name, (unsigned long)max_ms);
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE timing: %s total:%lums",
-                          line, (unsigned long)total);
-            if (_disconnect_ms != 0) {
-                GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE: total outage %.1fs",
-                              (double)(now_ms - _disconnect_ms) * 0.001);
-                _disconnect_ms = 0;
-            }
+            log_event("LTE timing: %s total:%lums", line, (unsigned long)total);
+            // the total outage is reported by on_downlink(), at the first real data
             _step_times_n = 0;
         }
     }
@@ -426,17 +446,38 @@ uint32_t AP_LTE::run_step()
         return 20;
     }
 
-    const uint32_t time_in_step_s = (now_ms - _step_timer_ms) / 1000;
+    const uint32_t time_in_step_ms = now_ms - _step_timer_ms;
+    const uint32_t time_in_step_s = time_in_step_ms / 1000;
 
+    // CEREG_CHECK talks to an up modem that answers in <1s. Silence past
+    // SOCK_T means the AT channel is wedged, so skip the full STUCK_T wait.
+    if (!step_changed && _step == Step::CEREG_CHECK && pget(_sock_t) > 0 &&
+        time_in_step_ms > uint32_t(pget(_sock_t)) * 1000) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE: %s silent %lus - hard reset",
+                      step_name(_step), (unsigned long)time_in_step_s);
+        reset_to_ATI();
+        return 1000;
+    }
+
+    // RESET times itself (<= ~6.5s); a short STUCK_T would restart it
+    // mid-settle and reboot the modem a second time.
     if (!step_changed && _step != Step::ATI && _step != Step::CMUX &&
         _step != Step::CPIN && _step != Step::CREG && _step != Step::HALT &&
-        _step != Step::HTTPAUTH) {
+        _step != Step::HTTPAUTH && _step != Step::RESET) {
         if (time_in_step_s > uint32_t(pget(_stuck_t))) {
             GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE: %s timeout after %ds",
                           step_name(_step), int(pget(_stuck_t)));
             reset_to_ATI();
             return 1000;
         }
+    }
+
+    // ATI is off the sweep above because a real reboot takes 10-19s, which
+    // left it no escape at all. 60s is far past any real boot.
+    if (!step_changed && _step == Step::ATI && time_in_step_ms > 60000) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE: ATI silent 60s, hard reset");
+        reset_to_ATI();
+        return 1000;
     }
 
     if (!step_changed && (_step == Step::CPIN || _step == Step::CREG ||
@@ -455,6 +496,7 @@ uint32_t AP_LTE::run_step()
         GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "LTE HALTED: %s. Power cycle modem.",
                       _halt_reason != nullptr ? _halt_reason : "unknown reason");
         return 15000;
+    case Step::RESET:        step_RESET();        return 50;
     case Step::ATI:          step_ATI();          return 1100;
     case Step::CMUX:         step_CMUX();         return 50;
     case Step::BAUD:         step_BAUD();         return 50;
@@ -562,6 +604,22 @@ void AP_LTE::uart_write_raw(const char *s)
     _txq->write((const uint8_t *)s, len);
     log_raw((const uint8_t *)s, len, ">>>");
     _bytes_out += len;
+}
+
+void AP_LTE::uart_write_frame(uint8_t dlc, const char *s)
+{
+    if (s == nullptr || _txq == nullptr) {
+        return;
+    }
+    uint8_t frame[CMUX_MAX_FRAME + 8];
+    const uint16_t n = cmux_encode(dlc, CMUX_UIH, (const uint8_t *)s, uint16_t(strlen(s)),
+                                   frame, sizeof(frame));
+    if (n == 0) {
+        return;
+    }
+    _txq->write(frame, n);
+    log_raw(frame, n, ">>>");
+    _bytes_out += n;
 }
 
 // An AT command: DLC 1 when multiplexed, straight at the UART otherwise.
@@ -700,29 +758,21 @@ void AP_LTE::uart_write_pending()
         _txq->advance(written);
         avail -= written;
     }
-}
 
-void AP_LTE::send_data_reset()
-{
-    if (_modem->reset == nullptr) {
-        return;
+    // ">>>" lines are logged when queued, not sent, so a backlog here means
+    // the UART is not draining (CTS held off by the modem?)
+    const uint32_t now = AP_HAL::millis();
+    if (avail > 1024 && now - _txq_log_ms > 1000) {
+        _txq_log_ms = now;
+        log_event("{TXQ=%lu}", (unsigned long)avail);
     }
-    at_send(_modem->reset);
-    if (!_modem->reset_not_baudrate) {
-        _uart->begin(pget(_ibaud));
-    }
-    // After the reset command is queued, not before: at_send still has to
-    // frame it if the modem is currently multiplexed.
-    _found_cmux = false;
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: sent reset");
 }
 
 bool AP_LTE::handle_error()
 {
     if (rx_find("\nERROR\r\n")) {
         GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "LTE_modem: error response from modem");
-        send_data_reset();
-        _step = Step::ATI;
+        reset_to_ATI();
         return true;
     }
     return false;
@@ -788,6 +838,19 @@ bool AP_LTE::rx_find(const char *needle) const
     return rx_at(needle) != nullptr;
 }
 
+uint8_t AP_LTE::rx_count(const char *needle) const
+{
+    uint8_t n = 0;
+    const uint16_t nlen = uint16_t(strlen(needle));
+    const char *p = _rx;
+    const char *end = _rx + _rx_len;
+    while (n < UINT8_MAX && (p = mem_find(p, uint16_t(end - p), needle)) != nullptr) {
+        n++;
+        p += nlen;
+    }
+    return n;
+}
+
 bool AP_LTE::chunk_find(const char *needle) const
 {
     return mem_find((const char *)_chunk, _chunk_len, needle) != nullptr;
@@ -816,6 +879,14 @@ void AP_LTE::rx_consume_through(const char *needle)
 void AP_LTE::reset_buffers()
 {
     _last_data_ms = AP_HAL::millis();
+    _at_rx_ms = _last_data_ms;
+    _at_dead_warned = false;
+    _fc_on_ms = 0;
+    _nosvc_ms = 0;
+    _hold_ms = 0;
+    _nocarrier_ms = 0;
+    // a drop seen before this (re)connect must not close the new socket
+    _cereg_drop_ms = 0;
     rx_reset();
     _fc_len = 0;
     _chunk_len = 0;
@@ -832,12 +903,14 @@ void AP_LTE::reset_state()
     // modem's firmware cannot do CMUX, which a reset does not change.
     _found_cmux = false;
     _cmux_was_set = false;
+    _cmux_probe_n = 0;
     reset_buffers();
     if (_txq != nullptr) {
         _txq->clear();
     }
-    _track_band = -1;
-    _track_cid = -1;
+    _track_band = INT32_MIN;
+    _track_cid = INT32_MIN;
+    _track_sw_n = 0;
     _cops_zero_sent = false;
     _qcsq_tries = 0;
     _cipopen_retry = 0;
@@ -854,6 +927,10 @@ void AP_LTE::reset_state()
     _post_reset = true;
     _cipopen_preclosed = false;
     _cipmode_sent = false;
+    _cipmode_ok = false;
+    _netopen_fail = 0;
+    _netreopen_n = 0;
+    _test_ignore_fc = false;
     _ati_dbg_ms = 0;
     // auth_done/auth_ip/auth_port deliberately survive a modem hard reset.
     // Re-authenticating is wanted only on a fresh boot, not every time the
@@ -863,12 +940,17 @@ void AP_LTE::reset_state()
     _http_retry_count = 0;
 }
 
+/*
+  Reset the modem and start over. The reset itself runs in step_RESET, over
+  several ticks, so it does not depend on DLC 1 being alive.
+ */
 void AP_LTE::reset_to_ATI()
 {
     const char *timed_out_step = step_name(_step);
     const uint32_t elapsed_ms = AP_HAL::millis() - _step_timer_ms;
-    send_data_reset();
-    uart_write_pending();
+    // taken before reset_state() drops back to the default modem
+    _rst_cmd = _modem->reset != nullptr ? _modem->reset : AP_LTE_default_modem.reset;
+    _rst_keep_baud = _modem->reset_not_baudrate;
     reset_state();
     if (_step_times_n < ARRAY_SIZE(_step_times)) {
         _step_times[_step_times_n].name = timed_out_step;
@@ -877,6 +959,8 @@ void AP_LTE::reset_to_ATI()
     }
     // tells the next step-changed check not to log this same transition twice
     _reset_recorded = true;
+    _rst_phase = ResetPhase::START;
+    _step = Step::RESET;
 }
 
 // ---------------------------------------------------------------------------
@@ -905,7 +989,21 @@ void AP_LTE::set_BAND()
     const int32_t band = pget(_band);
     if (band > 0) {
         if (_modem->setband_mask != nullptr) {
-            at_sendf(_modem->setband_mask, (unsigned long long)(1ULL << (band - 1)));
+            // Built as hex text a 32-bit word at a time, so no integer width
+            // caps the band: SimCom's CNBP mask is 272 bits, Quectel's 128.
+            if (band > 128) {
+                GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "LTE: BAND %ld out of range, not set",
+                              long(band));
+            } else {
+                char mask[40];
+                const uint8_t words = uint8_t((band - 1) / 32);
+                int n = hal.util->snprintf(mask, sizeof(mask), "%lx",
+                                           (unsigned long)(1UL << ((band - 1) % 32)));
+                for (uint8_t i = 0; i < words; i++) {
+                    n += hal.util->snprintf(&mask[n], sizeof(mask) - n, "00000000");
+                }
+                at_sendf(_modem->setband_mask, mask);
+            }
         } else {
             at_sendf(_modem->setband, int(band));
         }
@@ -927,6 +1025,79 @@ void AP_LTE::effective_server(uint8_t ip[4], uint16_t &port) const
     ip[2] = uint8_t(pget(_server_ip2));
     ip[3] = uint8_t(pget(_server_ip3));
     port = uint16_t(pget(_server_port));
+}
+
+// ---------------------------------------------------------------------------
+// LTE_TEST bench fault injection
+//   1 reset modem   2 deregister (COPS=2, undone after 20s)
+//   3 radio off (CFUN=4, undone after 60s)   4 close the socket
+//   9 ignore flow control until the next reset
+// 2 and 3 test re-registration; only real coverage loss (antenna in a metal
+// tin) exercises the no-service hold.
+// ---------------------------------------------------------------------------
+
+void AP_LTE::test_start(int32_t id)
+{
+    if (hal.util->get_soft_armed()) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE TEST: refused while armed");
+        return;
+    }
+    if (id != 1 && _step != Step::CONNECTED) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE TEST: only while connected");
+        return;
+    }
+    if (id != 1 && id != 2 && id != 3 && !(id == 4 && _modem->cipclose != nullptr) && id != 9) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE TEST: unknown value");
+        return;
+    }
+    GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE TEST %ld: start", long(id));
+    log_event("{TEST %ld}", long(id));
+    const uint32_t now = AP_HAL::millis();
+    switch (id) {
+    case 1:
+        reset_to_ATI();
+        break;
+    case 2:
+        at_send("AT+COPS=2\r\n");
+        _test_undo = "AT+COPS=0\r\n";
+        _test_until_ms = now + 20000;
+        break;
+    case 3:
+        at_send("AT+CFUN=4\r\n");
+        _test_undo = "AT+CFUN=1\r\n";
+        _test_until_ms = now + 60000;
+        break;
+    case 4:
+        at_send(_modem->cipclose);
+        break;
+    case 9:
+        _test_ignore_fc = true;
+        break;
+    }
+}
+
+void AP_LTE::test_tick()
+{
+    // Arming ends any test at once: 9 would fly with flow control and the
+    // hold off, 2/3 would take off deregistered or radio-off.
+    if (hal.util->get_soft_armed()) {
+        if (_test_ignore_fc) {
+            _test_ignore_fc = false;
+            GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE TEST: ended on arming");
+        }
+        if (_test_undo != nullptr) {
+            _test_until_ms = 0;
+        }
+    }
+    if (_test_undo != nullptr && AP_HAL::millis() > _test_until_ms) {
+        // a reboot already undid it
+        if (_step != Step::RESET && _step != Step::ATI) {
+            at_send(_test_undo);
+        }
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE TEST: restored");
+        log_event("{TEST restore}");
+        _test_undo = nullptr;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -961,9 +1132,9 @@ void AP_LTE::log_open()
 }
 
 /*
-  One line per read or write, prefixed with the millisecond timestamp. The
-  applet logged the same traffic without timestamps, which made ordering
-  questions about intermittent HTTPAUTH failures unanswerable after the fact.
+  One line per read or write, prefixed with seconds since boot -- the BIN's
+  own timebase, so a line lines up with the dataflash messages -- in the
+  applet's "%10.3f" layout, which the log decoders parse.
  */
 void AP_LTE::log_raw(const uint8_t *data, uint16_t len, const char *marker)
 {
@@ -971,12 +1142,29 @@ void AP_LTE::log_raw(const uint8_t *data, uint16_t len, const char *marker)
         return;
     }
     char hdr[24];
-    const int hn = hal.util->snprintf(hdr, sizeof(hdr), "%lu %s[",
-                                      (unsigned long)AP_HAL::millis(), marker);
+    const uint32_t ms = AP_HAL::millis();
+    const int hn = hal.util->snprintf(hdr, sizeof(hdr), "%6lu.%03lu %s[",
+                                      (unsigned long)(ms / 1000),
+                                      (unsigned long)(ms % 1000), marker);
     AP::FS().write(_log_fd, hdr, hn);
     AP::FS().write(_log_fd, data, len);
     AP::FS().write(_log_fd, "]\n", 2);
     AP::FS().fsync(_log_fd);
+}
+
+void AP_LTE::log_event(const char *fmt, ...)
+{
+    if (_log_fd == -1) {
+        return;
+    }
+    char buf[192];
+    va_list ap;
+    va_start(ap, fmt);
+    const int n = hal.util->vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n > 0) {
+        log_raw((const uint8_t *)buf, uint16_t(MIN(n, int(sizeof(buf) - 1))), "***");
+    }
 }
 
 namespace AP {

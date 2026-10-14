@@ -54,16 +54,17 @@ private:
   AT-command LTE modem driver, ported from the LTE_modem.lua applet.
 
   Supported chipsets: SIM7600/R1951 (SimCom), EC200/EC20/EC25/BG95/EG800Q
-  (Quectel). Transparent-mode socket only -- the CMUX, direct-push and PPP
-  transports the applet also carried are not part of this driver.
+  (Quectel). The applet's direct-push (QISEND) transport is not part of this
+  driver.
 
   Step order on a clean boot:
     ATI -> BAUD -> CPIN -> CONFIG -> CREG -> SIMINFO -> HTTPAUTH
         -> SIGNAL_GATE -> [QENG] -> [CIPMODE -> NETOPEN]
         -> SOCKET_STATE -> [CIPCLOSE] -> CIPOPEN -> CONNECTED
+  Every modem reset goes through RESET on its way back to ATI.
 
-  Step names are emitted verbatim as "LTE_modem: step <NAME>" statustext, which
-  is what Tools/autotest/Lte_modem_test.py asserts against.
+  Step changes are logged as LTET, and sent as "LTE_modem: step <NAME>"
+  statustext only with LTE_OPTIONS Steps (64) set; Lte_modem_test.py sets it.
 */
 class AP_LTE {
 public:
@@ -116,6 +117,7 @@ public:
         CIPOPEN,
         CONNECTED,
         HALT,
+        RESET,
     };
 
 private:
@@ -131,6 +133,7 @@ private:
         OPT_NOSIGQUERY = (1U << 3),
         OPT_TCP        = (1U << 4),
         OPT_DPUSH      = (1U << 5),
+        OPT_STEPS      = (1U << 6),     // step changes to the GCS as well
     };
 
     enum class HttpSub : uint8_t {
@@ -171,6 +174,7 @@ private:
     static const char *step_name(Step s);
 
     // ---- steps -------------------------------------------------------------
+    void step_RESET();
     void step_ATI();
     void step_BAUD();
     void step_CPIN();
@@ -208,6 +212,8 @@ private:
         CMUX_DLC_DATA  = 2,
         // safe for any chipset's N1 default; see cmux_send()
         CMUX_MAX_FRAME = 127,
+        // framed ATIs in ATI before a CMUX latch is given up
+        CMUX_PROBE_MAX = 5,
     };
 
     bool cmux_enabled() const;
@@ -228,6 +234,8 @@ private:
     // Raw and unframed, for the phases that run before the mux exists.
     uint16_t uart_read_raw();
     void uart_write_raw(const char *s);
+    // one framed payload, whatever the current mux state
+    void uart_write_frame(uint8_t dlc, const char *s);
     void send_raw(const uint8_t *data, uint16_t len);
     // socket stream: DLC 2 when multiplexed, straight at the UART otherwise
     void data_send(const uint8_t *data, uint16_t len);
@@ -237,8 +245,7 @@ private:
     void data_sendf(const char *fmt, ...) FMT_PRINTF(2, 3);
     void rx_append_all();
     void uart_write_pending();
-    void send_data_reset();
-    bool handle_error();                // ERROR in _rx -> reset to ATI
+    bool handle_error();                // ERROR in _rx -> reset the modem
 
     // search that does not stop at a NUL, for buffers holding socket bytes
     static const char *mem_find(const char *hay, uint16_t hay_len, const char *needle);
@@ -251,6 +258,7 @@ private:
     // binary-safe: the accumulator carries raw socket bytes in CONNECTED
     bool rx_find(const char *needle) const;
     const char *rx_at(const char *needle) const;
+    uint8_t rx_count(const char *needle) const;
     void rx_consume_through(const char *needle);
 
     // ---- parsers -----------------------------------------------------------
@@ -260,6 +268,9 @@ private:
     bool check_CPSI();
     bool check_QENG();
     bool check_QCSQ();
+    bool no_service_reply() const;
+    // band/tower switches, reported once the cell has held for 5s
+    void track_note(int32_t tower, int32_t band);
     void check_modem_banner();
     void check_modem_revision(const char *s);
     bool parse_auth_response(const char *body, uint8_t ip[4], uint16_t &port) const;
@@ -276,7 +287,14 @@ private:
     void effective_server(uint8_t ip[4], uint16_t &port) const;
     void http_fail(const char *reason, bool no_retry = false);
     bool build_auth_body();
+    // first real downlink: ends a no-service hold and reports the outage
+    void on_downlink(uint32_t now_ms);
+    // LTE_TEST bench fault injection
+    void test_start(int32_t id);
+    void test_tick();
     void log_raw(const uint8_t *data, uint16_t len, const char *marker);
+    // a "***" line in the SD log, for events kept off the GCS
+    void log_event(const char *fmt, ...) FMT_PRINTF(2, 3);
     void log_open();
 
     // ---- port / uart -------------------------------------------------------
@@ -310,7 +328,23 @@ private:
     uint32_t _cipopen_sent_ms;
     bool _cipopen_preclosed;
     bool _cipmode_sent;
+    // SIM7600 holds CIPMODE until reboot and rejects it while the network is open
+    bool _cipmode_ok;
+    uint32_t _netopen_ms;               // 0 = NETOPEN not yet sent this entry
+    uint8_t _netopen_fail;
+    uint8_t _netreopen_n;
     uint8_t _hard_reset_strikes;
+
+    // RESET: CFUN on DLC 1 and plain, then +++ and CFUN on DLC 2
+    enum class ResetPhase : uint8_t { START, GUARD, ESC, SETTLE, DONE };
+    ResetPhase _rst_phase;
+    const char *_rst_cmd;
+    bool _rst_keep_baud;
+    uint32_t _rst_ms;
+
+    // Framed ATI probes left before the CMUX latch is dropped. Only a reset
+    // refills it, so a stray 0xF9 cannot re-arm the latch tick after tick.
+    uint8_t _cmux_probe_n;
 
     uint8_t _sim_probe_count;
     uint8_t _sim_missing_count;
@@ -320,6 +354,14 @@ private:
     uint32_t _disconnect_ms;            // 0 = no outage in progress
     uint32_t _creg_search_ms;
     uint32_t _last_data_ms;
+    uint32_t _at_rx_ms;                 // last DLC 1 reply while CONNECTED
+    bool _at_dead_warned;
+    // outage hold, all 0 = not active
+    uint32_t _fc_on_ms;                 // modem flow-stopped DLC 2 (MSC FC bit)
+    uint32_t _nosvc_ms;                 // polls report no serving cell
+    uint32_t _hold_ms;
+    uint32_t _nocarrier_ms;             // Quectel left transparent mode on DLC 2
+    uint32_t _txq_log_ms;
     uint32_t _last_CSQ_ms;
     uint32_t _last_CSQ_reply_ms;
     uint32_t _last_send_data_ms;
@@ -327,15 +369,26 @@ private:
     bool _post_reset;
     bool _csq_toggle;
 
-    bool _siminfo_sent;
+    uint8_t _siminfo_n;                 // queries sent, one at a time
+    uint8_t _siminfo_acks;              // OK/ERROR count when the last went out
+    uint32_t _siminfo_ms;
     bool _siminfo_printed;
 
     int32_t _last_mccmnc;
     int32_t _last_band;
 
-    // band/cell tracking, -1 = not yet seen
+    // band/cell tracking, INT32_MIN = not yet seen
     int32_t _track_band;
     int32_t _track_cid;
+    uint16_t _track_sw_n;               // switches in the current burst
+    uint32_t _track_sw_ms;
+    int32_t _track_from_cid;
+    int32_t _track_from_band;
+
+    // LTE_TEST
+    bool _test_ignore_fc;
+    const char *_test_undo;
+    uint32_t _test_until_ms;
 
     // identity strings pulled out of ATI/COPS/SPN
     char _modem_revision[24];
@@ -418,9 +471,11 @@ private:
     AP_Float _band;
     AP_Float _grace;
     AP_Float _stuck_t;
+    AP_Float _sock_t;
     AP_Float _httpauth;
     AP_Float _authsys;
     AP_Float _authkey;
+    AP_Float _test;
 
     // the params are floats but every use of them is integral
     int32_t pget(const AP_Float &p) const { return int32_t(p.get()); }

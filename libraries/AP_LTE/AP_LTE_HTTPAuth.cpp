@@ -336,6 +336,8 @@ void AP_LTE::step_HTTPAUTH()
                 memcpy(_auth_ip, ip, 4);
                 _auth_port = port;
                 _auth_done = true;
+                // re-armed: the latch stops a reset loop, it is not spent for good
+                _term_reset_done = false;
                 GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE HTTPAUTH: server %u.%u.%u.%u:%u",
                               ip[0], ip[1], ip[2], ip[3], unsigned(port));
                 apply_auth_identity(body);
@@ -501,6 +503,8 @@ void AP_LTE::step_HTTPAUTH()
                 memcpy(_auth_ip, ip, 4);
                 _auth_port = port;
                 _auth_done = true;
+                // re-armed: the latch stops a reset loop, it is not spent for good
+                _term_reset_done = false;
                 GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE HTTPAUTH: server %u.%u.%u.%u:%u",
                               ip[0], ip[1], ip[2], ip[3], unsigned(port));
                 apply_auth_identity(_rx);

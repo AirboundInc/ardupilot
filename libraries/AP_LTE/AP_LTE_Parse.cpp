@@ -218,8 +218,8 @@ bool AP_LTE::check_CSQ()
         return false;
     }
     gcs().send_named_float("LTE_RSSI", rssi);
-    AP::logger().Write("LTE", "RSSI,BER,Bin,Bout", "iiII",
-                       rssi, ber, _bytes_in, _bytes_out);
+    AP::logger().Write("LTE", "TimeUS,RSSI,BER,Bin,Bout", "QiiII",
+                       AP_HAL::micros64(), rssi, ber, _bytes_in, _bytes_out);
     return true;
 }
 
@@ -257,7 +257,7 @@ bool AP_LTE::check_CPSI()
     if (_rx_len > 64) {
         copy_field(r2, sizeof(r2), &_rx[64], MIN(uint16_t(_rx_len - 64), uint16_t(64)));
     }
-    AP::logger().Write("LTER", "R1,R2", "--", "--", "ZZ", r1, r2);
+    AP::logger().Write("LTER", "TimeUS,R1,R2", "QZZ", AP_HAL::micros64(), r1, r2);
 
     p += strlen("+CPSI:");
     while (*p == ' ') {
@@ -304,12 +304,10 @@ bool AP_LTE::check_CPSI()
         }
     }
 
-    // units/mults spelled out: see the note on the LTEI write in AP_LTE.cpp.
-    // Leading string data would otherwise pick the five-string overload and
-    // send the operator name through as the format.
-    AP::logger().Write("LTES", "Md,Op,MCC,TAC,CID,PID,BND,F,DF,TDD,RP,RQ,RS,SR",
-                       "--------------", "--------------",
-                       "NNNIIINHhhhhhh",
+    // TimeUS must lead: see the note on the LTEI write in AP_LTE.cpp.
+    AP::logger().Write("LTES", "TimeUS,Md,Op,MCC,TAC,CID,PID,BND,F,DF,TDD,RP,RQ,RS,SR",
+                       "QNNNIIINHhhhhhh",
+                       AP_HAL::micros64(),
                        mode, oper, mccmnc,
                        uint32_t(tac), uint32_t(scell_id), uint32_t(pcid),
                        band_str,
@@ -329,21 +327,17 @@ bool AP_LTE::check_CPSI()
     }
 
     const int32_t tower_id = scell_id >> 8;
-    if (_track_band < 0) {
+    if (_track_band == INT32_MIN) {
         GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: connected on Band %ld (%s)",
                       long(band), band_str);
         _track_band = band;
-    } else if (band != _track_band) {
-        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE WARNING: band switch %ld -> %ld (%s)",
-                      long(_track_band), long(band), band_str);
-        _track_band = band;
     }
-    if (_track_cid < 0) {
-        _track_cid = tower_id;
-    } else if (tower_id != _track_cid) {
-        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE WARNING: cell tower switch CID %ld -> %ld",
-                      long(_track_cid), long(tower_id));
-        _track_cid = tower_id;
+    // cell ID 0: the SIM7600 between cells, not a tower
+    if (tower_id != 0) {
+        if (_track_cid == INT32_MIN) {
+            _track_cid = tower_id;
+        }
+        track_note(tower_id, band);
     }
     return true;
 }
@@ -365,7 +359,7 @@ bool AP_LTE::check_QENG()
     if (_rx_len > 64) {
         copy_field(r2, sizeof(r2), &_rx[64], MIN(uint16_t(_rx_len - 64), uint16_t(64)));
     }
-    AP::logger().Write("LTER", "R1,R2", "--", "--", "ZZ", r1, r2);
+    AP::logger().Write("LTER", "TimeUS,R1,R2", "QZZ", AP_HAL::micros64(), r1, r2);
 
     // fields start after the "servingcell" token and its comma
     p = sc + strlen("\"servingcell\"");
@@ -410,28 +404,70 @@ bool AP_LTE::check_QENG()
     const int32_t rssi   = dec_or(f[tac_idx + 3], l[tac_idx + 3], 0);
     const int32_t sinr   = dec_or(f[tac_idx + 4], l[tac_idx + 4], 0);
 
-    AP::logger().Write("LTES", "MCC,MNC,TAC,CID,PID,EF,RSRP,RSRQ,RSSI,SINR",
-                       "iiiiiiiiii",
+    // EC25 while searching (log 0134): LIMSRV, or NOCONN with MCC 65535, CID
+    // FFFFFFFF, EARFCN -1. Not a cell: it ended a hold early and logged bogus
+    // band/tower switches.
+    if ((l[0] == 6 && memcmp(f[0], "LIMSRV", 6) == 0) || mcc == 65535 || earfcn < 0) {
+        return false;
+    }
+
+    AP::logger().Write("LTES", "TimeUS,MCC,MNC,TAC,CID,PID,EF,RSRP,RSRQ,RSSI,SINR",
+                       "Qiiiiiiiiii", AP_HAL::micros64(),
                        mcc, mnc, tac, cid, pcid, earfcn, rsrp, rsrq, rssi, sinr);
 
     const int32_t tower_id = cid >> 8;
-    if (_track_band < 0) {
+    if (_track_band == INT32_MIN) {
         GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: connected on Band %ld (EARFCN %ld)",
                       long(band), long(earfcn));
         _track_band = band;
-    } else if (band != _track_band) {
-        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE WARNING: band switch %ld -> %ld (EARFCN %ld)",
-                      long(_track_band), long(band), long(earfcn));
-        _track_band = band;
     }
-    if (_track_cid < 0) {
-        _track_cid = tower_id;
-    } else if (tower_id != _track_cid) {
-        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE WARNING: cell tower switch CID %ld -> %ld",
-                      long(_track_cid), long(tower_id));
-        _track_cid = tower_id;
+    if (tower_id != 0) {   // cell ID 0 is not a tower
+        if (_track_cid == INT32_MIN) {
+            _track_cid = tower_id;
+        }
+        track_note(tower_id, band);
     }
     return true;
+}
+
+/*
+  One line per burst of switches, once the cell has held for 5s, rather than
+  two per switch: the bench flip-flopped B3/B40 every few seconds. Every poll
+  still goes to LTES.
+ */
+void AP_LTE::track_note(int32_t tower, int32_t band)
+{
+    const uint32_t now = AP_HAL::millis();
+    if (tower != _track_cid || band != _track_band) {
+        if (_track_sw_n == 0) {
+            _track_from_cid = _track_cid;
+            _track_from_band = _track_band;
+        }
+        if (_track_sw_n < UINT16_MAX) {
+            _track_sw_n++;
+        }
+        _track_sw_ms = now;
+        _track_cid = tower;
+        _track_band = band;
+        return;
+    }
+    if (_track_sw_n == 0 || now - _track_sw_ms <= 5000) {
+        return;
+    }
+    char b[24];
+    if (_track_from_band != band) {
+        hal.util->snprintf(b, sizeof(b), "B%ld -> B%ld", long(_track_from_band), long(band));
+    } else {
+        hal.util->snprintf(b, sizeof(b), "B%ld", long(band));
+    }
+    if (_track_sw_n == 1) {
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: tower %ld -> %ld (%s)",
+                      long(_track_from_cid), long(tower), b);
+    } else {
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: %u tower switches, now %ld (%s)",
+                      unsigned(_track_sw_n), long(tower), b);
+    }
+    _track_sw_n = 0;
 }
 
 bool AP_LTE::check_QCSQ()
@@ -450,8 +486,8 @@ bool AP_LTE::check_QCSQ()
         !parse_int_after(p, ',', rsrq)) {
         return false;
     }
-    AP::logger().Write("LTEQ", "RSSI,RSRP,SINRr,RSRQ", "iiii",
-                       rssi, rsrp, sinr_raw, rsrq);
+    AP::logger().Write("LTEQ", "TimeUS,RSSI,RSRP,SINRr,RSRQ", "Qiiii",
+                       AP_HAL::micros64(), rssi, rsrp, sinr_raw, rsrq);
     gcs().send_named_float("LTE_RSSI", rssi);
     gcs().send_named_float("LTE_RSRP", rsrp);
     gcs().send_named_float("LTE_RSRQ", rsrq);
@@ -461,13 +497,51 @@ bool AP_LTE::check_QCSQ()
     return true;
 }
 
+/*
+  No serving cell: CPSI NO SERVICE or with its cell fields gone, CSQ 99, QENG
+  SEARCH/LIMSRV or placeholder MCC 65535. CEREG is not trusted for this: it
+  stayed 1 throughout.
+ */
+bool AP_LTE::no_service_reply() const
+{
+    if (rx_find("NO SERVICE") || rx_find("+CSQ: 99,99") ||
+        rx_find("\"SEARCH\"") || rx_find("\"LIMSRV\"") ||
+        rx_find(",65535,65535,")) {
+        return true;
+    }
+    // "+CPSI: <a>,<b>\r", only two fields
+    const char *p = rx_at("+CPSI:");
+    if (p == nullptr) {
+        return false;
+    }
+    p += strlen("+CPSI:");
+    skip_ws(p);
+    for (uint8_t field = 0; field < 2; field++) {
+        const char *start = p;
+        while (*p != 0 && *p != ',' && *p != '\r') {
+            p++;
+        }
+        if (p == start) {
+            return false;
+        }
+        if (field == 0) {
+            if (*p != ',') {
+                return false;
+            }
+            p++;
+        }
+    }
+    return *p == '\r';
+}
+
 void AP_LTE::handle_AT_reply()
 {
     check_CSQ();
-    if (check_CPSI()) {
-        return;
+    if (no_service_reply() && _nosvc_ms == 0) {
+        _nosvc_ms = AP_HAL::millis();
     }
-    if (check_QENG()) {
+    if (check_CPSI() || check_QENG()) {
+        _nosvc_ms = 0;
         return;
     }
     check_QCSQ();

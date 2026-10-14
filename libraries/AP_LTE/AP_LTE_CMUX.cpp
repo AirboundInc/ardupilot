@@ -273,7 +273,21 @@ void AP_LTE::cmux_feed(const uint8_t *data, uint16_t len)
         if ((ctrl & 0xef) == CMUX_UIH && cmux_fcs(&f[1], hdr_len) == f[frame_len - 2]) {
             const uint8_t dlc = (addr >> 2) & 0x3f;
             const uint8_t *payload = &f[1 + hdr_len];
-            if (dlc == CMUX_DLC_AT) {
+            if (dlc == 0) {
+                // MSC for DLC 2: the FC bit is the modem telling us to stop
+                // sending there. Ignoring it pushed 144KB into a stopped DLC 2
+                // (log 0097) and the AT channel died.
+                if (payload_len >= 4 && payload[0] == 0xE3 &&
+                    (payload[2] >> 2) == CMUX_DLC_DATA) {
+                    if ((payload[3] & 0x02) != 0) {
+                        if (_fc_on_ms == 0) {
+                            _fc_on_ms = AP_HAL::millis();
+                        }
+                    } else {
+                        _fc_on_ms = 0;
+                    }
+                }
+            } else if (dlc == CMUX_DLC_AT) {
                 const uint16_t space = uint16_t(sizeof(_chunk) - _chunk_len);
                 const uint16_t n = MIN(payload_len, space);
                 memcpy(&_chunk[_chunk_len], payload, n);
@@ -304,7 +318,7 @@ void AP_LTE::step_CMUX()
 {
     if (_found_cmux) {
         cmux_send_sabm();
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: CMUX mode set");
+        log_event("{CMUX mode set}");
         _cmux_was_set = true;
         _step = Step::BAUD;
         return;
@@ -334,7 +348,7 @@ void AP_LTE::step_CMUX()
                             memchr(_rx, CMUX_FLAG, _rx_len) != nullptr;
     const bool sees_ack = rx_find("CMUX=0") && rx_find("OK");
     if (sees_frame || sees_ack) {
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: CMUX mode set");
+        log_event("{CMUX mode set}");
         if (sees_frame) {
             _found_cmux = true;
         }

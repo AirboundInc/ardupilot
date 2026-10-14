@@ -46,6 +46,75 @@ static bool parse_reg(const char *p, int &stat, bool two_field_only)
 
 // ---------------------------------------------------------------------------
 
+/*
+  Modem reset that does not rely on DLC 1, run over several ticks: CFUN framed
+  on DLC 1 and plain; if neither is answered, "+++" and CFUN framed on DLC 2
+  (log 0097: DLC 1 dead but DLC 2 answered +++). No CLD: an acked CLD left the
+  SIM7600 silent until power-cycled, whatever the CFUN timing (0096, 0098).
+ */
+void AP_LTE::step_RESET()
+{
+    uart_read_raw();
+    rx_append(_raw, _raw_len);
+    const uint32_t t = AP_HAL::millis() - _step_timer_ms;
+
+    switch (_rst_phase) {
+    case ResetPhase::START:
+        uart_write_frame(CMUX_DLC_AT, _rst_cmd);
+        uart_write_raw("\r");
+        uart_write_raw(_rst_cmd);
+        rx_reset();
+        _rst_phase = ResetPhase::GUARD;
+        _rst_ms = t;
+        break;
+
+    case ResetPhase::GUARD:
+        if (rx_find("\r\nOK\r\n")) {
+            // The SIM7600 keeps answering for ~2.5s before it goes down
+            // (0107); starting ATI in that window read it as already back
+            // and rebooted it a second time.
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: sent reset (answered)");
+            _rst_phase = ResetPhase::SETTLE;
+            _rst_ms = t;
+        } else if (t - _rst_ms > 1200) {
+            uart_write_raw("+++");      // needs >1s of silence before it
+            rx_reset();
+            _rst_phase = ResetPhase::ESC;
+            _rst_ms = t;
+        }
+        break;
+
+    case ResetPhase::ESC: {
+        const bool ok = rx_find("\r\nOK\r\n");
+        if (ok || t - _rst_ms > 2500) {
+            uart_write_frame(CMUX_DLC_DATA, _rst_cmd);
+            uart_write_raw("\r");
+            uart_write_raw(_rst_cmd);
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, ok ? "LTE_modem: sent reset (DLC2, +++ answered)"
+                                                : "LTE_modem: sent reset (DLC2, no answer)");
+            _rst_phase = ResetPhase::DONE;
+        }
+        break;
+    }
+
+    case ResetPhase::SETTLE:
+        if (t - _rst_ms > 5000) {
+            _rst_phase = ResetPhase::DONE;
+        }
+        break;
+
+    case ResetPhase::DONE:
+        // the CFUN went out at the end of the previous tick, so the baud can
+        // change now without cutting it off
+        if (!_rst_keep_baud) {
+            _uart->begin(pget(_ibaud));
+        }
+        rx_reset();
+        _step = Step::ATI;
+        break;
+    }
+}
+
 void AP_LTE::step_ATI()
 {
     // Raw, not de-framed: at this point we do not yet know whether the modem
@@ -57,9 +126,9 @@ void AP_LTE::step_ATI()
     const uint32_t now = AP_HAL::millis();
     const uint32_t ati_s = (now - _step_timer_ms) / 1000;
     // Silent on a normal fast boot, but once ATI drags past 2s (modem
-    // mid-reboot after a reset) chirp every 5s, so the recovery window is not
+    // mid-reboot after a reset) chirp every 15s, so the recovery window is not
     // a black hole in the messages tab.
-    if (ati_s > 2 && (_ati_dbg_ms == 0 || now - _ati_dbg_ms > 5000)) {
+    if (ati_s > 2 && (_ati_dbg_ms == 0 || now - _ati_dbg_ms > 15000)) {
         _ati_dbg_ms = now;
         GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: waiting for modem (ATI, %lus)",
                       (unsigned long)ati_s);
@@ -68,11 +137,26 @@ void AP_LTE::step_ATI()
     // AT+CFUN=1,1 does not always drop an existing CMUX session (seen on
     // EC200), so look for the flag byte anywhere in the read. This has to run
     // before the banner check below, which returns first once the family is
-    // known and would hide a mux session revealed in the same read.
+    // known and would hide a mux session revealed in the same read. The probe
+    // budget makes the latch revocable: the tail of pre-reset traffic matches
+    // too, and that latch hung ATI on both vendors.
+    const bool has_flag = _raw_len > 0 && memchr(_raw, CMUX_FLAG, _raw_len) != nullptr;
     if (!_found_cmux && !option_enabled(OPT_NOMUX) && !_cmux_force_disabled &&
-        _raw_len >= 4 && memchr(_raw, CMUX_FLAG, _raw_len) != nullptr) {
+        _cmux_probe_n < CMUX_PROBE_MAX && _raw_len >= 4 && has_flag) {
         _found_cmux = true;
         GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: in CMUX mode");
+        log_event("{INCMUX}");
+    }
+
+    // An unframed boot banner is the modem saying it came back in plain AT: a
+    // live mux session could not have sent it with no FLAG in the same read.
+    if (_found_cmux && _raw_len > 0 && !has_flag &&
+        (rx_find("RDY") || rx_find("+CPIN:") || rx_find("+CFUN:") ||
+         rx_find("+QIND:") || rx_find("+QUSIM:") || rx_find("PB DONE"))) {
+        _found_cmux = false;
+        _cmux_probe_n = CMUX_PROBE_MAX;
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: plain AT banner, left CMUX");
+        log_event("{EXCMUX}");
     }
 
     if (_raw_len > 0 && _modem == &AP_LTE_default_modem) {
@@ -84,8 +168,16 @@ void AP_LTE::step_ATI()
     }
 
     if (_found_cmux) {
-        at_send("ATI\r");               // framed, the modem only reads frames now
-        return;
+        if (_cmux_probe_n < CMUX_PROBE_MAX) {
+            _cmux_probe_n++;
+            at_send("ATI\r");           // framed, the modem only reads frames now
+            return;
+        }
+        // Budget spent with no answer, so the session is gone or never was.
+        // The rotation below still sends a framed ATI every third tick.
+        _found_cmux = false;
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE_modem: no CMUX reply, back to plain AT");
+        log_event("{EXCMUX}");
     }
 
     // Rotate: a plain ATI, a framed one in case the modem is already muxed,
@@ -94,13 +186,7 @@ void AP_LTE::step_ATI()
     if (_ati_sequence % 3 == 2) {
         uart_write_raw("+++");
     } else if (_ati_sequence % 3 == 1 && !option_enabled(OPT_NOMUX)) {
-        uint8_t frame[16];
-        const uint16_t n = cmux_encode(CMUX_DLC_AT, CMUX_UIH,
-                                       (const uint8_t *)"ATI\r", 4,
-                                       frame, sizeof(frame));
-        if (n > 0 && _txq != nullptr) {
-            _txq->write(frame, n);
-        }
+        uart_write_frame(CMUX_DLC_AT, "ATI\r");
     } else {
         uart_write_raw("\rATI\r");
     }
@@ -269,7 +355,7 @@ void AP_LTE::step_CREG()
                 // the HTTPAUTH-or-not decision, so that routing lives in one
                 // place rather than both.
                 _step = Step::SIMINFO;
-                _siminfo_sent = false;
+                _siminfo_n = 0;
                 return;
             }
             if (stat == 0 || stat == 3) {
@@ -417,11 +503,19 @@ void AP_LTE::step_SIMINFO()
     uart_read();
     rx_append(_chunk, _chunk_len);
 
-    if (!_siminfo_sent) {
-        at_send("AT+COPS=3,0\r\n");
-        at_send("AT+COPS?\r\n");
-        at_send(_modem->spn);
-        _siminfo_sent = true;
+    // One query at a time: a modem still answering one drops the next (EC25,
+    // 0043-0045: three sent together, only the first answered, SIM
+    // "unknown"). The next goes out after a new OK/ERROR, or after 1s.
+    const char *const queries[] = { "AT+COPS=3,0\r\n", "AT+COPS?\r\n", _modem->spn };
+    const uint8_t n_queries = (_modem->spn != nullptr) ? 3 : 2;
+    const uint8_t acks = uint8_t(rx_count("\r\nOK\r\n") + rx_count("ERROR"));
+    const uint32_t now = AP_HAL::millis();
+    if (_siminfo_n < n_queries &&
+        (_siminfo_n == 0 || acks > _siminfo_acks || now - _siminfo_ms > 1000)) {
+        at_send(queries[_siminfo_n]);
+        _siminfo_n++;
+        _siminfo_ms = now;
+        _siminfo_acks = acks;
         return;
     }
 
@@ -455,8 +549,16 @@ void AP_LTE::step_SIMINFO()
 
     // Revisits get a shorter budget: restoring the link outranks naming
     // the operator.
-    const uint32_t waited_ms = AP_HAL::millis() - _step_timer_ms;
+    const uint32_t waited_ms = now - _step_timer_ms;
     if (!(have_oper && spn_done) && waited_ms < (_siminfo_printed ? 800U : 1500U)) {
+        return;
+    }
+    // HTTPAUTH takes a bare OK as an answer, so before it every query must be
+    // sent and the last one answered, or a late reply is read as its
+    // CERT_LIST answer. At most 3s, and only once per session.
+    const bool auth_next = pget(_httpauth) == 1 && _modem->http != nullptr && !_auth_done;
+    if (auth_next && waited_ms < 3000 &&
+        (_siminfo_n < n_queries || acks <= _siminfo_acks)) {
         return;
     }
 
@@ -494,7 +596,7 @@ void AP_LTE::step_SIMINFO()
     GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: sim: %.16s", _sim_name);
 
     rx_reset();
-    if (pget(_httpauth) == 1 && _modem->http != nullptr && !_auth_done) {
+    if (auth_next) {
         _step = Step::HTTPAUTH;
     } else {
         _step = next_after_registration();
@@ -510,7 +612,7 @@ void AP_LTE::step_SIGNAL_GATE()
                                                          Step::SOCKET_STATE;
 
     if (_post_reset) {
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: Skipping signal gate post-reset");
+        log_event("{signal gate skipped post-reset}");
         _step = onward;
         return;
     }
@@ -647,6 +749,7 @@ void AP_LTE::step_SOCKET_STATE()
             GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: socket open, closing first");
             _step = Step::CIPCLOSE;
         } else {
+            _cipopen_preclosed = true;  // known closed: CIPOPEN must not pre-close again
             _step = Step::CIPOPEN;
         }
         return;
@@ -666,7 +769,8 @@ void AP_LTE::step_CIPCLOSE()
 
     if (rx_find("\r\nOK\r\n") || rx_find("\nERROR\r\n") ||
         rx_find("+QICLOSE") || rx_find("+CIPCLOSE")) {
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: socket closed, opening");
+        log_event("{socket closed, opening}");
+        _cipopen_preclosed = true;
         _step = Step::CIPOPEN;
         return;
     }
@@ -747,6 +851,12 @@ void AP_LTE::step_PPPOPEN()
 
 void AP_LTE::step_CIPMODE()
 {
+    // SIM7600 rejects CIPMODE while the network is open, and the setting holds
+    // until reboot; re-sending it on a reconnect caused log 0096's reset.
+    if (_cipmode_ok) {
+        _step = Step::NETOPEN;
+        return;
+    }
     uart_read();
     rx_reset();
     rx_append_all();
@@ -765,7 +875,8 @@ void AP_LTE::step_CIPMODE()
     // this first read and is mistaken for it, skipping the real command and
     // leaving the socket non-transparent with no error raised.
     if (_cipmode_sent && (rx_find("\r\r\nOK\r") || rx_find("\r\nOK\r\n"))) {
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: transparent mode set");
+        log_event("{transparent mode set}");
+        _cipmode_ok = true;
         _step = Step::NETOPEN;
         return;
     }
@@ -791,15 +902,38 @@ void AP_LTE::step_NETOPEN()
         data_sendf("%s", _modem->netclose);
         return;
     }
-    if (handle_error()) {
-        return;
-    }
-    if (rx_find("NETOPEN\r") || rx_find("ACTIVE\r") || rx_find("OK\r")) {
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: network opened");
-        _step = onward;
-        return;
+    const uint32_t now = AP_HAL::millis();
+    // Only a reply to our own NETOPEN counts: a stray OK from an earlier
+    // query was taken as "opened" without NETOPEN ever being sent (flight
+    // 222). No handle_error(): "already opened" comes with an ERROR.
+    if (_netopen_ms != 0) {
+        if (rx_find("+NETOPEN: 0") || rx_find("already opened") || rx_find("ACTIVE\r")) {
+            log_event("{network opened}");
+            _step = onward;
+            return;
+        }
+        // No bearer yet (cell change, re-registering: 0107/0113). Retry in 2s,
+        // and every second failure re-check registration, since CREG waits
+        // out a deregistered modem where STUCK_T here would reset it.
+        if (rx_find("+NETOPEN: 1")) {
+            _netopen_fail++;
+            if (_netopen_fail >= 8) {
+                GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE: NETOPEN keeps failing - resetting modem");
+                reset_to_ATI();
+                return;
+            }
+            if (_netopen_fail % 2 == 0) {
+                _step = Step::CREG;
+                return;
+            }
+            _netopen_ms = now - 1000;
+        }
+        if (now - _netopen_ms < 3000) {
+            return;
+        }
     }
     data_sendf("%s", _modem->netopen);
+    _netopen_ms = now;
 }
 
 void AP_LTE::step_CIPOPEN()
@@ -808,14 +942,10 @@ void AP_LTE::step_CIPOPEN()
     // The open goes out on DLC 2, so CONNECT comes back there.
     rx_append_all();
 
-    // The applet also tried to set _cipopen_preclosed from the previous step
-    // here, but run_step latches last_step before dispatching, so that test
-    // could never be true and the flag was only ever set by the pre-close
-    // branch below. Not carried over.
-
+    // pre-close a stale socket, unless SOCKET_STATE or CIPCLOSE already did
     if (_rx_len == 0 && _modem->cipclose != nullptr && !_cipopen_sent &&
         !_cipopen_preclosed) {
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: pre-close stale socket");
+        log_event("{pre-close stale socket}");
         _cipopen_preclosed = true;
         _step = Step::CIPCLOSE;
         return;
@@ -836,10 +966,25 @@ void AP_LTE::step_CIPOPEN()
             _hard_reset_strikes = 0;
             _cmux_cpin_strikes = 0;
             _cipopen_preclosed = false;
+            _netreopen_n = 0;
+            _netopen_fail = 0;
             reset_buffers();
             _step = Step::CONNECTED;
             return;
         }
+    }
+
+    // "network not opened" after NETWORK CLOSED UNEXPECTEDLY: reopen the
+    // network, not the socket; once registered NETOPEN answers in ~0.2s
+    // (0122). Capped so a modem that keeps contradicting itself still reaches
+    // the reset below.
+    if (_modem->netopen != nullptr && rx_find("+CIPOPEN: 0,2\r") && _netreopen_n < 3) {
+        _netreopen_n++;
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: network closed - reopening it");
+        rx_reset();
+        _cipopen_sent = false;
+        _step = Step::NETOPEN;
+        return;
     }
 
     const bool is_error = rx_find("\nERROR\r\n");
@@ -904,6 +1049,26 @@ void AP_LTE::step_CIPOPEN()
     _cipopen_sent_ms = AP_HAL::millis();
 }
 
+/*
+  Downlink proves the bearer: end any no-service hold and close the outage
+  figure here, at the first real data, not at socket open (0097 said 30.7s
+  when the link stayed dead another 43s).
+ */
+void AP_LTE::on_downlink(uint32_t now_ms)
+{
+    _last_data_ms = now_ms;
+    _nosvc_ms = 0;
+    // flow control still set with data flowing for 5s: we missed its release
+    if (_fc_on_ms != 0 && now_ms - _fc_on_ms > 5000) {
+        _fc_on_ms = 0;
+    }
+    if (_disconnect_ms != 0) {
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE: total outage %.1fs",
+                      (double)(now_ms - _disconnect_ms) * 0.001);
+        _disconnect_ms = 0;
+    }
+}
+
 void AP_LTE::step_CONNECTED()
 {
     // Anything the virtual port could not take last pass goes first, and the
@@ -951,17 +1116,58 @@ void AP_LTE::step_CONNECTED()
 
     const uint32_t now_ms = AP_HAL::millis();
 
+    // Outage hold: no serving cell, or DLC 2 flow-stopped, for longer than
+    // LTE_GRACE. The UDP socket survives outages (0096/0097 both recovered on
+    // their own), so pause the uplink and the data timeout instead of
+    // reopening. Flow control alone holds at most LTE_TIMEOUT.
+    const uint32_t grace_ms = uint32_t(MAX(pget(_grace), 0)) * 1000;
+    const uint32_t timeout_ms = uint32_t(MAX(pget(_timeout), 0)) * 1000;
+    const uint32_t fc_for = (_fc_on_ms != 0) ? now_ms - _fc_on_ms : 0;
+    const bool nosvc = _nosvc_ms != 0 && now_ms - _nosvc_ms > grace_ms;
+    const bool holding = !_test_ignore_fc &&
+                         (nosvc || (fc_for > grace_ms && fc_for < timeout_ms));
+    if (holding && _hold_ms == 0) {
+        _hold_ms = now_ms;
+        if (_disconnect_ms == 0 && now_ms - _last_data_ms > grace_ms) {
+            _disconnect_ms = _last_data_ms;
+        }
+        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, nosvc ? "LTE: no service - holding link"
+                                                  : "LTE: modem flow-stopped - holding link");
+    } else if (!holding && _hold_ms != 0) {
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE: hold ended after %.0fs",
+                      (double)(now_ms - _hold_ms) * 0.001);
+        _hold_ms = 0;
+        // service is back: give the socket a full TIMEOUT to carry data again
+        if (_fc_on_ms == 0) {
+            _last_data_ms = now_ms;
+        }
+    }
+    if (_hold_ms != 0 && now_ms - _hold_ms > 60000) {
+        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "LTE: no service for 60s - resetting modem");
+        reset_to_ATI();
+        return;
+    }
+    // Reopen after NO CARRIER once the polls (every 0.5s) show service; while
+    // there is none the hold above applies, as for any outage.
+    if (_nocarrier_ms != 0 && _nosvc_ms == 0 && now_ms - _nocarrier_ms > 1500) {
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: NO CARRIER - reopening socket");
+        _cipopen_sent = false;
+        _step = Step::CIPOPEN;
+        return;
+    }
+
     // Socket bytes: DLC 2 when multiplexed, the whole stream when not.
     const uint8_t *downlink = muxed ? _dlc2 : _chunk;
     const uint16_t downlink_len = muxed ? _dlc2_len : _chunk_len;
 
     if (_chunk_len > 0) {
-        // Unmuxed, AT text and socket payload are the same bytes, so anything
-        // arriving counts as the link being alive. Muxed, only DLC 2 does --
-        // otherwise the driver's own signal polling would feed the watchdog
-        // and a dead socket would never time out.
-        if (!muxed) {
-            _last_data_ms = now_ms;
+        // Unmuxed, AT text and socket payload are the same bytes, and the
+        // downlink branch below refreshes the data timeout. Muxed, only DLC 2
+        // does, or the driver's own signal polling would keep a dead socket
+        // alive; DLC 1 replies only prove the AT channel is.
+        if (muxed) {
+            _at_rx_ms = now_ms;
+            _at_dead_warned = false;
         }
 
         // Every search over this has to be binary safe: unmuxed it holds
@@ -993,8 +1199,17 @@ void AP_LTE::step_CONNECTED()
         }
     }
 
-    if (downlink_len > 0) {
-        _last_data_ms = now_ms;
+    // Quectel leaves transparent mode with NO CARRIER (socket closed or PDP
+    // deactivated) and DLC 2 then runs AT commands: in 0128/0130 it executed
+    // our MAVLink as ATI, and its replies passed for downlink.
+    if (muxed && _nocarrier_ms == 0 &&
+        mem_find((const char *)_dlc2, _dlc2_len, "\r\nNO CARRIER\r\n") != nullptr) {
+        _nocarrier_ms = now_ms;
+        log_event("{NO CARRIER}");
+    }
+
+    if (downlink_len > 0 && _nocarrier_ms == 0) {
+        on_downlink(now_ms);
         const size_t written = _port.device_write(downlink, downlink_len);
         if (written < downlink_len) {
             const uint16_t left = uint16_t(downlink_len - written);
@@ -1003,18 +1218,33 @@ void AP_LTE::step_CONNECTED()
         }
     }
 
-    if (_chunk_len == 0 && downlink_len == 0 && pget(_timeout) > 0 &&
-        now_ms - _last_data_ms > uint32_t(pget(_timeout)) * 1000) {
-        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "LTE_modem: data timeout");
-        if (_disconnect_ms == 0) {
-            _disconnect_ms = now_ms - uint32_t(pget(_timeout)) * 1000;
+    if (!holding && _chunk_len == 0 && downlink_len == 0 && timeout_ms > 0 &&
+        now_ms - _last_data_ms > timeout_ms) {
+        // DLC 1 silent too (0097): CEREG_CHECK would only wait for a reply
+        // that cannot come, so reset at once via the DLC 1-independent path.
+        if (muxed && !option_enabled(OPT_NOSIGQUERY) && now_ms - _at_rx_ms > 5000) {
+            GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "LTE_modem: data timeout, AT dead - resetting");
+            if (_disconnect_ms == 0) {
+                _disconnect_ms = _last_data_ms;
+            }
+            reset_to_ATI();
+            return;
         }
-        reset_to_ATI();
+        // Ask the modem what is wrong before rebooting it: a reboot drops the
+        // cached PLMN and frequency list and costs ~50s of cold scan. If it
+        // does not answer, LTE_SOCK_T resets it from CEREG_CHECK anyway.
+        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "LTE_modem: data timeout - checking link");
+        if (_disconnect_ms == 0) {
+            _disconnect_ms = now_ms - timeout_ms;
+        }
+        _last_data_ms = now_ms;
+        _cipopen_sent = false;
+        rx_reset();
+        _step = Step::CEREG_CHECK;
         return;
     }
 
-    if (_cereg_drop_ms != 0 &&
-        now_ms - _cereg_drop_ms > uint32_t(pget(_grace)) * 1000) {
+    if (!holding && _cereg_drop_ms != 0 && now_ms - _cereg_drop_ms > grace_ms) {
         GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE: network lost - fast reconnect");
         if (_disconnect_ms == 0) {
             _disconnect_ms = _cereg_drop_ms;
@@ -1027,32 +1257,41 @@ void AP_LTE::step_CONNECTED()
         return;
     }
 
-    // uplink, vehicle -> modem
+    // uplink, vehicle -> modem. Held, or after NO CARRIER: drop it, it is
+    // stale by the time the link returns. A shorter flow-stop leaves it in
+    // the port, which then pushes back on the GCS backend.
     uint32_t quota = 0;
     if (pget(_tx_rate) > 0) {
         quota = uint32_t((now_ms - _last_send_data_ms) * 0.001f * pget(_tx_rate));
     }
     uint32_t sent = 0;
-    while (_port.device_available() > 0) {
-        uint16_t n = 100;
-        if (quota > 0) {
-            if (sent >= quota) {
+    const bool flow_stopped = muxed && _fc_on_ms != 0 && !_test_ignore_fc;
+    if (holding || _nocarrier_ms != 0) {
+        uint8_t tmp[128];
+        while (_port.device_read(tmp, sizeof(tmp)) > 0) {
+        }
+    } else if (!flow_stopped) {
+        while (_port.device_available() > 0) {
+            uint16_t n = 100;
+            if (quota > 0) {
+                if (sent >= quota) {
+                    break;
+                }
+                n = MIN(n, uint16_t(quota - sent));
+            }
+            // +8 covers the frame header and trailer when multiplexed
+            if (_txq == nullptr || _txq->space() < uint32_t(n) + 8) {
                 break;
             }
-            n = MIN(n, uint16_t(quota - sent));
+            uint8_t tmp[100];
+            const ssize_t got = _port.device_read(tmp, n);
+            if (got <= 0) {
+                break;
+            }
+            data_send(tmp, uint16_t(got));
+            sent += uint32_t(got);
+            _last_send_data_ms = now_ms;
         }
-        // +8 covers the frame header and trailer when multiplexed
-        if (_txq == nullptr || _txq->space() < uint32_t(n) + 8) {
-            break;
-        }
-        uint8_t tmp[100];
-        const ssize_t got = _port.device_read(tmp, n);
-        if (got <= 0) {
-            break;
-        }
-        data_send(tmp, uint16_t(got));
-        sent += uint32_t(got);
-        _last_send_data_ms = now_ms;
     }
 
     if (option_enabled(OPT_NOSIGQUERY)) {
@@ -1071,6 +1310,14 @@ void AP_LTE::step_CONNECTED()
                 at_send(_csq_toggle ? "AT+CSQ\r\n" : _modem->cpsi);
                 _csq_toggle = !_csq_toggle;
             }
+        }
+        // Polls go out every 500ms, so 5s of silence means DLC 1 is wedged.
+        // Data may still flow, so only report it; the data timeout resets
+        // via the DLC 1-independent path if data stops too.
+        if (!_at_dead_warned && now_ms - _at_rx_ms > 5000) {
+            _at_dead_warned = true;
+            GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "LTE: AT channel silent, keeping data link");
+            log_event("{DLC1 SILENT}");
         }
     } else if (now_ms - _last_CSQ_ms > 1500) {
         _last_CSQ_ms = now_ms;
