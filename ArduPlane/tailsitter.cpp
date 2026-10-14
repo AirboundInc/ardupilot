@@ -197,17 +197,8 @@ const AP_Param::GroupInfo Tailsitter::var_info[] = {
     // @Range: 45 60
     AP_GROUPINFO("WV_MI", 26, Tailsitter, wvane_pitch_mid, 45),
 
-    // @Param: CE_LO
-    // @DisplayName: Tailsitter weathervane pitch rate control effort low
-    // @Description: Pitch rate control effort lower bound to allow weathervane below this threshold
-    // @Range: 0.1 0.5
-    AP_GROUPINFO("CE_LO", 27, Tailsitter, pitch_rate_effort_low, 0.2),
-
-    // @Param: CE_HI
-    // @DisplayName: Tailsitter weathervane max pitch rate control effort
-    // @Description: Pitch rate control effort upper bound to disable weathervane above this threshold
-    // @Range: 0.1 0.5
-    AP_GROUPINFO("CE_HI", 28, Tailsitter, pitch_rate_effort_hi, 0.3),
+    // Note: indices 27 (CE_LO) and 28 (CE_HI) removed when the
+    // weathervane gain scaling moved to the Danger Zone framework.
 
     // @Param: RPM_EN
     // @DisplayName: Tailsitter RPM based tilt scaling enable
@@ -367,6 +358,14 @@ void Tailsitter::output(void)
 
     // To inform the attitude controller that tailsitter is enabled
     quadplane.attitude_control->set_tailsitter_enabled(true);
+
+#if AP_DANGERZONE_ENABLED
+    // Enable danger zone level 3 actions
+    quadplane.attitude_control->set_danger_zone_z3_active(
+        plane.danger_zone.actions_enabled() &&
+        plane.danger_zone.get_current_danger_zone() >= 3);
+#endif
+
     // handle forward flight modes and transition to VTOL modes
     if (!active() || in_vtol_transition()) {
         // get FW controller throttle demand and mask of motors enabled during forward flight
@@ -514,7 +513,6 @@ void Tailsitter::output(void)
     tilt_right = 0.0f;
     float pitch_cd = 0.0f, weathervane_gain = 0.0f, gain_slope = 0.0f;
     float extra_elevator = 0.0f;
-    float pitch_rate_effort = 0.0f, control_effort_gain_slope = 0.0f;
 
     if (vectored_hover_gain > 0) {
         // thrust vectoring VTOL modes
@@ -559,19 +557,28 @@ void Tailsitter::output(void)
             quadplane.weathervane->reset();
         }
 
-        // check if we're fighting a gust by checking pitch rate control effort (P+D+FF, excluding I) basis thresholds
-        const AP_PIDInfo &pitch_pid_info = quadplane.attitude_control->get_rate_pitch_pid().get_pid_info();
-        pitch_rate_effort = fabsf(pitch_pid_info.P + pitch_pid_info.D + pitch_pid_info.FF);
-
-        if (pitch_rate_effort >= pitch_rate_effort_hi) {
-            // pitch rate effort is more than or equal to hi threshold
-            weathervane_gain = 0.0;
-            quadplane.weathervane->reset();
-        } else if (pitch_rate_effort < pitch_rate_effort_hi && pitch_rate_effort > pitch_rate_effort_low) {
-            // scale from max_gain to 0 between high and low while preventing div by zero
-            control_effort_gain_slope = 1.0 - ((pitch_rate_effort - pitch_rate_effort_low) / (pitch_rate_effort_hi - pitch_rate_effort_low + FLT_EPSILON));
-            weathervane_gain = (weathervane_gain) * control_effort_gain_slope;
+#if AP_DANGERZONE_ENABLED
+        // Danger Zone Level 2: disable weathervaning
+        // Set the gain to 0, ramped over 500ms
+        const uint32_t dz_now_ms = AP_HAL::millis();
+        float wv_gain_target = 1.0f;   // 1 = full weathervaning
+        if (plane.danger_zone.actions_enabled() &&
+            plane.danger_zone.get_current_danger_zone() >= 2) {
+            wv_gain_target = 0.0f;     // 0 = disabled (zone 2 and above)
         }
+        if (!is_equal(wv_gain_target, _wv_gain_scale_target)) {
+            // target changed: start a new ramp from the current value
+            _wv_gain_scale_start = _wv_gain_scale;
+            _wv_gain_scale_start_ms = dz_now_ms;
+            _wv_gain_scale_target = wv_gain_target;
+        }
+        _wv_gain_scale = linear_interpolate(_wv_gain_scale_start, wv_gain_target,
+                                            dz_now_ms - _wv_gain_scale_start_ms, 0, 500);
+        weathervane_gain *= _wv_gain_scale;
+        if (is_zero(_wv_gain_scale)) {
+            quadplane.weathervane->reset();
+        }
+#endif
         quadplane.weathervane->set_gain(weathervane_gain);
     }
     quadplane.attitude_control->get_tilt_motor_angle((constrain_float(tilt_left, -4500.0f, 4500.0f) + constrain_float(tilt_right, -4500.0f, 4500.0f)) / 2.0f);

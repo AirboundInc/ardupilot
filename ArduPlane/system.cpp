@@ -124,6 +124,10 @@ void Plane::init_ardupilot()
     quadplane.setup();
 #endif
 
+#if HAL_QUADPLANE_ENABLED && AP_DANGERZONE_ENABLED
+    danger_zone_init();
+#endif
+
     AP_Param::reload_defaults_file(true);
     
     startup_ground();

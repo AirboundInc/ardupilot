@@ -68,6 +68,9 @@ const AP_Scheduler::Task Plane::scheduler_tasks[] = {
     SCHED_TASK(update_GPS_10Hz,        10,    400,  33),
     SCHED_TASK(navigate,               10,    150,  36),
     SCHED_TASK(update_compass,         10,    200,  39),
+#if HAL_QUADPLANE_ENABLED && AP_DANGERZONE_ENABLED
+    SCHED_TASK(danger_zone_update,     50,    120,  40),
+#endif
     SCHED_TASK(calc_airspeed_errors,   10,    100,  42),
     SCHED_TASK(update_alt,             10,    200,  45),
     SCHED_TASK(adjust_altitude_target, 10,    200,  48),
