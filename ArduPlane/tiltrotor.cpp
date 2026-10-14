@@ -833,9 +833,8 @@ void Tiltrotor::dual_axis_output(void)
     // the VTOL mixer runs in VTOL flight and through both transitions,
     // the FW mixer only once the forward transition has reached
     // AIRSPEED_MIN
-    const float raw_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
-    dual_axis_transition->update_controllers(raw_throttle);
-    dual_axis_mixout_throttle = raw_throttle;
+    dual_axis_transition->update_controllers();
+    dual_axis_mixout_throttle = SRV_Channels::get_output_scaled(SRV_Channel::k_throttle);
     if (dual_axis_transition->get_stage() == Tiltrotor_Transition_DualAxis::Stage::FW) {
         run_fw_mixer();
     } else {
@@ -1095,7 +1094,7 @@ void Tiltrotor_Transition_DualAxis::update_yaw_authority() const
   throttle percentage to command. Called once per loop from
   Tiltrotor::run_vtol_mixer(), so only outside the FW stage.
  */
-void Tiltrotor_Transition_DualAxis::update_controllers(float pilot_vtol_throttle_pct)
+void Tiltrotor_Transition_DualAxis::update_controllers(void)
 {
     switch (stage) {
     case Stage::VTOL:
@@ -1105,7 +1104,6 @@ void Tiltrotor_Transition_DualAxis::update_controllers(float pilot_vtol_throttle
         break;
 
     case Stage::BACK:
-        quadplane.hold_stabilize(pilot_vtol_throttle_pct * 0.01f);
         quadplane.motors_output(false);
         update_yaw_authority();
         break;
@@ -1115,7 +1113,7 @@ void Tiltrotor_Transition_DualAxis::update_controllers(float pilot_vtol_throttle
         // transition on the live throttle, and its own throttle output is
         // discarded by dual_axis_output(). The ESCs get the FBWA/commanded
         // throttle
-        quadplane.hold_stabilize(pilot_vtol_throttle_pct * 0.01f);
+        quadplane.run_z_controller();
         quadplane.motors_output(true);
         break;
 
