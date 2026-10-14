@@ -1,27 +1,6 @@
--- GPS management in Q modes: disables auto switch, sets GPS[1] as primary
+-- GPS management in Q modes: sets GPS[1] as primary while it has a 3D fix
 -- switches to GPS[0] if sats or vacc drop below a threshold
 -- switches back to GPS[1] if sats and vacc rise above a threshold
-
--- Q-mode numbers
-local QMODES = {
-    [17] = true,  -- QSTABILIZE
-    [18] = true,  -- QHOVER
-    [19] = true,  -- QLOITER
-    [20] = true,  -- QLAND
-    [21] = true,  -- QRTL
-    [22] = true,  -- QAUTOTUNE
-    [23] = true,  -- QACRO
-}
-
--- Mission commands for landing phase
-local NAV_CMDS = {
-    [17] = true, -- MAV_CMD_NAV_LOITER_UNLIM
-    [19] = true, -- MAV_CMD_NAV_LOITER_TIME
-    [31] = true, -- MAV_CMD_NAV_LOITER_TO_ALT
-    [85] = true, -- MAV_CMD_NAV_VTOL_LAND
-}
-
-local MODES = { auto = 10 } -- other valid modes which need additional checks
 
 local run_interval = 1.0 -- once every run_interval seconds
 
@@ -36,25 +15,14 @@ local VACC_MAX_THRESHOLD = 1.5 -- switch BACK only when vacc <= this
 
 local DEFAULT_PRIMARY = 1 -- 0 is FW GPS, 1 is VTOL GPS
 local DEFAULT_GPS_AUTO_SWITCH = 1 -- USE_BEST
+local VTOL_GPS_AUTO_SWITCH = 4 -- USE_PRIMARY_IF_3D_FIX
 
-
--- True when the vehicle is in a VTOL flight phase:
--- i.e. in a Q mode, or in Auto mode executing a VTOL/loiter mission
-local function in_vtol_phase(mode)
-    if QMODES[mode] then return true end
-    if mode == MODES.auto then
-        local nav_cmd = mission:get_current_nav_id()
-        if nav_cmd and NAV_CMDS[nav_cmd] then return true end
-    end
-    if quadplane and quadplane:in_vtol_land_descent() then return true end
-    return false
-end
 
 local function update()
-    local mode = vehicle:get_mode()
+    local in_vtol = quadplane ~= nil and quadplane:in_vtol_mode()
     local current_gps_auto_switch = param:get("GPS_AUTO_SWITCH")
 
-    if not in_vtol_phase(mode) then
+    if not in_vtol then
         if DEFAULT_GPS_AUTO_SWITCH ~= nil and current_gps_auto_switch ~= DEFAULT_GPS_AUTO_SWITCH then
             gcs:send_text(6, "Not in VTOL phase, resetting GPS settings to default")
             param:set("GPS_AUTO_SWITCH", DEFAULT_GPS_AUTO_SWITCH)
@@ -66,9 +34,9 @@ local function update()
     end
 
     -- Q mode
-    if current_gps_auto_switch ~= nil and current_gps_auto_switch ~= 0 then
-        gcs:send_text(6, "Q mode, disabling GPS autoswitch")
-        param:set("GPS_AUTO_SWITCH", 0)
+    if current_gps_auto_switch ~= nil and current_gps_auto_switch ~= VTOL_GPS_AUTO_SWITCH then
+        gcs:send_text(6, "Q mode, GPS autoswitch set to use primary")
+        param:set("GPS_AUTO_SWITCH", VTOL_GPS_AUTO_SWITCH)
     end
 
     local current_primary = param:get("GPS_PRIMARY")
