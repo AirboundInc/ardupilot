@@ -455,6 +455,9 @@ void Frame::init(const char *frame_str, Battery *_battery)
 {
     model = default_model;
     battery = _battery;
+    // force the battery to be set up from the parameters on the first physics step
+    last_param_voltage = -1;
+    last_param_capacity = -1;
 
     const char *colon = strchr(frame_str, ':');
     size_t slen = strlen(frame_str);
@@ -604,10 +607,16 @@ void Frame::calculate_forces(const Aircraft &aircraft,
 // calculate current and voltage
 void Frame::current_and_voltage(float &voltage, float &current)
 {
+    // SIM_BATT_VOLTAGE is the full-charge voltage and SIM_BATT_CAP_AH the capacity.
+    // A capacity of 0 means "use the frame model's capacity" (and no drain if that is 0 too).
     float param_voltage = AP::sitl()->batt_voltage;
-    if (!is_equal(last_param_voltage,param_voltage)) {
+    float param_capacity = AP::sitl()->batt_capacity_ah;
+    if (!is_equal(last_param_voltage,param_voltage) || !is_equal(last_param_capacity,param_capacity)) {
+        const float capacity = is_positive(param_capacity) ? param_capacity : model.battCapacityAh;
+        battery->setup(capacity, model.refBatRes, param_voltage);
         battery->init_voltage(param_voltage);
         last_param_voltage = param_voltage;
+        last_param_capacity = param_capacity;
     }
     voltage = battery->get_voltage();
     current = 0;

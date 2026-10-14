@@ -95,7 +95,7 @@ private:
         float refBatRes = 0.01; // BAT.Res
 
         // full pack voltage
-        float maxVoltage = 4.2*3;
+        float maxVoltage = 4.2*6;
 
         // battery capacity in Ah. Use zero for unlimited
         float battCapacityAh = 0.0;
@@ -156,6 +156,7 @@ private:
     float areaCd;
     float mass;
     float last_param_voltage;
+    float last_param_capacity;
 #if AP_SIM_ENABLED
     Battery *battery;
 #endif
