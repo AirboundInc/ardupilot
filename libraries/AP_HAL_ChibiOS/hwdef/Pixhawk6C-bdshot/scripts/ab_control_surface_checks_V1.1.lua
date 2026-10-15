@@ -117,7 +117,7 @@ local function para_failed(msg)
     -- A HIGH switch is a held parachute press in MANUAL; any mode change would release the chute
     local pwm = rc:get_pwm(RC_CHAN_MON)
     if pwm and pwm > PARA_TRIGGER_US then
-        gcs:send_text(2, "Para switch HIGH: move it LOW before changing mode!")
+        gcs:send_text(2, "Para switch at DEPLOY: move to HOLD before changing mode!")
     end
 end
 
@@ -138,9 +138,9 @@ local function monitor_passed()
     end
     local ok = mon_min <= MON_LOW_US and mon_max > PARA_TRIGGER_US
     if ok then
-        gcs:send_text(6, string.format("Para range %d-%d: PASS", mon_min, mon_max))
+        gcs:send_text(6, string.format("Para switch HOLD %d / DEPLOY %d: PASS", mon_min, mon_max))
     else
-        gcs:send_text(2, string.format("Para check FAILED: range %d-%d (need <=%d and >%d)",
+        gcs:send_text(2, string.format("Para check FAILED: switch HOLD %d / DEPLOY %d (need <=%d and >%d)",
                       mon_min, mon_max, MON_LOW_US, PARA_TRIGGER_US))
     end
     return ok
@@ -255,23 +255,23 @@ function update()
         -- Wait for the pilot to move the real Para switch HIGH (deploy is held by ab_para_disarm in MANUAL)
         local pwm = rc:get_pwm(RC_CHAN_MON)
         if pwm and pwm > PARA_TRIGGER_US then
-            gcs:send_text(6, string.format("Para switch HIGH (%d)", pwm))
-            gcs:send_text(1, "Para: move switch LOW")
+            gcs:send_text(6, string.format("Para switch at DEPLOY (switch %d)", pwm))
+            gcs:send_text(1, "Para test: move switch to HOLD")
             last_step_time = now
             last_para_prompt = now
             step = 11
         elseif now - last_step_time > PARA_SWITCH_TIMEOUT_MS then
-            para_failed(string.format("Para switch not HIGH: check FAILED (max seen %d, need >%d)",
+            para_failed(string.format("Para switch not at DEPLOY: check FAILED (max %d, need >%d)",
                         mon_max or 0, PARA_TRIGGER_US))
         elseif now - last_para_prompt >= STEP_DELAY_MS then
-            gcs:send_text(4, "Para: move switch HIGH")
+            gcs:send_text(4, "Para test: move switch to DEPLOY (held in MANUAL)")
             last_para_prompt = now
         end
     elseif step == 11 then
         -- Wait for the pilot to move the real Para switch back LOW before leaving MANUAL
         local pwm = rc:get_pwm(RC_CHAN_MON)
         if pwm and pwm >= RC_VALID_MIN_US and pwm <= MON_LOW_US then
-            gcs:send_text(6, string.format("Para switch LOW (%d)", pwm))
+            gcs:send_text(6, string.format("Para switch at HOLD (switch %d)", pwm))
             gcs:send_text(1, "All checks complete. Releasing controls.")
             stop_sequence() -- Restores VFGAIN/QLOITER and releases overrides back to TX
 
@@ -279,10 +279,10 @@ function update()
             mon_failed = not monitor_passed()
             checks_completed = not mon_failed
         elseif now - last_step_time > PARA_SWITCH_TIMEOUT_MS then
-            para_failed(string.format("Para switch not LOW: check FAILED (reading %d, need <=%d)",
+            para_failed(string.format("Para switch not at HOLD: check FAILED (switch %d, need <=%d)",
                         pwm or 0, MON_LOW_US))
         elseif now - last_para_prompt >= STEP_DELAY_MS then
-            gcs:send_text(4, "Para: move switch LOW")
+            gcs:send_text(4, "Para test: move switch to HOLD")
             last_para_prompt = now
         end
     elseif step >= 2 then
@@ -331,7 +331,7 @@ function update()
             step = step + 1
         elseif step == 9 then
             -- Prompt the pilot to flip the Para switch; steps 10/11 read the real receiver value
-            gcs:send_text(1, "Para: move switch HIGH")
+            gcs:send_text(1, "Para test: move switch to DEPLOY (held in MANUAL)")
             mon_active = true
             last_para_prompt = now
             step = 10

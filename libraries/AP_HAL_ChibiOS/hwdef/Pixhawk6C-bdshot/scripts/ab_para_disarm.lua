@@ -52,7 +52,7 @@ function update()
     local hold_in_manual = is_pressed and not last_pressed and vehicle:get_mode() == MODE_MANUAL
     if hold_in_manual then
         if not manual_inhibit_reported then
-            gcs:send_text(GCS_SEVERITY_INFO, "Parachute switch HIGH in MANUAL: deploy held until mode change.")
+            gcs:send_text(GCS_SEVERITY_INFO, "Para switch at DEPLOY in MANUAL: deploy held until mode change.")
             manual_inhibit_reported = true
         end
     else
