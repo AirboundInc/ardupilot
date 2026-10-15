@@ -22,6 +22,7 @@ local REMINDER_INTERVAL_MS   = 15000 -- 15 seconds for the nag message
 local MON_LOW_US             = 1100 -- Monitored channel must read at or below this to pass
 local MON_HIGH_US            = 1900 -- Monitored channel must read at or above this to pass
 local RC_VALID_MIN_US        = 900  -- Trigger readings below this are treated as no RC input
+local PARA_LOW_TIMEOUT_MS    = 10000 -- Max time to wait for the real Para switch to read LOW before leaving MANUAL
 
 -- CTSF_REQ values
 local REQ_EVERY_REBOOT       = 0 -- Check required once per boot
@@ -55,6 +56,7 @@ local mon_active             = false -- True while the monitored channel is bein
 local mon_min                = nil -- Lowest PWM seen on the monitored channel
 local mon_max                = nil -- Highest PWM seen on the monitored channel
 local mon_failed             = false -- True if the last sequence failed the monitored channel check
+local last_para_prompt       = 0 -- Timestamp of the last "move Para switch LOW" prompt
 
 -- Request an authorization ID for custom pre-arm checks
 local auth_id = arming:get_aux_auth_id()
@@ -93,15 +95,17 @@ local function release_overrides()
 end
 
 -- Helper to stop the sequence and restore everything it changed
-local function stop_sequence()
+-- keep_mode = true stays in the current mode instead of switching MANUAL -> QLOITER
+local function stop_sequence(keep_mode)
+    -- Release first so CH11 is back at the TX value before leaving MANUAL (para deploy is held only in MANUAL)
+    release_overrides()
     if step >= 1 then -- MANUAL/VFGAIN were only changed once step 0 succeeded
         param:set('Q_TAILSIT_VFGAIN', 0.2)
         gcs:send_text(6, "Set Q_TAILSIT_VFGAIN to 0.2 (VTOL mode)")
-        if vehicle:get_mode() == MODE_MANUAL then
+        if not keep_mode and vehicle:get_mode() == MODE_MANUAL then
             change_mode(MODE_QLOITER, "QLOITER")
         end
     end
-    release_overrides()
     mon_active = false
     running = false
 end
@@ -228,6 +232,26 @@ function update()
             gcs:send_text(4, "TIMEOUT: Failed to enter MANUAL mode. Aborting.")
             stop_sequence()
         end
+    elseif step == 12 then
+        -- Wait for the real Para switch to read LOW before leaving MANUAL
+        local pwm = rc:get_pwm(RC_CHAN_MON)
+        if pwm and pwm >= RC_VALID_MIN_US and pwm <= MON_LOW_US then
+            gcs:send_text(6, string.format("Para switch LOW (%d)", pwm))
+            gcs:send_text(1, "All checks complete. Releasing controls.")
+            stop_sequence() -- Restores VFGAIN/QLOITER and releases overrides back to TX
+
+            -- Only clear the pre-arm block & reminder if the monitored channel passed
+            mon_failed = not monitor_passed()
+            checks_completed = not mon_failed
+        elseif now - last_step_time > PARA_LOW_TIMEOUT_MS then
+            gcs:send_text(2, "Para switch not LOW: check FAILED, staying in MANUAL")
+            stop_sequence(true) -- Stay in MANUAL so the held parachute press is not released
+            mon_failed = true
+            checks_completed = false
+        elseif now - last_para_prompt >= STEP_DELAY_MS then
+            gcs:send_text(4, "Para switch HIGH - move to LOW")
+            last_para_prompt = now
+        end
     elseif step >= 2 then
         -- Execute timed movements
         if (now - last_step_time < STEP_DELAY_MS) then
@@ -284,13 +308,12 @@ function update()
             rc_mon_chan:set_override(RC_NEUTRAL_US + RC_DEFLECTION)
             step = step + 1
         elseif step == 11 then
-            -- Sequence complete: reset everything
-            gcs:send_text(1, "All checks complete. Releasing controls.")
-            stop_sequence() -- Restores VFGAIN/QLOITER and releases overrides back to TX
-
-            -- Only clear the pre-arm block & reminder if the monitored channel passed
-            mon_failed = not monitor_passed()
-            checks_completed = not mon_failed
+            -- Hand the Para channel back to the TX; step 12 waits for the real switch to read LOW
+            rc_mon_chan:set_override(0)
+            mon_active = false
+            gcs:send_text(4, "Para: confirm switch LOW")
+            last_para_prompt = now
+            step = 12
         end
     end
 
