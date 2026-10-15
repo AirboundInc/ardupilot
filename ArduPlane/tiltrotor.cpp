@@ -143,6 +143,15 @@ const AP_Param::GroupInfo Tiltrotor::var_info[] = {
     // @Increment: 0.1
     AP_GROUPINFO("HVPOW", 18, Tiltrotor, vectored_hover_power, 1.0),
 
+    // @Param: RLRMP_MS
+    // @DisplayName: Post-transition roll limit ramp time
+    // @Description: Dual axis tiltrotor only. After a forward transition completes (or Q assist ends), the fixed wing roll limit ramps from LEVEL_ROLL_LIMIT up to ROLL_LIMIT_DEG over this time, so the first turn doesn't demand a large coordinated yaw rate while airspeed is still low. 0 disables the ramp.
+    // @Units: ms
+    // @Range: 0 10000
+    // @Increment: 100
+    // @User: Standard
+    AP_GROUPINFO("RLRMP_MS", 19, Tiltrotor, roll_ramp_ms, 3000),
+
     AP_GROUPEND
 };
 
@@ -873,9 +882,15 @@ void Tiltrotor::dual_axis_output(void)
             // what the pilot/FBWA throttle or the blend would otherwise be
             const float esc_throttle = plane.arming.is_armed_and_safety_off()
                 ? get_fwd_trans_throttle(now, commanded_throttle_pct) : 0.0f;
+            // override only the collective, keep the VTOL mixer's roll differential
+            // faded out as the motors tilt forward
+            const float roll_diff = plane.arming.is_armed_and_safety_off()
+                ? 50.0f * (quadplane.motors->get_throttle_out_left() - quadplane.motors->get_throttle_out_right())
+                  * cosf(current_tilt * M_PI_2)
+                : 0.0f;
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttle,      esc_throttle);
-            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(esc_throttle, 0, 100));
-            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(esc_throttle, 0, 100));
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(esc_throttle + roll_diff, 0, 100));
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(esc_throttle - roll_diff, 0, 100));
         } else {
             // still hovering, not yet in a forward transition
             // (k_throttle was already restored to the raw commanded value above)
@@ -949,7 +964,6 @@ void Tiltrotor::dual_axis_output(void)
             plane.stabilize_pitch();
             plane.stabilize_roll();
             plane.stabilize_yaw();
-            plane.calc_nav_yaw_coordinated();
             quadplane.attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(plane.nav_roll_cd, plane.nav_pitch_cd, quadplane.get_desired_yaw_rate_cds(false));
             // throttle handler.
             quadplane.set_climb_rate_cms(0.0f);
@@ -1004,6 +1018,8 @@ void Tiltrotor::dual_axis_output(void)
         }
 
 #if HAL_LOGGING_ENABLED
+        if (now - last_dbg_log_ms >= 20) {   // 50 Hz
+            last_dbg_log_ms = now;
         // Add logging for desired thrust vectoring angles
         AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,ExtraEl,AdjL,AdjR,PitchErr,isVTOL,ExtraPit",
                 "sdddddddd", // seconds, degrees
@@ -1021,6 +1037,7 @@ void Tiltrotor::dual_axis_output(void)
                 "F0000", // micro (1e-6), no mult (1e0)
                 "Qffff", // uint64_t, float
                 AP_HAL::micros64(), des_pitch_cd/100, des_pitch_cd2/100,pitch_cd/100,pitch_cd2/100);
+        }
 #endif
         
         SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec,
@@ -1036,9 +1053,16 @@ void Tiltrotor::dual_axis_output(void)
     }
 
 
+    // first FW tick after VTOL/transition/assist: restart the DT ramp
+    if (now - last_fw_mode_ms > 100) {
+        fw_entry_ms = now;
+        plane.yawController.reset_I();
+    }
+
     // track FW mode time and clear backtrans/fwdtrans timers so the next
     // transition re-arms them
     last_fw_mode_ms = now;
+
     transition->backtrans_start_ms = 0;
     fwd_trans_start_ms = 0;
 
@@ -1059,11 +1083,21 @@ void Tiltrotor::dual_axis_output(void)
     // blended with the pilot's vertical throttle after a backtransition
     last_fw_throttle = throttle * 0.01f;
 
+    // ramp differential thrust in over DT_RAMP_MS after entering FW so any
+    // rudder demand present at handover isn't applied as a step
+    constexpr float DT_RAMP_MS = 500.0f;
+    const float dt_ramp   = constrain_float((now - fw_entry_ms) / DT_RAMP_MS, 0.0f, 1.0f);
     const float rud_gain  = float(plane.g2.rudd_dt_gain) * 0.01f;
-    const float rudder_dt = rud_gain * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
+    const float rudder_dt = dt_ramp * rud_gain * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
 
-    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle + 50.0f * rudder_dt, 0, 100));
-    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle - 50.0f * rudder_dt, 0, 100));
+    // DT is the only yaw actuator: near full throttle give up collective
+    // rather than clipping one side of the differential
+    const float half_split = fabsf(50.0f * rudder_dt);
+    const float thr = MIN(throttle, 100.0f - half_split);
+
+    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(thr + 50.0f * rudder_dt, 0, 100));
+    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(thr - 50.0f * rudder_dt, 0, 100));
+
 
 
     // forward flight: Axis 1 is at 90deg (motors fully forward)
@@ -1084,12 +1118,15 @@ void Tiltrotor::dual_axis_output(void)
     float tilt_right = constrain_float((elevator - aileron) * gain, -1.0f, 1.0f) * SERVO_MAX;
 
 #if HAL_LOGGING_ENABLED
+    if (now - last_dbg_log_ms >= 20) {   // 50 Hz
+        last_dbg_log_ms = now;
         // Add logging for desired thrust vectoring angles
         AP::logger().WriteStreaming("PHIF", "TimeUS,DesL,DesR",
                 "sdd", // seconds, degrees
                 "F00", // micro (1e-6), no mult (1e0)
                 "Qff", // uint64_t, float
                 AP_HAL::micros64(), tilt_left/100, tilt_right/100);
+        }
 #endif
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeftVec, tilt_left);
@@ -1137,6 +1174,37 @@ bool Tiltrotor_Transition::use_multirotor_control_in_fwd_transition() const
 {
     return tiltrotor.is_vectored() && transition_state <= TRANSITION_TIMER;
 }
+
+/*
+  dual axis: after the transition completes, ramp the roll limit from
+  LEVEL_ROLL_LIMIT up to ROLL_LIMIT_DEG so the first turn doesn't demand
+  a large coordinated yaw rate while airspeed is still low
+ */
+bool Tiltrotor_Transition::set_FW_roll_limit(int32_t& roll_limit_cd)
+{
+    // keep the standard Q_OPTIONS LEVEL_TRANSITION behaviour during the transition
+    if (SLT_Transition::set_FW_roll_limit(roll_limit_cd)) {
+        return true;
+    }
+    if (!tiltrotor.is_dual_axis() || !complete() || quadplane.in_vtol_mode()) {
+        return false;
+    }
+    const int16_t ramp_param_ms = tiltrotor.roll_ramp_ms.get();
+    if (ramp_param_ms <= 0) {
+        // ramp disabled
+        return false;
+    }
+    const uint32_t ramp_ms = uint32_t(ramp_param_ms);
+    const uint32_t since_fw_ms = AP_HAL::millis() - tiltrotor.fw_entry_ms;
+    if (since_fw_ms >= ramp_ms) {
+        return false;
+    }
+    float lim = linear_interpolate(plane.g.level_roll_limit * 100, roll_limit_cd,
+                                   since_fw_ms, 0, ramp_ms);
+    roll_limit_cd = MIN(roll_limit_cd, int32_t(lim));
+    return true;
+}
+
 
 bool Tiltrotor_Transition::update_yaw_target(float& yaw_target_cd)
 {
