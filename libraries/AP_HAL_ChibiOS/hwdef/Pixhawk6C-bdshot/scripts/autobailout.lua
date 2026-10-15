@@ -5,7 +5,7 @@ local para_ahrs_pitch_threshold_min = -50
 
 -- 1. SETUP PARAMETER TABLE
 local KEY = 110
-assert(param:add_table(KEY, "AUTOB_", 16), "AUTOB table failed")
+assert(param:add_table(KEY, "AUTOB_", 18), "AUTOB table failed")
 
 -- 2. ADD PARAMETERS
 assert(param:add_param(KEY, 1, "PIT_LIM",  50),  'could not add AUTOB_PIT_LIM')   -- ATT pitch(VTOL frame) threshold to enter bailout (deg)
@@ -24,6 +24,8 @@ assert(param:add_param(KEY, 13, "DBG_EN", 1), 'could not add AUTOB_DBG_EN')  -- 
 assert(param:add_param(KEY, 14, "PRED_INT", 1000), 'could not add AUTOB_PRED_INT')  -- Rate based VTOL pitch prediction interval
 assert(param:add_param(KEY, 15, "PRED_ANG", 105), 'could not add AUTOB_PRED_ANG') -- VTOL frame absolute rate based predicted angle threshold for autobailout
 assert(param:add_param(KEY, 16, "COUNT", 5), 'could not add AUTOB_COUNT') -- VTOL frame absolute rate based predicted angle threshold for autobailout
+assert(param:add_param(KEY, 17, "PARA_RAD", 0), 'could not add AUTOB_PARA_RAD')        -- Para geofence radius from home/rally (m). <=0 disables
+assert(param:add_param(KEY, 18, "PARA_RTOUT", 5000), 'could not add AUTOB_PARA_RTOUT') -- Time outside radius before parachute (ms)
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
@@ -49,7 +51,9 @@ local p_win_n   = bind_param("AUTOB_WIN_SMP")
 local p_dbg_en = bind_param("AUTOB_DBG_EN")
 local p_prediction_interval = bind_param("AUTOB_PRED_INT")
 local p_pred_angle_threshold = bind_param("AUTOB_PRED_ANG")
-local p_autobailout_count = bind_param("AUTOB_COUNT") -- -1 : Disables autoresume. 0: disables autobailout and autoresumes. >0: Set limit on autobailout/autoresume count 
+local p_autobailout_count    = bind_param("AUTOB_COUNT") -- -1 : Disables autoresume. 0: disables autobailout and autoresumes. >0: Set limit on autobailout/autoresume count
+local p_para_rad             = bind_param("AUTOB_PARA_RAD")
+local p_para_rtout           = bind_param("AUTOB_PARA_RTOUT")
 
 -- Read Parachute trigger channel number from FCU parameter list 
 
@@ -87,6 +91,17 @@ local PARA_CHAN_HIGH = 1850
 local last_para_warn_t = 0 
 local backtransition_complete_time_ms = nil
 
+-- Fence state variables
+local PARA_FENCE_MODES                = {
+    [19] = true, -- QLOITER
+    [20] = true, -- QLAND
+    [21] = true, -- QRTL
+}
+local MAX_RALLY_POINTS                = 50
+local first_fence_breach_t            = nil
+local last_fence_warn_t               = 0
+local last_fence_countdown_t          = 0
+local last_para_ang_warn_t            = 0
 --- Arming Check
 local arm_state = {was_armed = false}
 
@@ -144,66 +159,147 @@ function is_parachute_angle_threshold_valid(threshold_angle)
     return false
 end
 
+local function distance_to_nearest_ref(loc)
+    local nearest = nil
+    if ahrs:home_is_set() then
+        nearest = loc:get_distance(ahrs:get_home())
+    end
+    if rally then
+        for i = 0, MAX_RALLY_POINTS - 1 do
+            local rally_loc = rally:get_rally_location(i)
+            if not rally_loc then break end
+            local d = loc:get_distance(rally_loc)
+            if nearest == nil or d < nearest then nearest = d end
+        end
+    end
+    return nearest
+end
+
+function is_para_pitch_triggered()
+    local para_threshold = p_para_ang:get() or -45
+    if not is_parachute_angle_threshold_valid(para_threshold) then
+        local t = millis():tofloat()
+        if (t - last_para_ang_warn_t) > 3000 then
+            gcs:send_text(2,
+                string.format("AUTOB:AUTOB_PARA_ANG invalid. Range(%.1f, %.1f)", para_ahrs_pitch_threshold_min,
+                    para_ahrs_pitch_threshold_max))
+            last_para_ang_warn_t = t
+        end
+        first_para_pitch_exceeded_t = nil
+        return false
+    end
+
+    local now = millis():tofloat()
+    local ahrs_pitch = rad2deg(ahrs:get_pitch() or 0)
+    local para_ang_timeout = p_para_timeout:get() or 200
+    if ahrs_pitch < para_threshold and quadplane:in_vtol_mode() and arming:is_armed() then
+        if first_para_pitch_exceeded_t == nil then
+            first_para_pitch_exceeded_t = now
+        elseif (now - first_para_pitch_exceeded_t) > para_ang_timeout then
+            first_para_pitch_exceeded_t = nil
+            gcs:send_text(2, "AUTOB: Para pitch limit breached")
+            return true
+        end
+    else
+        first_para_pitch_exceeded_t = nil
+    end
+    return false
+end
+
+function is_para_fence_triggered()
+    local radius = p_para_rad:get() or 0
+    if radius <= 0 then
+        first_fence_breach_t = nil
+        return false
+    end
+
+    if not (arming:is_armed() and quadplane:in_vtol_mode() and PARA_FENCE_MODES[vehicle:get_mode()]) then
+        first_fence_breach_t = nil
+        return false
+    end
+
+    local now = millis():tofloat()
+    local loc = ahrs:get_location()
+    local dist = loc and distance_to_nearest_ref(loc)
+
+    if dist == nil then
+        if first_fence_breach_t == nil then
+            if (now - last_fence_warn_t) > 3000 then
+                gcs:send_text(4, "AUTOB: Para fence - no position/home")
+                last_fence_warn_t = now
+            end
+            return false
+        end
+        -- already breached: keep timer running on last known breach
+    elseif dist <= radius then
+        if first_fence_breach_t ~= nil then
+            gcs:send_text(2, "AUTOB: Back inside para radius")
+        end
+        first_fence_breach_t = nil
+        return false
+    elseif first_fence_breach_t == nil then
+        first_fence_breach_t = now
+        last_fence_countdown_t = 0 -- force countdown message on this loop
+    end
+
+    local fence_timeout = p_para_rtout:get() or 5000
+    if fence_timeout < 1000 then
+        fence_timeout = 1000
+    end
+    local elapsed = now - first_fence_breach_t
+    if elapsed > fence_timeout then
+        first_fence_breach_t = nil
+        gcs:send_text(2, "AUTOB: Para radius timeout")
+        return true
+    end
+
+    if (now - last_fence_countdown_t) >= 1000 then
+        local remaining_s = math.ceil((fence_timeout - elapsed) / 1000)
+        if dist then
+            gcs:send_text(2, string.format("AUTOB: Outside fence %.0f/%.0fm. Para in %ds", dist, radius, remaining_s))
+        else
+            gcs:send_text(2, string.format("AUTOB: No position. Para in %ds", remaining_s))
+        end
+        last_fence_countdown_t = now
+    end
+    return false
+end
+
 function para_deploy()
-    
     if p_para_enable:get() ~= 1 then return end
 
-    para_trigger_rc_chan = nil
-    PARA_TRIG_CHAN = Parameter()
-    PARA_TRIG_CHAN:init('PARA_TRIG_CH')
-    if PARA_TRIG_CHAN then
-        channel_num = PARA_TRIG_CHAN:get()
-        -- gcs:send_text(2, "Channel num" .. tostring(channel_num))
-        if channel_num == nil then
-            local t = millis():tofloat()
-            if (t - last_para_warn_t) > 3000 then
-                gcs:send_text(2, "AUTOB: PARA_TRIG_CH not set")
-                last_para_warn_t = t
-            end
-            return
-        end  
-
-        para_trigger_rc_chan = rc:get_channel(channel_num)
+    local para_trigger_rc_chan = nil
+    local PARA_TRIG_CHAN = Parameter()
+    if PARA_TRIG_CHAN:init('PARA_TRIG_CH') then
+        local channel_num = PARA_TRIG_CHAN:get()
+        if channel_num then
+            para_trigger_rc_chan = rc:get_channel(channel_num)
+        end
     end
 
     if para_trigger_rc_chan == nil then
         local t = millis():tofloat()
         if (t - last_para_warn_t) > 3000 then
-            gcs:send_text(2, "AUTOB:Para rc channel is nil")
+            gcs:send_text(2, "AUTOB: PARA_TRIG_CH not set / channel nil")
             last_para_warn_t = t
         end
         return
     end
-    
-    local para_threshold = p_para_ang:get() or -45
-    if not is_parachute_angle_threshold_valid(para_threshold) then
-        gcs:send_text(2, string.format("AUTOB:AUTB_PARA_ANG invalid. Range(%.1f, %.1f)",para_ahrs_pitch_threshold_min, para_ahrs_pitch_threshold_max))    
-        return
+
+    if not trigger_para_script then
+        local pitch_trig = is_para_pitch_triggered()
+        local fence_trig = is_para_fence_triggered()
+        if pitch_trig or fence_trig then
+            trigger_para_script = true
+            gcs:send_text(2, "AUTOB:trigger parachute via rc override")
+        end
     end
 
-    local now = millis():tofloat()
-    ahrs_pitch = rad2deg(ahrs:get_pitch() or 0)
-    para_ang_timeout = p_para_timeout:get() or 200
-    check_pitch = ahrs_pitch < para_threshold and (trigger_para_script == false) and quadplane:in_vtol_mode() and arming:is_armed()
-    if check_pitch then
-        if first_para_pitch_exceeded_t == nil then
-            first_para_pitch_exceeded_t = millis():tofloat()
-        else
-            para_time_diff = now - first_para_pitch_exceeded_t
-            if para_time_diff > para_ang_timeout then
-                first_para_pitch_exceeded_t = nil
-                trigger_para_script = true
-                gcs:send_text(2, "AUTOB:trigger parachute via rc override")
-            end
-        end
-    else
-        first_para_pitch_exceeded_t = nil
-    end
-    
     if trigger_para_script then
         para_trigger_rc_chan:set_override(PARA_CHAN_HIGH)
     end
 end
+
 
 function arming_check()
     if not arming:is_armed() then
