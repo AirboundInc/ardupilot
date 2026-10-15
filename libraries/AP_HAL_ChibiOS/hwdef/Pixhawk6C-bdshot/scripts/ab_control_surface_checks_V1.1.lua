@@ -3,7 +3,8 @@
 -- ⚠️ Changes flight mode to MANUAL for the test, then returns to QLOITER.
 -- 🟢 Repeatable on each RC switch LOW->HIGH transition (a switch already high at boot is ignored)
 -- Starting a rerun clears any previous pass; arming during the sequence aborts it
--- RC_CHAN_MON is driven Low then High; arming stays blocked unless it reads <= MON_LOW_US and >= MON_HIGH_US
+-- Pilot is prompted to flip the Para switch (RC_CHAN_MON) HIGH then LOW; the real receiver value must reach
+-- > PARA_TRIGGER_US and <= MON_LOW_US or arming stays blocked. Mode returns to QLOITER only once it reads LOW.
 -- CTSF_REQ selects when the check is required:
 --   0 = after every reboot (hard or soft)
 --   1 = after every reboot and before every take-off (re-required on disarm after a flight)
@@ -12,7 +13,7 @@
 local RC_CHAN_ROLL           = 1    -- Your aircraft's Roll input channel
 local RC_CHAN_PITCH          = 2    -- Your aircraft's Pitch input channel
 local RC_CHAN_FLAP           = 9    -- Your aircraft's Flap input channel
-local RC_CHAN_MON            = 11   -- Channel driven low/high and range-checked during the sequence
+local RC_CHAN_MON            = 11   -- Para switch channel; pilot flips it HIGH/LOW and the real value is checked
 
 local RC_NEUTRAL_US          = 1500 -- Neutral PWM for RC channels
 local RC_DEFLECTION          = 500  -- PWM deflection from neutral to simulate full stick
@@ -20,9 +21,9 @@ local STEP_DELAY_MS          = 3000 -- Delay between each movement in millisecon
 local MODE_CHANGE_TIMEOUT_MS = 5000 -- Max time to wait for a mode change
 local REMINDER_INTERVAL_MS   = 15000 -- 15 seconds for the nag message
 local MON_LOW_US             = 1100 -- Monitored channel must read at or below this to pass
-local MON_HIGH_US            = 1900 -- Monitored channel must read at or above this to pass
 local RC_VALID_MIN_US        = 900  -- Trigger readings below this are treated as no RC input
-local PARA_LOW_TIMEOUT_MS    = 10000 -- Max time to wait for the real Para switch to read LOW before leaving MANUAL
+local PARA_SWITCH_TIMEOUT_MS = 10000 -- Max time to wait for the pilot to move the Para switch HIGH (or LOW)
+local PARA_TRIGGER_US        = 1800 -- Para switch above this is a parachute press and counts as HIGH (matches ab_para_disarm.lua)
 
 -- CTSF_REQ values
 local REQ_EVERY_REBOOT       = 0 -- Check required once per boot
@@ -56,7 +57,7 @@ local mon_active             = false -- True while the monitored channel is bein
 local mon_min                = nil -- Lowest PWM seen on the monitored channel
 local mon_max                = nil -- Highest PWM seen on the monitored channel
 local mon_failed             = false -- True if the last sequence failed the monitored channel check
-local last_para_prompt       = 0 -- Timestamp of the last "move Para switch LOW" prompt
+local last_para_prompt       = 0 -- Timestamp of the last "move Para switch" prompt
 
 -- Request an authorization ID for custom pre-arm checks
 local auth_id = arming:get_aux_auth_id()
@@ -68,10 +69,9 @@ end
 local rc_pitch_chan = rc:get_channel(RC_CHAN_PITCH)
 local rc_roll_chan = rc:get_channel(RC_CHAN_ROLL)
 local rc_flap_chan = rc:get_channel(RC_CHAN_FLAP)
-local rc_mon_chan = rc:get_channel(RC_CHAN_MON)
 
-if not rc_pitch_chan or not rc_roll_chan or not rc_flap_chan or not rc_mon_chan then
-    gcs:send_text(4, "ERROR: RC Roll/Pitch/flap/Para channels not found.")
+if not rc_pitch_chan or not rc_roll_chan or not rc_flap_chan then
+    gcs:send_text(4, "ERROR: RC Roll/Pitch/flap channels not found.")
     return -- Stop the script from running
 end
 
@@ -91,13 +91,11 @@ local function release_overrides()
     rc_pitch_chan:set_override(0)
     rc_roll_chan:set_override(0)
     rc_flap_chan:set_override(0)
-    rc_mon_chan:set_override(0)
 end
 
 -- Helper to stop the sequence and restore everything it changed
 -- keep_mode = true stays in the current mode instead of switching MANUAL -> QLOITER
 local function stop_sequence(keep_mode)
-    -- Release first so CH11 is back at the TX value before leaving MANUAL (para deploy is held only in MANUAL)
     release_overrides()
     if step >= 1 then -- MANUAL/VFGAIN were only changed once step 0 succeeded
         param:set('Q_TAILSIT_VFGAIN', 0.2)
@@ -110,10 +108,23 @@ local function stop_sequence(keep_mode)
     running = false
 end
 
--- Helper to record the min/max PWM of the monitored channel
+-- Helper to stop the sequence on a Para switch failure; stays in MANUAL so a held parachute press is never released
+local function para_failed(msg)
+    gcs:send_text(2, msg)
+    stop_sequence(true)
+    mon_failed = true
+    checks_completed = false
+    -- A HIGH switch is a held parachute press in MANUAL; any mode change would release the chute
+    local pwm = rc:get_pwm(RC_CHAN_MON)
+    if pwm and pwm > PARA_TRIGGER_US then
+        gcs:send_text(2, "Para switch HIGH: move it LOW before changing mode!")
+    end
+end
+
+-- Helper to record the min/max PWM of the monitored channel (real receiver values only)
 local function sample_monitor()
     local pwm = rc:get_pwm(RC_CHAN_MON)
-    if pwm then
+    if pwm and pwm >= RC_VALID_MIN_US then
         if not mon_min or pwm < mon_min then mon_min = pwm end
         if not mon_max or pwm > mon_max then mon_max = pwm end
     end
@@ -125,12 +136,12 @@ local function monitor_passed()
         gcs:send_text(2, "Para check FAILED: no RC input seen")
         return false
     end
-    local ok = mon_min <= MON_LOW_US and mon_max >= MON_HIGH_US
+    local ok = mon_min <= MON_LOW_US and mon_max > PARA_TRIGGER_US
     if ok then
         gcs:send_text(6, string.format("Para range %d-%d: PASS", mon_min, mon_max))
     else
-        gcs:send_text(2, string.format("Para check FAILED: range %d-%d (need <=%d and >=%d)",
-                      mon_min, mon_max, MON_LOW_US, MON_HIGH_US))
+        gcs:send_text(2, string.format("Para check FAILED: range %d-%d (need <=%d and >%d)",
+                      mon_min, mon_max, MON_LOW_US, PARA_TRIGGER_US))
     end
     return ok
 end
@@ -169,7 +180,7 @@ function update()
     if armed then
         if running then
             gcs:send_text(4, "Armed during control surface check. Aborting.")
-            stop_sequence()
+            stop_sequence(true) -- Stay in the current mode; leaving MANUAL with Para HIGH would release the chute
         end
         return update, 100
     end
@@ -211,6 +222,14 @@ function update()
         sample_monitor()
     end
 
+    -- Abort if the mode leaves MANUAL mid-check (e.g. mode switch bumped); the parachute press is only held
+    -- in MANUAL, so the Para steps must never run in another mode. Stay in the new mode.
+    if step >= 2 and vehicle:get_mode() ~= MODE_MANUAL then
+        gcs:send_text(4, "Mode changed during control surface check. Aborting.")
+        stop_sequence(true)
+        return update, 100
+    end
+
     -- State Machine
     if step == 0 then
         -- Attempt to change to MANUAL mode
@@ -232,8 +251,24 @@ function update()
             gcs:send_text(4, "TIMEOUT: Failed to enter MANUAL mode. Aborting.")
             stop_sequence()
         end
-    elseif step == 12 then
-        -- Wait for the real Para switch to read LOW before leaving MANUAL
+    elseif step == 10 then
+        -- Wait for the pilot to move the real Para switch HIGH (deploy is held by ab_para_disarm in MANUAL)
+        local pwm = rc:get_pwm(RC_CHAN_MON)
+        if pwm and pwm > PARA_TRIGGER_US then
+            gcs:send_text(6, string.format("Para switch HIGH (%d)", pwm))
+            gcs:send_text(1, "Para: move switch LOW")
+            last_step_time = now
+            last_para_prompt = now
+            step = 11
+        elseif now - last_step_time > PARA_SWITCH_TIMEOUT_MS then
+            para_failed(string.format("Para switch not HIGH: check FAILED (max seen %d, need >%d)",
+                        mon_max or 0, PARA_TRIGGER_US))
+        elseif now - last_para_prompt >= STEP_DELAY_MS then
+            gcs:send_text(4, "Para: move switch HIGH")
+            last_para_prompt = now
+        end
+    elseif step == 11 then
+        -- Wait for the pilot to move the real Para switch back LOW before leaving MANUAL
         local pwm = rc:get_pwm(RC_CHAN_MON)
         if pwm and pwm >= RC_VALID_MIN_US and pwm <= MON_LOW_US then
             gcs:send_text(6, string.format("Para switch LOW (%d)", pwm))
@@ -243,13 +278,11 @@ function update()
             -- Only clear the pre-arm block & reminder if the monitored channel passed
             mon_failed = not monitor_passed()
             checks_completed = not mon_failed
-        elseif now - last_step_time > PARA_LOW_TIMEOUT_MS then
-            gcs:send_text(2, "Para switch not LOW: check FAILED, staying in MANUAL")
-            stop_sequence(true) -- Stay in MANUAL so the held parachute press is not released
-            mon_failed = true
-            checks_completed = false
+        elseif now - last_step_time > PARA_SWITCH_TIMEOUT_MS then
+            para_failed(string.format("Para switch not LOW: check FAILED (reading %d, need <=%d)",
+                        pwm or 0, MON_LOW_US))
         elseif now - last_para_prompt >= STEP_DELAY_MS then
-            gcs:send_text(4, "Para switch HIGH - move to LOW")
+            gcs:send_text(4, "Para: move switch LOW")
             last_para_prompt = now
         end
     elseif step >= 2 then
@@ -297,23 +330,11 @@ function update()
             rc_flap_chan:set_override(RC_NEUTRAL_US - RC_DEFLECTION)
             step = step + 1
         elseif step == 9 then
-            -- Monitored channel Low (start sampling)
-            gcs:send_text(1, "Para Low")
-            rc_mon_chan:set_override(RC_NEUTRAL_US - RC_DEFLECTION)
+            -- Prompt the pilot to flip the Para switch; steps 10/11 read the real receiver value
+            gcs:send_text(1, "Para: move switch HIGH")
             mon_active = true
-            step = step + 1
-        elseif step == 10 then
-            -- Monitored channel High
-            gcs:send_text(1, "Para High")
-            rc_mon_chan:set_override(RC_NEUTRAL_US + RC_DEFLECTION)
-            step = step + 1
-        elseif step == 11 then
-            -- Hand the Para channel back to the TX; step 12 waits for the real switch to read LOW
-            rc_mon_chan:set_override(0)
-            mon_active = false
-            gcs:send_text(4, "Para: confirm switch LOW")
             last_para_prompt = now
-            step = 12
+            step = 10
         end
     end
 
