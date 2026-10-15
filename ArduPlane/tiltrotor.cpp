@@ -1106,6 +1106,7 @@ void Tiltrotor_Transition_DualAxis::update_controllers(void)
     case Stage::BACK:
         quadplane.motors_output(false);
         update_yaw_authority();
+        quadplane.set_climb_rate_cms(0);
         break;
 
     case Stage::FWD:

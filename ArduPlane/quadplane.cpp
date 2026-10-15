@@ -2953,7 +2953,7 @@ void QuadPlane::vtol_position_controller(void)
     case QPOS_POSITION1:
         if (tailsitter.in_vtol_transition(now_ms) ||
             (tiltrotor.type == Tiltrotor::TILT_TYPE_DUAL_AXIS && tiltrotor.dual_axis_transition->get_stage() == Tiltrotor_Transition_DualAxis::Stage::BACK)) {
-            pos_control->relax_z_controller(0);
+            set_climb_rate_cms(0);
             break;
         }
         FALLTHROUGH;
