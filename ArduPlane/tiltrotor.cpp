@@ -967,7 +967,7 @@ void Tiltrotor_Transition_DualAxis::update()
         set_stage(Stage::FWD);
     }
 
-    if (stage == Stage::FWD && airspeed_reached()) {
+    if (stage == Stage::FWD && airspeed_reached() && tiltrotor.fully_fwd()) {
         set_stage(Stage::FW);
     }
 
