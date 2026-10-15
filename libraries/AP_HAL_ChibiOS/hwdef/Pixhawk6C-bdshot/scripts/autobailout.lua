@@ -5,14 +5,14 @@ local para_ahrs_pitch_threshold_min = -50
 
 -- 1. SETUP PARAMETER TABLE
 local KEY = 110
-assert(param:add_table(KEY, "AUTOB_", 16), "AUTOB table failed")
+assert(param:add_table(KEY, "AUTOB_", 18), "AUTOB table failed")
 
 -- 2. ADD PARAMETERS
 assert(param:add_param(KEY, 1, "PIT_LIM",  50),  'could not add AUTOB_PIT_LIM')   -- ATT pitch(VTOL frame) threshold to enter bailout (deg)
 assert(param:add_param(KEY, 2, "ENABLE", 1),'could not add AUTOB_ENABLE')    -- 1 = Enabled
 assert(param:add_param(KEY, 3, "BTRN_DLY", 2500), 'could not add AUTOB_BTRN_DLY') -- Delay (ms) before checking pitch
 assert(param:add_param(KEY, 4, "PIT_TOUT", 100), 'could not add AUTOB_PIT_TOUT')  -- Sustained duration to enter bailout (ms)
-assert(param:add_param(KEY, 5, "PARA_EN", 0),'could not add AUTOB_PARA_EN')    -- 1 = Enabled
+assert(param:add_param(KEY, 5, "PARA_EN", 1), 'could not add AUTOB_PARA_EN')           -- 1 = Enabled
 assert(param:add_param(KEY, 6,"PARA_ANG", -15),'could not add AUTOB_PARA_ANG') -- AHRS Pitch(FW frame) threshold to trigger parachute(deg)
 assert(param:add_param(KEY, 7,"PARA_TOUT", 100),'could not add AUTOB_PARA_TOUT') -- Parachute pitch threshold timeout in ms
 assert(param:add_param(KEY, 8,  "LOOP_MS", 50), 'could not add AUTOB_LOOP_MS')  -- Loop rate (ms)
@@ -24,6 +24,8 @@ assert(param:add_param(KEY, 13, "DBG_EN", 1), 'could not add AUTOB_DBG_EN')  -- 
 assert(param:add_param(KEY, 14, "PRED_INT", 1000), 'could not add AUTOB_PRED_INT')  -- Rate based VTOL pitch prediction interval
 assert(param:add_param(KEY, 15, "PRED_ANG", 105), 'could not add AUTOB_PRED_ANG') -- VTOL frame absolute rate based predicted angle threshold for autobailout
 assert(param:add_param(KEY, 16, "COUNT", 5), 'could not add AUTOB_COUNT') -- VTOL frame absolute rate based predicted angle threshold for autobailout
+assert(param:add_param(KEY, 17, "PARA_FEN", 1), 'could not add AUTOB_PARA_FEN')        -- 1 = para deploy on polygon fence breach
+assert(param:add_param(KEY, 18, "PARA_FTOUT", 3000), 'could not add AUTOB_PARA_FTOUT') -- Time outside polygon before parachute (ms)
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
@@ -49,7 +51,9 @@ local p_win_n   = bind_param("AUTOB_WIN_SMP")
 local p_dbg_en = bind_param("AUTOB_DBG_EN")
 local p_prediction_interval = bind_param("AUTOB_PRED_INT")
 local p_pred_angle_threshold = bind_param("AUTOB_PRED_ANG")
-local p_autobailout_count = bind_param("AUTOB_COUNT") -- -1 : Disables autoresume. 0: disables autobailout and autoresumes. >0: Set limit on autobailout/autoresume count 
+local p_autobailout_count    = bind_param("AUTOB_COUNT") -- -1 : Disables autoresume. 0: disables autobailout and autoresumes. >0: Set limit on autobailout/autoresume count
+local p_para_fen             = bind_param("AUTOB_PARA_FEN")
+local p_para_ftout           = bind_param("AUTOB_PARA_FTOUT")
 
 -- Read Parachute trigger channel number from FCU parameter list 
 
@@ -87,6 +91,33 @@ local PARA_CHAN_HIGH = 1850
 local last_para_warn_t = 0 
 local backtransition_complete_time_ms = nil
 
+-- Fence state variables
+local PARA_FENCE_MODES                = {
+    [19] = true, -- QLOITER
+    [20] = true, -- QLAND
+    [21] = true, -- QRTL
+}
+local FENCE_TYPE_POLYGON              = 4
+local first_fence_breach_t            = nil
+local last_fence_warn_t               = 0
+local last_fence_countdown_t          = 0
+local fence_cfg_warned_armed          = false
+local fence_enable_set_t              = 0     -- time the script last switched the fence on
+local FENCE_SETTLE_MS                 = 1000  -- ignore breach bit this long after switching fence on
+local fence_disabled_by_script        = false
+local fence_mgmt_stopped              = false -- set true after a script error; fence then stays on
+local last_para_ang_warn_t            = 0
+
+-- Firmware fence params (init() instead of Parameter(name) so a build without fence doesn't crash the script)
+local p_fence_enable                  = Parameter()
+local p_fence_type                    = Parameter()
+local p_fence_action                  = Parameter()
+local p_fence_autoen                  = Parameter()
+local p_fence_options                 = Parameter()
+local fence_params_ok                 = p_fence_enable:init("FENCE_ENABLE") and p_fence_type:init("FENCE_TYPE")
+    and p_fence_action:init("FENCE_ACTION") and p_fence_autoen:init("FENCE_AUTOENABLE")
+    and p_fence_options:init("FENCE_OPTIONS")
+local FENCE_OPT_UNION                 = 2
 --- Arming Check
 local arm_state = {was_armed = false}
 
@@ -144,66 +175,224 @@ function is_parachute_angle_threshold_valid(threshold_angle)
     return false
 end
 
+function is_para_pitch_triggered()
+    local para_threshold = p_para_ang:get() or -45
+    if not is_parachute_angle_threshold_valid(para_threshold) then
+        local t = millis():tofloat()
+        if (t - last_para_ang_warn_t) > 3000 then
+            gcs:send_text(2,
+                string.format("AUTOB:AUTOB_PARA_ANG invalid. Range(%.1f, %.1f)", para_ahrs_pitch_threshold_min,
+                    para_ahrs_pitch_threshold_max))
+            last_para_ang_warn_t = t
+        end
+        first_para_pitch_exceeded_t = nil
+        return false
+    end
+
+    local now = millis():tofloat()
+    local ahrs_pitch = rad2deg(ahrs:get_pitch() or 0)
+    local para_ang_timeout = p_para_timeout:get() or 200
+    if ahrs_pitch < para_threshold and quadplane:in_vtol_mode() and arming:is_armed() then
+        if first_para_pitch_exceeded_t == nil then
+            first_para_pitch_exceeded_t = now
+        elseif (now - first_para_pitch_exceeded_t) > para_ang_timeout then
+            first_para_pitch_exceeded_t = nil
+            gcs:send_text(2, "AUTOB: Para pitch limit breached")
+            return true
+        end
+    else
+        first_para_pitch_exceeded_t = nil
+    end
+    return false
+end
+
+-- returns nil if the firmware fence is set up so a polygon breach is reported in the para modes,
+-- else a GCS message describing the problem
+local function para_fence_config_problem()
+    if not fence or not fence_params_ok then
+        return "AUTOB: Fence not supported in firmware"
+    end
+    if (math.floor(p_fence_type:get()) & FENCE_TYPE_POLYGON) == 0 then
+        return "AUTOB: FENCE_TYPE missing Polygon(4)"
+    end
+    if p_fence_autoen:get() ~= 0 then
+        return "AUTOB: Para fence needs FENCE_AUTOENABLE=0"
+    end
+    if p_fence_action:get() ~= 0 then
+        return "AUTOB: Para fence needs FENCE_ACTION=0"
+    end
+    return nil
+end
+
+-- set_and_save only if the value differs, and tell the GCS
+local function enforce_param(p, name, value)
+    if p:get() ~= value then
+        if p:set_and_save(value) then
+            gcs:send_text(4, string.format("AUTOB: Set %s=%d", name, value))
+        else
+            local t = millis():tofloat()
+            if (t - last_fence_warn_t) > 5000 then
+                gcs:send_text(2, string.format("AUTOB: Failed to set %s", name))
+                last_fence_warn_t = t
+            end
+        end
+    end
+end
+
+-- While disarmed with the para fence feature on, force the fence params it depends on.
+-- Never writes in flight; only writes values that differ.
+local function apply_fence_params()
+    if not fence_params_ok or fence_mgmt_stopped or arming:is_armed() then return end
+    if p_para_enable:get() ~= 1 or p_para_fen:get() ~= 1 then return end
+
+    enforce_param(p_fence_type, "FENCE_TYPE", math.floor(p_fence_type:get()) | FENCE_TYPE_POLYGON)
+    enforce_param(p_fence_options, "FENCE_OPTIONS", math.floor(p_fence_options:get()) | FENCE_OPT_UNION)
+    enforce_param(p_fence_action, "FENCE_ACTION", 0)
+    enforce_param(p_fence_autoen, "FENCE_AUTOENABLE", 0)
+    if not fence_disabled_by_script then
+        enforce_param(p_fence_enable, "FENCE_ENABLE", 1)
+    end
+end
+
+
+-- Fence is only on while disarmed (pre-arm checks) or while the para fence trigger can run,
+-- so fixed-wing transit between polygons isn't reported as a breach.
+-- param:set() is not saved; a reboot restores the saved FENCE_ENABLE.
+local function update_fence_enable()
+    if not fence_params_ok or fence_mgmt_stopped then return end
+
+    local want_on
+    if p_para_enable:get() == 1 and p_para_fen:get() == 1 and para_fence_config_problem() == nil then
+        want_on = (not arming:is_armed())
+            or (quadplane:in_vtol_mode() and PARA_FENCE_MODES[vehicle:get_mode()] == true)
+    elseif fence_disabled_by_script then
+        want_on = true -- feature turned off: hand the fence back enabled
+    else
+        return
+    end
+
+    local is_on = p_fence_enable:get() == 1
+    if want_on and not is_on then
+        p_fence_enable:set(1)
+        fence_enable_set_t = millis():tofloat()
+        fence_disabled_by_script = false
+    elseif not want_on and is_on then
+        p_fence_enable:set(0)
+        fence_disabled_by_script = true
+    end
+end
+
+function is_para_fence_triggered()
+    if p_para_fen:get() ~= 1 then
+        first_fence_breach_t = nil
+        return false
+    end
+
+    local armed = arming:is_armed()
+    local now = millis():tofloat()
+
+    local problem = para_fence_config_problem()
+    if problem then
+        if not armed then
+            fence_cfg_warned_armed = false
+        end
+        -- every 5s on the ground, once after arming
+        if (not armed and (now - last_fence_warn_t) > 5000) or (armed and not fence_cfg_warned_armed) then
+            gcs:send_text(2, problem)
+            last_fence_warn_t = now
+            fence_cfg_warned_armed = armed
+        end
+        first_fence_breach_t = nil
+        return false
+    end
+
+    if not (armed and quadplane:in_vtol_mode() and PARA_FENCE_MODES[vehicle:get_mode()]) then
+        first_fence_breach_t = nil
+        return false
+    end
+
+    -- fence was just switched on; let ArduPilot re-check before trusting the breach bit
+    if (now - fence_enable_set_t) < FENCE_SETTLE_MS then
+        return false
+    end
+
+    local breached = (fence:get_breaches() & FENCE_TYPE_POLYGON) ~= 0
+
+    if breached then
+        if first_fence_breach_t == nil then
+            first_fence_breach_t = now
+            last_fence_countdown_t = 0 -- force countdown message on this loop
+        end
+    elseif first_fence_breach_t ~= nil then
+        if ahrs:get_location() then
+            gcs:send_text(2, "AUTOB: Back inside fence. Para cancelled")
+            first_fence_breach_t = nil
+            return false
+        end
+        -- firmware clears the breach when it has no position;
+        -- keep counting on the last known breach
+    else
+        return false
+    end
+
+    local fence_timeout = p_para_ftout:get() or 5000
+    if fence_timeout < 1000 then
+        fence_timeout = 1000
+    end
+    local elapsed = now - first_fence_breach_t
+    if elapsed > fence_timeout then
+        first_fence_breach_t = nil
+        gcs:send_text(2, "AUTOB: Fence timeout")
+        return true
+    end
+
+    if (now - last_fence_countdown_t) >= 1000 then
+        local remaining_s = math.ceil((fence_timeout - elapsed) / 1000)
+        if ahrs:get_location() then
+            gcs:send_text(2, string.format("AUTOB: Fence breached. Para in %ds", remaining_s))
+        else
+            gcs:send_text(2, string.format("AUTOB: No position. Para in %ds", remaining_s))
+        end
+        last_fence_countdown_t = now
+    end
+    return false
+end
+
 function para_deploy()
-    
     if p_para_enable:get() ~= 1 then return end
 
-    para_trigger_rc_chan = nil
-    PARA_TRIG_CHAN = Parameter()
-    PARA_TRIG_CHAN:init('PARA_TRIG_CH')
-    if PARA_TRIG_CHAN then
-        channel_num = PARA_TRIG_CHAN:get()
-        -- gcs:send_text(2, "Channel num" .. tostring(channel_num))
-        if channel_num == nil then
-            local t = millis():tofloat()
-            if (t - last_para_warn_t) > 3000 then
-                gcs:send_text(2, "AUTOB: PARA_TRIG_CH not set")
-                last_para_warn_t = t
-            end
-            return
-        end  
-
-        para_trigger_rc_chan = rc:get_channel(channel_num)
+    local para_trigger_rc_chan = nil
+    local PARA_TRIG_CHAN = Parameter()
+    if PARA_TRIG_CHAN:init('PARA_TRIG_CH') then
+        local channel_num = PARA_TRIG_CHAN:get()
+        if channel_num then
+            para_trigger_rc_chan = rc:get_channel(channel_num)
+        end
     end
 
     if para_trigger_rc_chan == nil then
         local t = millis():tofloat()
         if (t - last_para_warn_t) > 3000 then
-            gcs:send_text(2, "AUTOB:Para rc channel is nil")
+            gcs:send_text(2, "AUTOB: PARA_TRIG_CH not set / channel nil")
             last_para_warn_t = t
         end
         return
     end
-    
-    local para_threshold = p_para_ang:get() or -45
-    if not is_parachute_angle_threshold_valid(para_threshold) then
-        gcs:send_text(2, string.format("AUTOB:AUTB_PARA_ANG invalid. Range(%.1f, %.1f)",para_ahrs_pitch_threshold_min, para_ahrs_pitch_threshold_max))    
-        return
+
+    if not trigger_para_script then
+        local pitch_trig = is_para_pitch_triggered()
+        local fence_trig = is_para_fence_triggered()
+        if pitch_trig or fence_trig then
+            trigger_para_script = true
+            gcs:send_text(2, "AUTOB:trigger parachute via rc override")
+        end
     end
 
-    local now = millis():tofloat()
-    ahrs_pitch = rad2deg(ahrs:get_pitch() or 0)
-    para_ang_timeout = p_para_timeout:get() or 200
-    check_pitch = ahrs_pitch < para_threshold and (trigger_para_script == false) and quadplane:in_vtol_mode() and arming:is_armed()
-    if check_pitch then
-        if first_para_pitch_exceeded_t == nil then
-            first_para_pitch_exceeded_t = millis():tofloat()
-        else
-            para_time_diff = now - first_para_pitch_exceeded_t
-            if para_time_diff > para_ang_timeout then
-                first_para_pitch_exceeded_t = nil
-                trigger_para_script = true
-                gcs:send_text(2, "AUTOB:trigger parachute via rc override")
-            end
-        end
-    else
-        first_para_pitch_exceeded_t = nil
-    end
-    
     if trigger_para_script then
         para_trigger_rc_chan:set_override(PARA_CHAN_HIGH)
     end
 end
+
 
 function arming_check()
     if not arming:is_armed() then
@@ -380,7 +569,9 @@ end
 
 
 function update()
-    local loop_ms = p_loop_ms:get() or 100
+    local loop_ms = math.max(20, p_loop_ms:get() or 100)
+    apply_fence_params()
+    update_fence_enable()
     para_deploy()
     if trigger_para_script then return  update, loop_ms end
 
@@ -494,5 +685,21 @@ function update()
 
 end
 
+-- Runs update() inside pcall so a Lua error doesn't kill the script.
+-- On error: warn, put the fence back on, and retry in 1s.
+local function protected_wrapper()
+    local ok, res, ms = pcall(update)
+    if not ok then
+        gcs:send_text(0, "AUTOB: Internal error, para auto triggers degraded")
+        gcs:send_text(3, "AUTOB: " .. tostring(res))
+        if fence_params_ok and fence_disabled_by_script then
+            p_fence_enable:set(1) -- never leave the fence off after an error
+            fence_disabled_by_script = false
+        end
+        fence_mgmt_stopped = true
+        return protected_wrapper, 1000
+    end
+    return protected_wrapper, ms
+end
 gcs:send_text(6, "Airbound Lua: Autobailout script loaded")
-return update, 1000
+return protected_wrapper, 1000
