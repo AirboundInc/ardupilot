@@ -268,6 +268,7 @@ private:
     bool check_CPSI();
     bool check_QENG();
     bool check_QCSQ();
+    void write_LTER() const;
     bool no_service_reply() const;
     // band/tower switches, reported once the cell has held for 5s
     void track_note(int32_t tower, int32_t band);
@@ -414,11 +415,14 @@ private:
     // ---- buffers -----------------------------------------------------------
     uint8_t _raw[512];                  // as it came off the UART
     uint16_t _raw_len;
-    uint8_t _chunk[512];                // AT channel, de-framed when multiplexed
+    // One cmux_feed() decodes at most what _cmux_partial holds, so outputs of
+    // the same size never drop payload.
+    static constexpr uint16_t CMUX_BUF_SIZE = 1024;
+    uint8_t _chunk[CMUX_BUF_SIZE];      // AT channel, de-framed when multiplexed
     uint16_t _chunk_len;
-    uint8_t _dlc2[512];                 // socket channel, CMUX only
+    uint8_t _dlc2[CMUX_BUF_SIZE];       // socket channel, CMUX only
     uint16_t _dlc2_len;
-    uint8_t _cmux_partial[1024];        // frame still arriving
+    uint8_t _cmux_partial[CMUX_BUF_SIZE];   // frame still arriving
     uint16_t _cmux_partial_len;
 
     bool _found_cmux;                   // the modem is speaking frames

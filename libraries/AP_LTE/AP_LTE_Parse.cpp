@@ -206,6 +206,20 @@ bool AP_LTE::skip_quoted(const char *&p)
 // signal parsers
 // ---------------------------------------------------------------------------
 
+// the raw reply, 64 bytes per field
+void AP_LTE::write_LTER() const
+{
+#if HAL_LOGGING_ENABLED
+    char r1[65] {};
+    char r2[65] {};
+    copy_field(r1, sizeof(r1), _rx, MIN(_rx_len, uint16_t(64)));
+    if (_rx_len > 64) {
+        copy_field(r2, sizeof(r2), &_rx[64], MIN(uint16_t(_rx_len - 64), uint16_t(64)));
+    }
+    AP::logger().Write("LTER", "TimeUS,R1,R2", "QZZ", AP_HAL::micros64(), r1, r2);
+#endif
+}
+
 bool AP_LTE::check_CSQ()
 {
     const char *p = rx_at("+CSQ:");
@@ -218,8 +232,10 @@ bool AP_LTE::check_CSQ()
         return false;
     }
     gcs().send_named_float("LTE_RSSI", rssi);
+#if HAL_LOGGING_ENABLED
     AP::logger().Write("LTE", "TimeUS,RSSI,BER,Bin,Bout", "QiiII",
                        AP_HAL::micros64(), rssi, ber, _bytes_in, _bytes_out);
+#endif
     return true;
 }
 
@@ -251,13 +267,7 @@ bool AP_LTE::check_CPSI()
         return false;
     }
 
-    char r1[65] {};
-    char r2[65] {};
-    copy_field(r1, sizeof(r1), _rx, MIN(_rx_len, uint16_t(64)));
-    if (_rx_len > 64) {
-        copy_field(r2, sizeof(r2), &_rx[64], MIN(uint16_t(_rx_len - 64), uint16_t(64)));
-    }
-    AP::logger().Write("LTER", "TimeUS,R1,R2", "QZZ", AP_HAL::micros64(), r1, r2);
+    write_LTER();
 
     p += strlen("+CPSI:");
     while (*p == ' ') {
@@ -273,27 +283,12 @@ bool AP_LTE::check_CPSI()
 
     // Field order as the applet read it: the two quality fields arrive
     // RSRQ then RSRP on this dialect.
-    char mode[17], oper[17], mccmnc[17], band_str[17];
-    copy_field(mode, sizeof(mode), f[0], l[0]);
-    copy_field(oper, sizeof(oper), f[1], l[1]);
+    char mccmnc[17], band_str[17];
     copy_field(mccmnc, sizeof(mccmnc), f[2], l[2]);
     copy_field(band_str, sizeof(band_str), f[6], l[6]);
-
-    int32_t tac = 0;
-    if (l[3] > 2 && f[3][0] == '0' && (f[3][1] == 'x' || f[3][1] == 'X')) {
-        tac = hex_or(f[3] + 2, l[3] - 2, 0);
-    } else {
-        tac = dec_or(f[3], l[3], 0);
-    }
     const int32_t scell_id = dec_or(f[4], l[4], 0);
-    const int32_t pcid     = dec_or(f[5], l[5], 0);
-    const int32_t ul_freq  = dec_or(f[7], l[7], 0);
-    const int32_t dl_freq  = dec_or(f[8], l[8], 0);
-    const int32_t tdd_cfg  = dec_or(f[9], l[9], 0);
     const int32_t rsrq     = dec_or(f[10], l[10], 0);
     const int32_t rsrp     = dec_or(f[11], l[11], 0);
-    const int32_t rssi     = dec_or(f[12], l[12], 0);
-    const int32_t sinr     = dec_or(f[13], l[13], 0);
 
     // "EUTRAN-BAND1" -> 1: the digits that follow the last non-digit run
     int32_t band = -1;
@@ -304,15 +299,36 @@ bool AP_LTE::check_CPSI()
         }
     }
 
-    // TimeUS must lead: see the note on the LTEI write in AP_LTE.cpp.
-    AP::logger().Write("LTES", "TimeUS,Md,Op,MCC,TAC,CID,PID,BND,F,DF,TDD,RP,RQ,RS,SR",
-                       "QNNNIIINHhhhhhh",
-                       AP_HAL::micros64(),
-                       mode, oper, mccmnc,
-                       uint32_t(tac), uint32_t(scell_id), uint32_t(pcid),
-                       band_str,
-                       uint16_t(ul_freq), int16_t(dl_freq), int16_t(tdd_cfg),
-                       int16_t(rsrp), int16_t(rsrq), int16_t(rssi), int16_t(sinr));
+#if HAL_LOGGING_ENABLED
+    {
+        // fields only the log uses
+        char mode[17], oper[17];
+        copy_field(mode, sizeof(mode), f[0], l[0]);
+        copy_field(oper, sizeof(oper), f[1], l[1]);
+        int32_t tac = 0;
+        if (l[3] > 2 && f[3][0] == '0' && (f[3][1] == 'x' || f[3][1] == 'X')) {
+            tac = hex_or(f[3] + 2, l[3] - 2, 0);
+        } else {
+            tac = dec_or(f[3], l[3], 0);
+        }
+        const int32_t pcid    = dec_or(f[5], l[5], 0);
+        const int32_t ul_freq = dec_or(f[7], l[7], 0);
+        const int32_t dl_freq = dec_or(f[8], l[8], 0);
+        const int32_t tdd_cfg = dec_or(f[9], l[9], 0);
+        const int32_t rssi    = dec_or(f[12], l[12], 0);
+        const int32_t sinr    = dec_or(f[13], l[13], 0);
+
+        // TimeUS must lead: see the note on the LTEI write in AP_LTE.cpp.
+        AP::logger().Write("LTES", "TimeUS,Md,Op,MCC,TAC,CID,PID,BND,F,DF,TDD,RP,RQ,RS,SR",
+                           "QNNNIIINHhhhhhh",
+                           AP_HAL::micros64(),
+                           mode, oper, mccmnc,
+                           uint32_t(tac), uint32_t(scell_id), uint32_t(pcid),
+                           band_str,
+                           uint16_t(ul_freq), int16_t(dl_freq), int16_t(tdd_cfg),
+                           int16_t(rsrp), int16_t(rsrq), int16_t(rssi), int16_t(sinr));
+    }
+#endif
 
     if (option_enabled(OPT_SIGNALS)) {
         gcs().send_named_float("LTE_RSRP", rsrp);
@@ -353,13 +369,7 @@ bool AP_LTE::check_QENG()
         return false;
     }
 
-    char r1[65] {};
-    char r2[65] {};
-    copy_field(r1, sizeof(r1), _rx, MIN(_rx_len, uint16_t(64)));
-    if (_rx_len > 64) {
-        copy_field(r2, sizeof(r2), &_rx[64], MIN(uint16_t(_rx_len - 64), uint16_t(64)));
-    }
-    AP::logger().Write("LTER", "TimeUS,R1,R2", "QZZ", AP_HAL::micros64(), r1, r2);
+    write_LTER();
 
     // fields start after the "servingcell" token and its comma
     p = sc + strlen("\"servingcell\"");
@@ -393,16 +403,9 @@ bool AP_LTE::check_QENG()
     }
 
     const int32_t mcc    = dec_or(f[3], l[3], 0);
-    const int32_t mnc    = dec_or(f[4], l[4], 0);
     const int32_t cid    = hex_or(f[5], l[5], 0);
-    const int32_t pcid   = dec_or(f[6], l[6], 0);
     const int32_t earfcn = dec_or(f[7], l[7], 0);
     const int32_t band   = dec_or(f[8], l[8], -1);
-    const int32_t tac    = hex_or(f[tac_idx], l[tac_idx], 0);
-    const int32_t rsrp   = dec_or(f[tac_idx + 1], l[tac_idx + 1], 0);
-    const int32_t rsrq   = dec_or(f[tac_idx + 2], l[tac_idx + 2], 0);
-    const int32_t rssi   = dec_or(f[tac_idx + 3], l[tac_idx + 3], 0);
-    const int32_t sinr   = dec_or(f[tac_idx + 4], l[tac_idx + 4], 0);
 
     // EC25 while searching (log 0134): LIMSRV, or NOCONN with MCC 65535, CID
     // FFFFFFFF, EARFCN -1. Not a cell: it ended a hold early and logged bogus
@@ -411,9 +414,21 @@ bool AP_LTE::check_QENG()
         return false;
     }
 
-    AP::logger().Write("LTES", "TimeUS,MCC,MNC,TAC,CID,PID,EF,RSRP,RSRQ,RSSI,SINR",
-                       "Qiiiiiiiiii", AP_HAL::micros64(),
-                       mcc, mnc, tac, cid, pcid, earfcn, rsrp, rsrq, rssi, sinr);
+#if HAL_LOGGING_ENABLED
+    {
+        // fields only the log uses
+        const int32_t mnc  = dec_or(f[4], l[4], 0);
+        const int32_t pcid = dec_or(f[6], l[6], 0);
+        const int32_t tac  = hex_or(f[tac_idx], l[tac_idx], 0);
+        const int32_t rsrp = dec_or(f[tac_idx + 1], l[tac_idx + 1], 0);
+        const int32_t rsrq = dec_or(f[tac_idx + 2], l[tac_idx + 2], 0);
+        const int32_t rssi = dec_or(f[tac_idx + 3], l[tac_idx + 3], 0);
+        const int32_t sinr = dec_or(f[tac_idx + 4], l[tac_idx + 4], 0);
+        AP::logger().Write("LTES", "TimeUS,MCC,MNC,TAC,CID,PID,EF,RSRP,RSRQ,RSSI,SINR",
+                           "Qiiiiiiiiii", AP_HAL::micros64(),
+                           mcc, mnc, tac, cid, pcid, earfcn, rsrp, rsrq, rssi, sinr);
+    }
+#endif
 
     const int32_t tower_id = cid >> 8;
     if (_track_band == INT32_MIN) {
@@ -486,8 +501,10 @@ bool AP_LTE::check_QCSQ()
         !parse_int_after(p, ',', rsrq)) {
         return false;
     }
+#if HAL_LOGGING_ENABLED
     AP::logger().Write("LTEQ", "TimeUS,RSSI,RSRP,SINRr,RSRQ", "Qiiii",
                        AP_HAL::micros64(), rssi, rsrp, sinr_raw, rsrq);
+#endif
     gcs().send_named_float("LTE_RSSI", rssi);
     gcs().send_named_float("LTE_RSRP", rsrp);
     gcs().send_named_float("LTE_RSRQ", rsrq);

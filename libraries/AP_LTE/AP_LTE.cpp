@@ -263,7 +263,6 @@ void AP_LTE::init()
             GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "LTE_modem: no memory");
             return;
         }
-        _uart->begin(pget(_ibaud));
         log_open();
         GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: starting");
     }
@@ -281,6 +280,13 @@ void AP_LTE::init()
  */
 void AP_LTE::thread_main()
 {
+    // Here, not in init(): ChibiOS only lets the thread that began a UART read
+    // it, so a begin() on the main thread left this one deaf until step_ATI's
+    // baud rotation, ~6s in.
+    if (_uart != nullptr) {
+        _uart->begin(pget(_ibaud));
+    }
+
     while (true) {
         // AUTHKEY == 0 means signing off, not just "do not apply a key": the
         // key lives in FRAM, not a parameter, so it is re-armed every boot
@@ -318,6 +324,7 @@ void AP_LTE::thread_main()
         // _ltei_ms so a row goes out at every registration; the 0.1Hz repeat
         // covers rows lost to a full logger buffer, which is likely at
         // registration while formats and params are still streaming.
+#if HAL_LOGGING_ENABLED
         if (_sim_name[0] != 0) {
             const uint32_t now = AP_HAL::millis();
             if (_ltei_ms == 0 || now - _ltei_ms > 10000) {
@@ -334,6 +341,7 @@ void AP_LTE::thread_main()
                                    _sim_oper[0] != 0 ? _sim_oper : "unknown");
             }
         }
+#endif
 
         const uint32_t delay_ms = run_step();
         uart_write_pending();
@@ -385,8 +393,10 @@ uint32_t AP_LTE::run_step()
 
     if (step_changed) {
         // To the GCS only with Steps set: one reconnect printed ~10 of these.
+#if HAL_LOGGING_ENABLED
         AP::logger().Write("LTET", "TimeUS,Step", "QN",
                            AP_HAL::micros64(), step_name(_step));
+#endif
         log_event("{step %s}", step_name(_step));
         if (option_enabled(OPT_STEPS)) {
             GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: step %s", step_name(_step));
