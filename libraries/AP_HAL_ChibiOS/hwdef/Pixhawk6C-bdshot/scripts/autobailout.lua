@@ -144,7 +144,7 @@ end
 
 function parachute_thresholds_valid()
     local para_trigger_mask = p_para_trigger_mask:get()
-    
+
     if para_trigger_mask < 0 or para_trigger_mask > 7 then
         gcs:send_text(2, "AUTOB: AUTOB_PARA_MASK invalid")
         return false
@@ -179,8 +179,12 @@ function parachute_thresholds_valid()
 end
 
 function is_sink_rate_above_threshold(vtol_flight_active)
-    local para_critical_sink_rate = p_para_critical_sink_rate:get() or 5
     local velocity_z  = ahrs:get_velocity_NED():z()
+    if velocity_z == nil then
+        return false
+    end
+
+    local para_critical_sink_rate = p_para_critical_sink_rate:get() or 5
     local exceeded_critical_sink_rate = velocity_z > para_critical_sink_rate and vtol_flight_active and arming:is_armed()
 
     if exceeded_critical_sink_rate then 
@@ -200,8 +204,12 @@ function is_sink_rate_above_threshold(vtol_flight_active)
 end
 
 function is_lateral_speed_above_threshold(vtol_flight_active)
+    local spd = ahrs:get_velocity_NED()
+    if spd == nil then
+        return false
+    end
     local para_critical_lateral_speed = p_para_critical_lateral_speed:get() or 5
-    local lateral_velocity  = math.sqrt((ahrs:get_velocity_NED():x()^2) + (ahrs:get_velocity_NED():y()^2)) 
+    local lateral_velocity  = math.sqrt((spd:x()^2) + (spd:y()^2)) 
     local exceeded_critical_lateral_speed = lateral_velocity > para_critical_lateral_speed and vtol_flight_active and arming:is_armed()
 
     if exceeded_critical_lateral_speed then 
@@ -286,7 +294,7 @@ function para_deploy(vtol_flight_active)
     end
     
     if enable_sink_rate_trigger and not trigger_para_script then
-        trigger_para_script = is_sink_rate_above_threshold()
+        trigger_para_script = is_sink_rate_above_threshold(vtol_flight_active)
     end
 
     if enable_lateral_speed_trigger and not trigger_para_script then 
