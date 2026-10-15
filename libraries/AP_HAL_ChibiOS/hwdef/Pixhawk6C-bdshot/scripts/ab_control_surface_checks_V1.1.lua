@@ -3,7 +3,7 @@
 -- ⚠️ Changes flight mode to MANUAL for the test, then returns to QLOITER.
 -- 🟢 Repeatable on each RC switch LOW->HIGH transition (a switch already high at boot is ignored)
 -- Starting a rerun clears any previous pass; arming during the sequence aborts it
--- Pilot is prompted to flip the Para switch (RC_CHAN_MON) HIGH then LOW; the real receiver value must reach
+-- Pilot is prompted to flip the Para switch (PARA_TRIG_CH) HIGH then LOW; the real receiver value must reach
 -- > PARA_TRIGGER_US and <= MON_LOW_US or arming stays blocked. Mode returns to QLOITER only once it reads LOW.
 -- CTSF_REQ selects when the check is required:
 --   0 = after every reboot (hard or soft)
@@ -13,7 +13,7 @@
 local RC_CHAN_ROLL           = 1    -- Your aircraft's Roll input channel
 local RC_CHAN_PITCH          = 2    -- Your aircraft's Pitch input channel
 local RC_CHAN_FLAP           = 9    -- Your aircraft's Flap input channel
-local RC_CHAN_MON            = 11   -- Para switch channel; pilot flips it HIGH/LOW and the real value is checked
+local PARA_CHAN_DEFAULT      = 11   -- Para switch channel used if PARA_TRIG_CH (from ab_para_disarm.lua) is not available
 
 local RC_NEUTRAL_US          = 1500 -- Neutral PWM for RC channels
 local RC_DEFLECTION          = 500  -- PWM deflection from neutral to simulate full stick
@@ -65,6 +65,31 @@ if not auth_id then
     gcs:send_text(4, "ERROR: Could not get arming aux auth ID")
 end
 
+-- Helper to publish the pre-arm state; called whenever checks_completed/mon_failed change so arming
+-- never sees a stale "passed" between loops
+local function publish_prearm()
+    if not auth_id then
+        return
+    end
+    if mon_failed then
+        arming:set_aux_auth_failed(auth_id, "Para check failed, rerun checks")
+    elseif not checks_completed then
+        arming:set_aux_auth_failed(auth_id, "Control surface checks required")
+    else
+        arming:set_aux_auth_passed(auth_id)
+    end
+end
+
+-- Helper to get the Para switch channel; read at runtime so it always matches ab_para_disarm.lua
+-- (that script creates PARA_TRIG_CH and may load after this one)
+local function para_channel()
+    local ch = param:get("PARA_TRIG_CH")
+    if ch then
+        return math.floor(ch)
+    end
+    return PARA_CHAN_DEFAULT
+end
+
 -- Get RC channel objects for Pitch, Roll, and Flaps
 local rc_pitch_chan = rc:get_channel(RC_CHAN_PITCH)
 local rc_roll_chan = rc:get_channel(RC_CHAN_ROLL)
@@ -114,8 +139,9 @@ local function para_failed(msg)
     stop_sequence(true)
     mon_failed = true
     checks_completed = false
+    publish_prearm()
     -- A HIGH switch is a held parachute press in MANUAL; any mode change would release the chute
-    local pwm = rc:get_pwm(RC_CHAN_MON)
+    local pwm = rc:get_pwm(para_channel())
     if pwm and pwm > PARA_TRIGGER_US then
         gcs:send_text(2, "Para switch at DEPLOY: move to HOLD before changing mode!")
     end
@@ -123,7 +149,7 @@ end
 
 -- Helper to record the min/max PWM of the monitored channel (real receiver values only)
 local function sample_monitor()
-    local pwm = rc:get_pwm(RC_CHAN_MON)
+    local pwm = rc:get_pwm(para_channel())
     if pwm and pwm >= RC_VALID_MIN_US then
         if not mon_min or pwm < mon_min then mon_min = pwm end
         if not mon_max or pwm > mon_max then mon_max = pwm end
@@ -151,15 +177,7 @@ function update()
     local now = millis()
 
     -- 1. Pre-Arm Check Injection
-    if auth_id then
-        if mon_failed then
-            arming:set_aux_auth_failed(auth_id, "Para check failed, rerun checks")
-        elseif not checks_completed then
-            arming:set_aux_auth_failed(auth_id, "Control surface checks required")
-        else
-            arming:set_aux_auth_passed(auth_id)
-        end
-    end
+    publish_prearm()
 
     -- 2. Track flights; in take-off mode, require the check again after landing
     local armed = arming:is_armed()
@@ -169,6 +187,7 @@ function update()
     if was_armed and not armed then
         if CTSF_REQ:get() == REQ_EVERY_TAKEOFF and flew_this_arm then
             checks_completed = false
+            publish_prearm()
             last_reminder_time = now
             gcs:send_text(4, "Landed: run control surface checks before next takeoff")
         end
@@ -209,6 +228,7 @@ function update()
         mon_active, mon_min, mon_max = false, nil, nil
         checks_completed = false -- A rerun clears any previous pass so arming stays blocked until it finishes
         mon_failed = false
+        publish_prearm()
         gcs:send_text(1, "Starting control surface check")
     end
 
@@ -253,7 +273,7 @@ function update()
         end
     elseif step == 10 then
         -- Wait for the pilot to move the real Para switch HIGH (deploy is held by ab_para_disarm in MANUAL)
-        local pwm = rc:get_pwm(RC_CHAN_MON)
+        local pwm = rc:get_pwm(para_channel())
         if pwm and pwm > PARA_TRIGGER_US then
             gcs:send_text(6, string.format("Para switch at DEPLOY (switch %d)", pwm))
             gcs:send_text(1, "Para test: move switch to HOLD")
@@ -269,7 +289,7 @@ function update()
         end
     elseif step == 11 then
         -- Wait for the pilot to move the real Para switch back LOW before leaving MANUAL
-        local pwm = rc:get_pwm(RC_CHAN_MON)
+        local pwm = rc:get_pwm(para_channel())
         if pwm and pwm >= RC_VALID_MIN_US and pwm <= MON_LOW_US then
             gcs:send_text(6, string.format("Para switch at HOLD (switch %d)", pwm))
             gcs:send_text(1, "All checks complete. Releasing controls.")
@@ -278,6 +298,7 @@ function update()
             -- Only clear the pre-arm block & reminder if the monitored channel passed
             mon_failed = not monitor_passed()
             checks_completed = not mon_failed
+            publish_prearm()
         elseif now - last_step_time > PARA_SWITCH_TIMEOUT_MS then
             para_failed(string.format("Para switch not at HOLD: check FAILED (switch %d, need <=%d)",
                         pwm or 0, MON_LOW_US))
