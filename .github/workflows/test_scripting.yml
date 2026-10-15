@@ -168,8 +168,10 @@ jobs:
               --mavproxy-args="--daemon" &
             SITL_PID=$!
 
-            wait $TEST_PID
-            RESULT=$?
+            # "|| RESULT" keeps a failure from tripping bash -e, so cleanup
+            # and the next configuration still run.
+            RESULT=0
+            wait $TEST_PID || RESULT=$?
 
             kill -9 $SITL_PID || true
             killall -9 arduplane || true
