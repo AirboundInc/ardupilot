@@ -5,7 +5,7 @@ local para_ahrs_pitch_threshold_min = -50
 
 -- 1. SETUP PARAMETER TABLE
 local KEY = 110
-assert(param:add_table(KEY, "AUTOB_", 16), "AUTOB table failed")
+assert(param:add_table(KEY, "AUTOB_", 19), "AUTOB table failed")
 
 -- 2. ADD PARAMETERS
 assert(param:add_param(KEY, 1, "PIT_LIM",  50),  'could not add AUTOB_PIT_LIM')   -- ATT pitch(VTOL frame) threshold to enter bailout (deg)
@@ -24,6 +24,9 @@ assert(param:add_param(KEY, 13, "DBG_EN", 1), 'could not add AUTOB_DBG_EN')  -- 
 assert(param:add_param(KEY, 14, "PRED_INT", 1000), 'could not add AUTOB_PRED_INT')  -- Rate based VTOL pitch prediction interval
 assert(param:add_param(KEY, 15, "PRED_ANG", 105), 'could not add AUTOB_PRED_ANG') -- VTOL frame absolute rate based predicted angle threshold for autobailout
 assert(param:add_param(KEY, 16, "COUNT", 5), 'could not add AUTOB_COUNT') -- VTOL frame absolute rate based predicted angle threshold for autobailout
+assert(param:add_param(KEY, 17, "PARA_SINK", 5), 'could not add AUTOB_PARA_SINK') -- Critical sink rate in m/s
+assert(param:add_param(KEY, 18, "PARA_SPD", 5), 'could not add AUTOB_PARA_SPD') -- Critical lateral speed in m/s
+assert(param:add_param(KEY, 19, "PARA_MASK", 3), 'could not add AUTOB_PARA_MASK') --Para trigger 
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
@@ -50,9 +53,9 @@ local p_dbg_en = bind_param("AUTOB_DBG_EN")
 local p_prediction_interval = bind_param("AUTOB_PRED_INT")
 local p_pred_angle_threshold = bind_param("AUTOB_PRED_ANG")
 local p_autobailout_count = bind_param("AUTOB_COUNT") -- -1 : Disables autoresume. 0: disables autobailout and autoresumes. >0: Set limit on autobailout/autoresume count 
-
--- Read Parachute trigger channel number from FCU parameter list 
-
+local p_para_critical_sink_rate = bind_param("AUTOB_PARA_SINK")
+local p_para_critical_lateral_speed = bind_param("AUTOB_PARA_SPD")
+local p_para_trigger_mask = bind_param("AUTOB_PARA_MASK")
 
 -- 4. MODE DEFINITIONS (ArduPlane)
 local MODE_QLOITER = 19 -- Auto-Hover (Functionally same as QLoiter 50% Thr)
@@ -83,6 +86,8 @@ local post_bailout_sample_count = 0 --used to ensure sufficient samples have bee
 -- Parachute state variables
 local trigger_para_script = false
 local first_para_pitch_exceeded_t = nil
+local first_para_sink_rate_exceeded_t = nil
+local first_para_lateral_speed_exceeded_t = nil
 local PARA_CHAN_HIGH = 1850
 local last_para_warn_t = 0 
 local backtransition_complete_time_ms = nil
@@ -92,6 +97,7 @@ local arm_state = {was_armed = false}
 
 --- GCS Flags
 local gcs_announce_autobailout = false
+local gcs_announce_paradeploy = false
 local gcs_announce_battery_monitor_not_configured = false
 
 local function buf_avg(buf)
@@ -136,15 +142,109 @@ function is_auto_takeoff_active()
     return false
 end
 
-function is_parachute_angle_threshold_valid(threshold_angle)
--- check if the threshold angle set by user is valid
-    if threshold_angle < para_ahrs_pitch_threshold_max and threshold_angle > para_ahrs_pitch_threshold_min then
-        return true
+function parachute_thresholds_valid()
+    local para_trigger_mask = p_para_trigger_mask:get()
+    
+    if para_trigger_mask < 0 or para_trigger_mask > 7 then
+        gcs:send_text(2, "AUTOB: AUTOB_PARA_MASK invalid")
+        return false
+    end
+    
+    local enable_sink_rate_trigger = (((para_trigger_mask >> 0) & 1) == 1)
+    local enable_lateral_speed_trigger = (((para_trigger_mask >> 1) & 1) == 1)
+    local enable_pitch_angle_trigger = (((para_trigger_mask >> 2) & 1) == 1)
+
+    -- check if the threshold sink rate set by user is valid
+    local para_critical_sink_rate = p_para_critical_sink_rate:get()
+    if enable_sink_rate_trigger and para_critical_sink_rate <= 0 then
+       gcs:send_text(2, "AUTOB:Invalid parameter AUTOB_PARA_SINK") 
+       return false
+    end
+    
+    -- check if threshold lateral speed set by user is valid
+    local para_critical_lateral_speed = p_para_critical_lateral_speed:get()
+    if enable_lateral_speed_trigger and para_critical_lateral_speed <= 0 then
+       gcs:send_text(2, "AUTOB:Invalid parameter AUTOB_PARA_SPD") 
+       return false
+    end
+    
+    -- check if the threshold angle set by user is valid
+    local threshold_angle = p_para_ang:get()
+    if enable_pitch_angle_trigger and (threshold_angle > para_ahrs_pitch_threshold_max or threshold_angle < para_ahrs_pitch_threshold_min) then
+        gcs:send_text(2, string.format("AUTOB:AUTB_PARA_ANG invalid. Range(%.1f, %.1f)",para_ahrs_pitch_threshold_min, para_ahrs_pitch_threshold_max))
+        return false
+    end
+
+    return true
+end
+
+function is_sink_rate_above_threshold(vtol_flight_active)
+    local para_critical_sink_rate = p_para_critical_sink_rate:get() or 5
+    local velocity_z  = ahrs:get_velocity_NED():z()
+    local exceeded_critical_sink_rate = velocity_z > para_critical_sink_rate and vtol_flight_active and arming:is_armed()
+
+    if exceeded_critical_sink_rate then 
+        if first_para_sink_rate_exceeded_t == nil then
+            first_para_sink_rate_exceeded_t = millis():tofloat()
+        else
+            if millis():tofloat()-first_para_sink_rate_exceeded_t > 1000 then
+                first_para_sink_rate_exceeded_t = nil
+                gcs:send_text(2, "AUTOB:sink rate exceeds para threshold")
+                return true
+            end
+        end
+    else 
+        first_para_sink_rate_exceeded_t = nil
     end
     return false
 end
 
-function para_deploy()
+function is_lateral_speed_above_threshold(vtol_flight_active)
+    local para_critical_lateral_speed = p_para_critical_lateral_speed:get() or 5
+    local lateral_velocity  = math.sqrt((ahrs:get_velocity_NED():x()^2) + (ahrs:get_velocity_NED():y()^2)) 
+    local exceeded_critical_lateral_speed = lateral_velocity > para_critical_lateral_speed and vtol_flight_active and arming:is_armed()
+
+    if exceeded_critical_lateral_speed then 
+        if first_para_lateral_speed_exceeded_t == nil then
+            first_para_lateral_speed_exceeded_t = millis():tofloat()
+        else
+            if millis():tofloat()-first_para_lateral_speed_exceeded_t > 1000 then
+                first_para_lateral_speed_exceeded_t = nil
+                gcs:send_text(2, "AUTOB:lateralspeed exceeds para threshold")
+                return true
+            end
+        end
+    else 
+        first_para_lateral_speed_exceeded_t = nil
+    end
+    return false
+end
+
+function is_vtol_pitch_exceeded_para_pitch_threshold()
+    local para_threshold = p_para_ang:get() or -45
+    local now = millis():tofloat()
+    local ahrs_pitch = rad2deg(ahrs:get_pitch() or 0)
+    local para_ang_timeout = p_para_timeout:get() or 200
+    local exceeded_pitch_threshold = ahrs_pitch < para_threshold and quadplane:in_vtol_mode() and arming:is_armed()
+    if exceeded_pitch_threshold then
+        if first_para_pitch_exceeded_t == nil then
+            first_para_pitch_exceeded_t = millis():tofloat()
+        else
+            para_time_diff = now - first_para_pitch_exceeded_t
+            if para_time_diff > para_ang_timeout then
+                first_para_pitch_exceeded_t = nil
+                gcs:send_text(2, "AUTOB:pitch exceeds para threshold")
+                return true
+            end
+        end
+    else
+        first_para_pitch_exceeded_t = nil
+    end
+    return false
+end
+
+
+function para_deploy(vtol_flight_active)
     
     if p_para_enable:get() ~= 1 then return end
 
@@ -175,32 +275,33 @@ function para_deploy()
         return
     end
     
-    local para_threshold = p_para_ang:get() or -45
-    if not is_parachute_angle_threshold_valid(para_threshold) then
-        gcs:send_text(2, string.format("AUTOB:AUTB_PARA_ANG invalid. Range(%.1f, %.1f)",para_ahrs_pitch_threshold_min, para_ahrs_pitch_threshold_max))    
+    local para_trigger_mask = p_para_trigger_mask:get() -- bit 0: Enable Sink rate trigger bit 1: Enable pitch based trigger
+    local enable_sink_rate_trigger = (((para_trigger_mask >> 0) & 1) == 1)
+    local enable_lateral_speed_trigger = (((para_trigger_mask >> 1) & 1) == 1)
+    local enable_pitch_angle_trigger = (((para_trigger_mask >> 2) & 1) == 1)
+    
+    -- Return if parachute parameters are not valid
+    if not parachute_thresholds_valid() then    
         return
     end
-
-    local now = millis():tofloat()
-    ahrs_pitch = rad2deg(ahrs:get_pitch() or 0)
-    para_ang_timeout = p_para_timeout:get() or 200
-    check_pitch = ahrs_pitch < para_threshold and (trigger_para_script == false) and quadplane:in_vtol_mode() and arming:is_armed()
-    if check_pitch then
-        if first_para_pitch_exceeded_t == nil then
-            first_para_pitch_exceeded_t = millis():tofloat()
-        else
-            para_time_diff = now - first_para_pitch_exceeded_t
-            if para_time_diff > para_ang_timeout then
-                first_para_pitch_exceeded_t = nil
-                trigger_para_script = true
-                gcs:send_text(2, "AUTOB:trigger parachute via rc override")
-            end
-        end
-    else
-        first_para_pitch_exceeded_t = nil
-    end
     
+    if enable_sink_rate_trigger and not trigger_para_script then
+        trigger_para_script = is_sink_rate_above_threshold()
+    end
+
+    if enable_lateral_speed_trigger and not trigger_para_script then 
+        trigger_para_script = is_lateral_speed_above_threshold(vtol_flight_active)
+    end
+
+    if enable_pitch_angle_trigger and not trigger_para_script then
+        trigger_para_script = is_vtol_pitch_exceeded_para_pitch_threshold()
+    end
+
     if trigger_para_script then
+        if not gcs_announce_paradeploy then 
+            gcs:send_text(2, "AUTOB:trigger parachute via rc override")
+            gcs_announce_paradeploy = true
+        end
         para_trigger_rc_chan:set_override(PARA_CHAN_HIGH)
     end
 end
@@ -268,7 +369,7 @@ function trigger_autobailout(current_mode)
     return false
 end
 
-function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode, is_battery_critical)
+function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode, battery_critical)
     local threshold = p_pit_lim:get() or 40
     local pitch_timeout = p_pitch_timeout:get() or 100
 
@@ -289,7 +390,7 @@ function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode, is
     end
 
     --Dont check if battery is critical
-    if is_battery_critical then 
+    if battery_critical then 
         return false
     end
 
@@ -322,7 +423,7 @@ function is_vtol_pitch_exceeding_limit(vtolpitch, is_vtol_flight, flightmode, is
     return false
 end    
 
-function is_predicted_vtol_pitch_exceeding_threshold(current_vtol_pitch_deg, current_vtol_pitch_rate, is_vtol_flight, flightmode, is_battery_critical)
+function is_predicted_vtol_pitch_exceeding_threshold(current_vtol_pitch_deg, current_vtol_pitch_rate, is_vtol_flight, flightmode, battery_critical)
     local pitch_prediction_interval = p_prediction_interval:get() or 0
 
     --Disable prediction based check
@@ -347,7 +448,7 @@ function is_predicted_vtol_pitch_exceeding_threshold(current_vtol_pitch_deg, cur
     end
 
     --Dont check if battery is critical
-    if is_battery_critical then 
+    if battery_critical then 
         return false
     end
     
@@ -381,7 +482,11 @@ end
 
 function update()
     local loop_ms = p_loop_ms:get() or 100
-    para_deploy()
+    
+    is_vtol_flight = in_vtol_flight()
+    
+    para_deploy(is_vtol_flight)
+    
     if trigger_para_script then return  update, loop_ms end
 
     -- Safety Check
@@ -430,8 +535,6 @@ function update()
     if p_dbg_en:get() == 1 then
         logger:write('AUTB', 'AvgErr,PeakAng,PitchDeg,QPit,QRateP', 'fffff', avg_err, peak_ang, pitch_deg, actual_vtol_pitch_deg, actual_vtol_pitch_rate)
     end
-    
-    is_vtol_flight = in_vtol_flight()
 
     update_autoresume_count()
 
