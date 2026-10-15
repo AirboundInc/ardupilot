@@ -9,6 +9,7 @@ local RC_TRIGGER_THRESHOLD = 1800          -- RC input value threshold
 local LOOP_INTERVAL_MS = 100               -- Script loop interval
 local GCS_SEVERITY_INFO = 6                -- MAVLink info severity level
 local GCS_SEVERITY_CRITICAL = 2            -- MAVLink critical severity (red HUD)
+local MODE_MANUAL = 0                      -- Plane MANUAL mode; parachute deploy is held off in this mode
 
 -- PARAMETER SETUP
 local PARAM_TABLE_KEY = 72
@@ -32,6 +33,7 @@ local last_pressed = false
 local disarm_time = 0
 local waiting_disarm_delay = false
 local parachute_triggered = false
+local manual_inhibit_reported = false      -- True once the "deploy held" message has been sent for the current hold
 
 -- MAIN LOOP
 function update()
@@ -46,7 +48,18 @@ function update()
     local delay_ms = PARA_DELAY_MS:get()
     local PWM_OFF = PARA_PWM_HOLD:get()
 
-    if is_pressed ~= last_pressed then
+    -- In MANUAL, hold off a new press without consuming it, so it deploys once the mode leaves MANUAL
+    local hold_in_manual = is_pressed and not last_pressed and vehicle:get_mode() == MODE_MANUAL
+    if hold_in_manual then
+        if not manual_inhibit_reported then
+            gcs:send_text(GCS_SEVERITY_INFO, "Para switch at DEPLOY in MANUAL: deploy held until mode change.")
+            manual_inhibit_reported = true
+        end
+    else
+        manual_inhibit_reported = false
+    end
+
+    if is_pressed ~= last_pressed and not hold_in_manual then
         last_pressed = is_pressed
 
         if is_pressed then
