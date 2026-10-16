@@ -31,6 +31,8 @@ assert(param:add_param(KEY, 20, "SPD_TOUT", 1000), 'could not add AUTOB_SPD_TOUT
 assert(param:add_param(KEY, 21, "PARA_MASK", 3), 'could not add AUTOB_PARA_MASK') --Para trigger 
 assert(param:add_param(KEY, 22, "PARA_FEN", 1), 'could not add AUTOB_PARA_FEN')        -- 1 = para deploy on polygon fence breach
 assert(param:add_param(KEY, 23, "PARA_FTOUT", 3000), 'could not add AUTOB_PARA_FTOUT') -- Time outside polygon before parachute (ms)
+assert(param:add_param(KEY, 24, "FENCOUNT", 3000), 'could not add AUTOB_FENCOUNT') -- Fence count limit
+
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
@@ -64,6 +66,7 @@ local p_para_critical_lateral_speed_timeout = bind_param("AUTOB_SPD_TOUT")
 local p_para_trigger_mask = bind_param("AUTOB_PARA_MASK")
 local p_para_fen             = bind_param("AUTOB_PARA_FEN")
 local p_para_ftout           = bind_param("AUTOB_PARA_FTOUT")
+local p_fence_autobailout_limit = bind_param("AUTOB_FENCOUNT")
 
 -- Read Parachute trigger channel number from FCU parameter list 
 
@@ -214,7 +217,36 @@ function parachute_thresholds_valid()
         return false
     end
 
+    local fence_autobailout_limit = p_fence_autobailout_limit:get()
+    if fence_autobailout_limit > 0 and max_autob_count < fence_autobailout_limit then
+        gcs:send_text(2, "AUTOB: AUTOB_FENCOUNT < AUTOB_COUNT")
+        return false
+    end
+
     return true
+end
+
+function reset_para_timers()
+    local enable_sink_rate_trigger = (((para_trigger_mask >> 0) & 1) == 1)
+    local enable_lateral_speed_trigger = (((para_trigger_mask >> 1) & 1) == 1)
+    local enable_pitch_angle_trigger = (((para_trigger_mask >> 2) & 1) == 1)
+
+    local para_enabled = p_para_enable:get()
+    
+    local vehicle_not_ready = not vtol_flight_active or not arming:is_armed()
+
+    if vehicle_not_ready or (not para_enabled) or (not enable_sink_rate_trigger) then
+        first_para_sink_rate_exceeded_t = nil
+    end
+
+    if vehicle_not_ready or (not para_enabled) or (not enable_lateral_speed_trigger) then
+        first_para_lateral_speed_exceeded_t = nil
+    end
+
+    if vehicle_not_ready or (not para_enabled) or (not enable_pitch_angle_trigger) then
+        first_para_pitch_exceeded_t = nil
+    end
+
 end
 
 function is_sink_rate_above_threshold(vtol_flight_active)
@@ -226,7 +258,6 @@ function is_sink_rate_above_threshold(vtol_flight_active)
     local velocity_z = velocity:z()
     --dont check if not armed or not in vtol phase
     if not vtol_flight_active or not arming:is_armed() then
-        first_para_sink_rate_exceeded_t = nil
         return false
     end
 
@@ -264,7 +295,6 @@ function is_lateral_speed_above_threshold(vtol_flight_active)
 
     --dont check if not armed or not in vtol phase
     if not vtol_flight_active or not arming:is_armed() then
-        first_para_lateral_speed_exceeded_t = nil
         return false
     end
 
@@ -423,6 +453,11 @@ function is_para_fence_triggered()
         return false
     end
 
+    local fence_autobailout_limit = p_fence_autobailout_limit:get()
+    if fence_autobailout_limit > 0 and autob_count < fence_autobailout_limit then
+        return false
+    end
+
     -- fence was just switched on; let ArduPilot re-check before trusting the breach bit
     if (now - fence_enable_set_t) < FENCE_SETTLE_MS then
         return false
@@ -471,6 +506,8 @@ function is_para_fence_triggered()
 end
 
 function para_deploy(vtol_flight_active)
+    reset_para_timers()
+
     if p_para_enable:get() ~= 1 then return end
 
     local para_trigger_rc_chan = nil
