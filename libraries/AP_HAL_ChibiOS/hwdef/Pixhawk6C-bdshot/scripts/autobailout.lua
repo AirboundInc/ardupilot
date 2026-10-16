@@ -219,8 +219,20 @@ function is_sink_rate_above_threshold(vtol_flight_active)
         return false
     end
 
+    --dont check if not armed or not in vtol phase
+    if not vtol_flight_active or not arming:is_armed() then
+        return false
+    end
+
+    --dont check if within delay_ms post backtransition
+    local current_time = millis():tofloat()
+    local delay_ms = p_btrn_dly:get() or 1000
+    if backtransition_complete_time_ms and (current_time - backtransition_complete_time_ms) < delay_ms then
+        return false
+    end
+
     local para_critical_sink_rate = p_para_critical_sink_rate:get() or 5
-    local exceeded_critical_sink_rate = velocity_z > para_critical_sink_rate and vtol_flight_active and arming:is_armed()
+    local exceeded_critical_sink_rate = velocity_z > para_critical_sink_rate
 
     if exceeded_critical_sink_rate then 
         if first_para_sink_rate_exceeded_t == nil then
@@ -243,9 +255,22 @@ function is_lateral_speed_above_threshold(vtol_flight_active)
     if spd == nil then
         return false
     end
+
+    --dont check if not armed or not in vtol phase
+    if not vtol_flight_active or not arming:is_armed() then
+        return false
+    end
+
+    --dont check if within delay_ms post backtransition
+    local current_time = millis():tofloat()
+    local delay_ms = p_btrn_dly:get() or 1000
+    if backtransition_complete_time_ms and (current_time - backtransition_complete_time_ms) < delay_ms then
+        return false
+    end
+
     local para_critical_lateral_speed = p_para_critical_lateral_speed:get() or 5
     local lateral_velocity  = math.sqrt((spd:x()^2) + (spd:y()^2)) 
-    local exceeded_critical_lateral_speed = lateral_velocity > para_critical_lateral_speed and vtol_flight_active and arming:is_armed()
+    local exceeded_critical_lateral_speed = lateral_velocity > para_critical_lateral_speed
 
     if exceeded_critical_lateral_speed then 
         if first_para_lateral_speed_exceeded_t == nil then
