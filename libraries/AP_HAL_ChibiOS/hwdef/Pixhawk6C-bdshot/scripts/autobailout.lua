@@ -218,13 +218,15 @@ function parachute_thresholds_valid()
 end
 
 function is_sink_rate_above_threshold(vtol_flight_active)
-    local velocity_z  = ahrs:get_velocity_NED():z()
-    if velocity_z == nil then
+    local velocity  = ahrs:get_velocity_NED()
+    if velocity == nil then
         return false
     end
 
+    local velocity_z = velocity:z()
     --dont check if not armed or not in vtol phase
     if not vtol_flight_active or not arming:is_armed() then
+        first_para_sink_rate_exceeded_t = nil
         return false
     end
 
@@ -262,6 +264,7 @@ function is_lateral_speed_above_threshold(vtol_flight_active)
 
     --dont check if not armed or not in vtol phase
     if not vtol_flight_active or not arming:is_armed() then
+        first_para_lateral_speed_exceeded_t = nil
         return false
     end
 
