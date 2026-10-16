@@ -5,7 +5,7 @@ local para_ahrs_pitch_threshold_min = -50
 
 -- 1. SETUP PARAMETER TABLE
 local KEY = 110
-assert(param:add_table(KEY, "AUTOB_",23), "AUTOB table failed")
+assert(param:add_table(KEY, "AUTOB_",24), "AUTOB table failed")
 
 -- 2. ADD PARAMETERS
 assert(param:add_param(KEY, 1, "PIT_LIM",  50),  'could not add AUTOB_PIT_LIM')   -- ATT pitch(VTOL frame) threshold to enter bailout (deg)
@@ -31,7 +31,7 @@ assert(param:add_param(KEY, 20, "SPD_TOUT", 1000), 'could not add AUTOB_SPD_TOUT
 assert(param:add_param(KEY, 21, "PARA_MASK", 3), 'could not add AUTOB_PARA_MASK') --Para trigger 
 assert(param:add_param(KEY, 22, "PARA_FEN", 1), 'could not add AUTOB_PARA_FEN')        -- 1 = para deploy on polygon fence breach
 assert(param:add_param(KEY, 23, "PARA_FTOUT", 3000), 'could not add AUTOB_PARA_FTOUT') -- Time outside polygon before parachute (ms)
-assert(param:add_param(KEY, 24, "FENCOUNT", 3000), 'could not add AUTOB_FENCOUNT') -- Fence count limit
+assert(param:add_param(KEY, 24, "FENCOUNT", 1), 'could not add AUTOB_FENCOUNT') -- Fence count limit
 
 
 -- 3. BIND PARAMETERS
@@ -219,14 +219,15 @@ function parachute_thresholds_valid()
 
     local fence_autobailout_limit = p_fence_autobailout_limit:get()
     if fence_autobailout_limit > 0 and max_autob_count < fence_autobailout_limit then
-        gcs:send_text(2, "AUTOB: AUTOB_FENCOUNT < AUTOB_COUNT")
+        gcs:send_text(2, "AUTOB: AUTOB_COUNT < AUTOB_FENCOUNT")
         return false
     end
 
     return true
 end
 
-function reset_para_timers()
+function reset_para_timers(vtol_flight_active)
+    local para_trigger_mask = p_para_trigger_mask:get()
     local enable_sink_rate_trigger = (((para_trigger_mask >> 0) & 1) == 1)
     local enable_lateral_speed_trigger = (((para_trigger_mask >> 1) & 1) == 1)
     local enable_pitch_angle_trigger = (((para_trigger_mask >> 2) & 1) == 1)
@@ -506,7 +507,7 @@ function is_para_fence_triggered()
 end
 
 function para_deploy(vtol_flight_active)
-    reset_para_timers()
+    reset_para_timers(vtol_flight_active)
 
     if p_para_enable:get() ~= 1 then return end
 
