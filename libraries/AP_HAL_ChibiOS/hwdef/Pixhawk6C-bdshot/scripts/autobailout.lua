@@ -218,7 +218,7 @@ function parachute_thresholds_valid()
     end
 
     local fence_autobailout_limit = p_fence_autobailout_limit:get()
-    if fence_autobailout_limit > 0 and max_autob_count < fence_autobailout_limit then
+    if p_para_fen:get() == 1 and fence_autobailout_limit > 0 and max_autob_count > 0 and max_autob_count < fence_autobailout_limit then
         gcs:send_text(2, "AUTOB: AUTOB_COUNT < AUTOB_FENCOUNT")
         return false
     end
