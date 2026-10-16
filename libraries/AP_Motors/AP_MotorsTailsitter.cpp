@@ -107,7 +107,6 @@ void AP_MotorsTailsitter::output_to_motors()
         if(commanded_throttle < _throttle_thrust_min_ts){
             commanded_throttle = _throttle_thrust_min_ts;
             limit.throttle_lower = true;
-            gcs().send_text(MAV_SEVERITY_INFO, "Tailsitter minimum throttle enforced: %f", (double)_throttle_thrust_min_ts);
         }
         _actuator[2] = commanded_throttle;
         _actuator[0] = constrain_float(commanded_throttle + commanded_roll, 0.0f, 1.0f);
