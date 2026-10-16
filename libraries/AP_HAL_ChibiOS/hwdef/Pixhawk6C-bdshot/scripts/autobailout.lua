@@ -101,6 +101,7 @@ local backtransition_complete_time_ms = nil
 
 -- Fence state variables
 local PARA_FENCE_MODES                = {
+    [10] = true, -- AUTO (only while in_vtol_mode(): VTOL_LAND, VTOL_TAKEOFF, VTOL loiters)
     [19] = true, -- QLOITER
     [20] = true, -- QLAND
     [21] = true, -- QRTL
@@ -437,7 +438,7 @@ function is_para_fence_triggered()
     return false
 end
 
-function para_deploy()
+function para_deploy(vtol_flight_active)
     if p_para_enable:get() ~= 1 then return end
 
     local para_trigger_rc_chan = nil
