@@ -5,7 +5,7 @@ local para_ahrs_pitch_threshold_min = -50
 
 -- 1. SETUP PARAMETER TABLE
 local KEY = 110
-assert(param:add_table(KEY, "AUTOB_",21), "AUTOB table failed")
+assert(param:add_table(KEY, "AUTOB_",23), "AUTOB table failed")
 
 -- 2. ADD PARAMETERS
 assert(param:add_param(KEY, 1, "PIT_LIM",  50),  'could not add AUTOB_PIT_LIM')   -- ATT pitch(VTOL frame) threshold to enter bailout (deg)
@@ -25,10 +25,12 @@ assert(param:add_param(KEY, 14, "PRED_INT", 1000), 'could not add AUTOB_PRED_INT
 assert(param:add_param(KEY, 15, "PRED_ANG", 105), 'could not add AUTOB_PRED_ANG') -- VTOL frame absolute rate based predicted angle threshold for autobailout
 assert(param:add_param(KEY, 16, "COUNT", 5), 'could not add AUTOB_COUNT') -- VTOL frame absolute rate based predicted angle threshold for autobailout
 assert(param:add_param(KEY, 17, "PARA_SINK", 5), 'could not add AUTOB_PARA_SINK') -- Critical sink rate in m/s
-assert(param:add_param(KEY, 18, "PARA_SPD", 5), 'could not add AUTOB_PARA_SPD') -- Critical lateral speed in m/s
-assert(param:add_param(KEY, 19, "PARA_MASK", 3), 'could not add AUTOB_PARA_MASK') --Para trigger 
-assert(param:add_param(KEY, 20, "PARA_FEN", 1), 'could not add AUTOB_PARA_FEN')        -- 1 = para deploy on polygon fence breach
-assert(param:add_param(KEY, 21, "PARA_FTOUT", 3000), 'could not add AUTOB_PARA_FTOUT') -- Time outside polygon before parachute (ms)
+assert(param:add_param(KEY, 18, "SINK_TOUT", 1000), 'could not add AUTOB_SINK_TOUT') -- Critical sink rate in m/s
+assert(param:add_param(KEY, 19, "PARA_SPD", 5), 'could not add AUTOB_PARA_SPD') -- Critical lateral speed in m/s
+assert(param:add_param(KEY, 20, "SPD_TOUT", 1000), 'could not add AUTOB_SPD_TOUT') -- Critical sink rate in m/s
+assert(param:add_param(KEY, 21, "PARA_MASK", 3), 'could not add AUTOB_PARA_MASK') --Para trigger 
+assert(param:add_param(KEY, 22, "PARA_FEN", 1), 'could not add AUTOB_PARA_FEN')        -- 1 = para deploy on polygon fence breach
+assert(param:add_param(KEY, 23, "PARA_FTOUT", 3000), 'could not add AUTOB_PARA_FTOUT') -- Time outside polygon before parachute (ms)
 
 -- 3. BIND PARAMETERS
 local function bind_param(name)
@@ -56,7 +58,9 @@ local p_prediction_interval = bind_param("AUTOB_PRED_INT")
 local p_pred_angle_threshold = bind_param("AUTOB_PRED_ANG")
 local p_autobailout_count = bind_param("AUTOB_COUNT") -- -1 : Disables autoresume. 0: disables autobailout and autoresumes. >0: Set limit on autobailout/autoresume count 
 local p_para_critical_sink_rate = bind_param("AUTOB_PARA_SINK")
+local p_para_critical_sink_rate_timeout = bind_param("AUTOB_SINK_TOUT")
 local p_para_critical_lateral_speed = bind_param("AUTOB_PARA_SPD")
+local p_para_critical_lateral_speed_timeout = bind_param("AUTOB_SPD_TOUT")
 local p_para_trigger_mask = bind_param("AUTOB_PARA_MASK")
 local p_para_fen             = bind_param("AUTOB_PARA_FEN")
 local p_para_ftout           = bind_param("AUTOB_PARA_FTOUT")
@@ -233,12 +237,12 @@ function is_sink_rate_above_threshold(vtol_flight_active)
 
     local para_critical_sink_rate = p_para_critical_sink_rate:get() or 5
     local exceeded_critical_sink_rate = velocity_z > para_critical_sink_rate
-
+    local critical_sink_timeout_ms = p_para_critical_sink_rate_timeout:get() or 1000
     if exceeded_critical_sink_rate then 
         if first_para_sink_rate_exceeded_t == nil then
             first_para_sink_rate_exceeded_t = millis():tofloat()
         else
-            if millis():tofloat()-first_para_sink_rate_exceeded_t > 1000 then
+            if millis():tofloat()-first_para_sink_rate_exceeded_t > critical_sink_timeout_ms then
                 first_para_sink_rate_exceeded_t = nil
                 gcs:send_text(2, "AUTOB:sink rate exceeds para threshold")
                 return true
@@ -271,12 +275,12 @@ function is_lateral_speed_above_threshold(vtol_flight_active)
     local para_critical_lateral_speed = p_para_critical_lateral_speed:get() or 5
     local lateral_velocity  = math.sqrt((spd:x()^2) + (spd:y()^2)) 
     local exceeded_critical_lateral_speed = lateral_velocity > para_critical_lateral_speed
-
+    local critical_lateral_speed_timeout_ms = p_para_critical_lateral_speed_timeout:get() or 1000
     if exceeded_critical_lateral_speed then 
         if first_para_lateral_speed_exceeded_t == nil then
             first_para_lateral_speed_exceeded_t = millis():tofloat()
         else
-            if millis():tofloat()-first_para_lateral_speed_exceeded_t > 1000 then
+            if millis():tofloat()-first_para_lateral_speed_exceeded_t > critical_lateral_speed_timeout_ms then
                 first_para_lateral_speed_exceeded_t = nil
                 gcs:send_text(2, "AUTOB:lateralspeed exceeds para threshold")
                 return true
