@@ -163,6 +163,16 @@ jobs:
           pip install requests mock
           Tools/autotest/unittest/annotate_params_unittest.py
 
+      - name: Unittest embed (ROMFS Lua stripping)
+        if: matrix.config == 'unit-tests'
+        env:
+          # the test builds luac from AP_Scripting/lua itself (the container
+          # runs as a non-root user, so lua5.3 can't be installed); fail rather
+          # than skip the bytecode checks if that build is not possible
+          EMBED_TEST_REQUIRE_LUAC: '1'
+        run: |
+          python3 Tools/autotest/unittest/embed_unittest.py -v
+
       - name: Archive buildlog artifacts
         uses: actions/upload-artifact@v4
         if: failure()
