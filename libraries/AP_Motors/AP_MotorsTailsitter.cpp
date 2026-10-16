@@ -100,7 +100,19 @@ void AP_MotorsTailsitter::output_to_motors()
             set_actuator_with_slew(_actuator[2], thr_lin.thrust_to_actuator(_throttle));
             break;
     }
-
+    // only enforce the tailsitter minimum throttle when and flying
+    if(_throttle_thrust_min_ts > 0.0f && _spool_state == SpoolState::THROTTLE_UNLIMITED){
+        float commanded_throttle = (_actuator[0] + _actuator[1])/2.0f;
+        float commanded_roll = (_actuator[0] - _actuator[1])/2.0f;
+        if(commanded_throttle < _throttle_thrust_min_ts){
+            commanded_throttle = _throttle_thrust_min_ts;
+            limit.throttle_lower = true;
+            gcs().send_text(MAV_SEVERITY_INFO, "Tailsitter minimum throttle enforced: %f", (double)_throttle_thrust_min_ts);
+        }
+        _actuator[2] = commanded_throttle;
+        _actuator[0] = constrain_float(commanded_throttle + commanded_roll, 0.0f, 1.0f);
+        _actuator[1] = constrain_float(commanded_throttle - commanded_roll, 0.0f, 1.0f);
+    }
     SRV_Channels::set_output_pwm(SRV_Channel::k_throttleLeft, output_to_pwm(_actuator[0]));
     SRV_Channels::set_output_pwm(SRV_Channel::k_throttleRight, output_to_pwm(_actuator[1]));
 
