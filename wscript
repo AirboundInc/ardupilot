@@ -304,17 +304,6 @@ submodules at specific revisions.
                  default=False,
                  help="Enables DroneCAN tests in sitl")
 
-    g.add_option('--enable-custom-storage',
-        action='store_true',
-        dest='enable_custom_storage',
-        default=True,
-        help='Enable custom storage for uuid, password, serial ID, etc along with custom mavlink message handler (enabled by default).')
-
-    g.add_option('--disable-custom-storage',
-        action='store_false',
-        dest='enable_custom_storage',
-        help='Disable custom storage and the custom mavlink message handler.')
-
     g = opt.ap_groups['linux']
 
     linux_options = ('--prefix', '--destdir', '--bindir', '--libdir')
@@ -553,9 +542,7 @@ def configure(cfg):
     cfg.msg('Setting board to', cfg.options.board)
     cfg.get_board().configure(cfg)
 
-    # Manages the inclusion of the custom MAVLink dialect in the build.
-    # This logic adds the dialect if --enable-custom-storage is passed during configuration,
-    # and ensures it is removed otherwise.    
+    # adds the custom MAVLink dialect to all.xml
     cfg.load('custom_dialect_tool')
 
     cfg.load('waf_unit_test')

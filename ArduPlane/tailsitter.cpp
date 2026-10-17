@@ -585,9 +585,9 @@ void Tailsitter::output(void)
     quadplane.attitude_control->get_tilt_motor_angle((constrain_float(tilt_left, -4500.0f, 4500.0f) + constrain_float(tilt_right, -4500.0f, 4500.0f)) / 2.0f);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorLeft, tilt_left);
     SRV_Channels::set_output_scaled(SRV_Channel::k_tiltMotorRight, tilt_right);
-    float position_pitch_sp = quadplane.pos_control->get_pitch_cd();
     // Add logging for desired thrust vectoring angles
     #if HAL_LOGGING_ENABLED
+        float position_pitch_sp = quadplane.pos_control->get_pitch_cd();
         AP::logger().WriteStreaming("PHID", "TimeUS,DesL,DesR,AhrsPit,WVGain,VHPwEe,PosPit",
                 "sddd--d",
                 "F000000",
@@ -1295,6 +1295,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
     }
     scale_l = constrain_float(scale_l, scale_low, scale_high);
     scale_r = constrain_float(scale_r, scale_low, scale_high);
+#if HAL_LOGGING_ENABLED
     AP::logger().WriteStreaming("RPME", "TimeUS,RPMResultL,RPMResultR,RPMEstL,RPMEstR",
         "s----",
         "F0000",
@@ -1315,6 +1316,7 @@ void Tailsitter::get_rpm_based_tilt_scaler(float &scale_l, float &scale_r, float
         "Qfffff",
         AP_HAL::micros64(), kf_right.innovation, kf_left.innovation,
         kf_right.bias, kf_left.bias, scale_low);
+#endif // HAL_LOGGING_ENABLED
 
 #else //HAL_WITH_ESC_TELEM
     scale_l = default_throttle_scaler;

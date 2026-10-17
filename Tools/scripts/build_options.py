@@ -441,6 +441,8 @@ BUILD_OPTIONS = [
 
     Feature('CAN', 'DroneCAN', 'HAL_ENABLE_DRONECAN_DRIVERS', 'Enable DroneCAN support', 0, None),
     Feature('CAN', 'CAN Logging', 'AP_CAN_LOGGING_ENABLED', 'Enable CAN logging support', 0, None),
+
+    Feature('Airbound', 'CUSTOM_STORAGE', 'AP_CUSTOM_STORAGE_ENABLED', 'Enable custom storage and its MAVLink handler', 0, None),
 ]
 
 BUILD_OPTIONS.sort(key=lambda x: (x.category + x.label))

@@ -16,6 +16,7 @@
  */
 
 #include "GCS_config.h"
+#include <AP_CustomStorage/AP_CustomStorage_config.h>
 
 #if HAL_GCS_ENABLED
 
@@ -76,7 +77,7 @@
 #include <AP_Vehicle/AP_Vehicle_config.h>
 #include <stdio.h>
 
-#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+#if AP_CUSTOM_STORAGE_ENABLED
 #include <AP_CustomMavlinkHandler/AP_CustomMavlinkHandler.h>
 #endif
 
@@ -205,7 +206,7 @@ bool GCS_MAVLINK::init(uint8_t instance)
         is_high_latency_link = true;
     }
 #endif
-#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+#if AP_CUSTOM_STORAGE_ENABLED
     AP_CustomMavlinkHandler::init();
 #endif
     return true;
@@ -4170,7 +4171,7 @@ void GCS_MAVLINK::handle_heartbeat(const mavlink_message_t &msg) const
 void GCS_MAVLINK::handle_message(const mavlink_message_t &msg)
 {
     switch (msg.msgid) {
-#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
+#if AP_CUSTOM_STORAGE_ENABLED
     case MAVLINK_MSG_ID_AIRBOUND_PARAMETER_GETSET: {
         AP_CustomMavlinkHandler::handle_custom_message(chan,msg);
         break;

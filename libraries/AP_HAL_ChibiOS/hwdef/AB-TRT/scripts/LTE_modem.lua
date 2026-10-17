@@ -131,7 +131,7 @@ local CA_CERT_PEM = table.concat({
 }, "\n") .. "\n"
 
 -- Builds the login body from custom storage's per-aircraft craft ID/password
--- (custom_storage is only present on boards built with AP_ENABLE_CUSTOM_STORAGE).
+-- (custom_storage is only present on boards built with AP_CUSTOM_STORAGE_ENABLED).
 -- Craft ID is written directly onto each board, format "AA-TRT-00659".
 -- Returns nil if custom_storage isn't present or nothing has been
 -- provisioned yet -- there is no fallback; step_HTTPAUTH halts in that case.

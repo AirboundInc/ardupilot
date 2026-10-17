@@ -1,6 +1,9 @@
-#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE==1
-
 #pragma once
+
+#include <AP_CustomStorage/AP_CustomStorage_config.h>
+
+#if AP_CUSTOM_STORAGE_ENABLED
+
 #include <GCS_MAVLink/GCS.h>
 #include "AP_CustomStorage/AP_CustomStorage.h"
 

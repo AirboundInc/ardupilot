@@ -1,4 +1,6 @@
-#if defined(AP_ENABLE_CUSTOM_STORAGE) && AP_ENABLE_CUSTOM_STORAGE == 1
+#include <AP_CustomStorage/AP_CustomStorage_config.h>
+
+#if AP_CUSTOM_STORAGE_ENABLED
 
 #include "AP_CustomMavlinkHandler.h"
 
