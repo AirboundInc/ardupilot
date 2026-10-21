@@ -401,7 +401,10 @@ uint32_t AP_LTE::run_step()
         if (option_enabled(OPT_STEPS)) {
             GCS_SEND_TEXT(MAV_SEVERITY_INFO, "LTE_modem: step %s", step_name(_step));
         }
+        // CONNECTED's time is link uptime, not a slow step: counting it made
+        // "longest step: CONNECTED (935691ms)" after a reconnect
         if (!_reset_recorded && _last_step != Step::ATI &&
+            _last_step != Step::CONNECTED &&
             _step_times_n < ARRAY_SIZE(_step_times)) {
             _step_times[_step_times_n].name = step_name(_last_step);
             _step_times[_step_times_n].ms = now_ms - _step_timer_ms;
@@ -958,11 +961,13 @@ void AP_LTE::reset_to_ATI()
 {
     const char *timed_out_step = step_name(_step);
     const uint32_t elapsed_ms = AP_HAL::millis() - _step_timer_ms;
+    // CONNECTED's time is uptime, see run_step()
+    const bool record_step = _step != Step::CONNECTED;
     // taken before reset_state() drops back to the default modem
     _rst_cmd = _modem->reset != nullptr ? _modem->reset : AP_LTE_default_modem.reset;
     _rst_keep_baud = _modem->reset_not_baudrate;
     reset_state();
-    if (_step_times_n < ARRAY_SIZE(_step_times)) {
+    if (record_step && _step_times_n < ARRAY_SIZE(_step_times)) {
         _step_times[_step_times_n].name = timed_out_step;
         _step_times[_step_times_n].ms = elapsed_ms;
         _step_times_n++;
