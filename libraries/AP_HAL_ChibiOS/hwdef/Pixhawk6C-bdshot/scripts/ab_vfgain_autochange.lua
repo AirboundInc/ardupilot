@@ -1,39 +1,40 @@
--- Set of quadplane VTOL modes
-local quadplane_modes = {
-    [17] = true,  -- QSTABILIZE
-    [18] = true,  -- QHOVER
-    [19] = true,  -- QLOITER
-    [20] = true,  -- QLAND
-    [21] = true,  -- QRTL
-    [22] = true   -- QAUTOTUNE
-}
+-- Sets Q_TAILSIT_VFGAIN based on whether the aircraft is actually in vertical (VTOL) flight,
+-- not on the flight mode. Q-modes such as QRTL/QLAND fly a fixed wing approach first, and
+-- AUTO can fly VTOL legs, so the mode number alone does not tell us how we are flying.
+--   Vertical flight          -> VFGAIN_VTOL
+--   Fixed wing / transitions -> VFGAIN_FW
 
--- Cache current value to avoid redundant writes
-local current_value = -1
+local VFGAIN_VTOL       = 0.2
+local VFGAIN_FW         = 0
+local LOOP_ARMED_MS     = 200  -- fast enough to follow transitions
+local LOOP_DISARMED_MS  = 1000
+
+-- True only when flying as a multicopter: in a VTOL mode (or VTOL leg of AUTO), past the
+-- fixed wing approach, and not in the fixed wing pull-up phase of the back transition
+local function in_vertical_flight()
+    return quadplane:in_vtol_mode() and not quadplane:tailsitter_in_vtol_transition()
+end
 
 function update()
-    local mode = vehicle:get_mode()
-    local armed = arming:is_armed()
-
-    if not armed then
-        return update, 1000  -- do nothing if disarmed
+    if not arming:is_armed() then
+        return update, LOOP_DISARMED_MS  -- do nothing if disarmed
     end
 
-    if quadplane_modes[mode] then
-        if current_value ~= 0.2 then
-            param:set('Q_TAILSIT_VFGAIN', 0.2)
-            gcs:send_text(6, "Set Q_TAILSIT_VFGAIN to 0.2 (VTOL mode)")
-            current_value = 0.2
-        end
-    else
-        if current_value ~= 0 then
-            param:set('Q_TAILSIT_VFGAIN', 0)
-            gcs:send_text(6, "Set Q_TAILSIT_VFGAIN to 0 (Non-VTOL mode)")
-            current_value = 0
+    local vertical = in_vertical_flight()
+    local target = vertical and VFGAIN_VTOL or VFGAIN_FW
+
+    -- compare against the live value so writes by other scripts are corrected
+    local current = param:get('Q_TAILSIT_VFGAIN')
+    if current == nil or math.abs(current - target) > 0.001 then
+        param:set('Q_TAILSIT_VFGAIN', target)
+        if vertical then
+            gcs:send_text(6, string.format("Set Q_TAILSIT_VFGAIN to %.1f (vertical flight)", target))
+        else
+            gcs:send_text(6, string.format("Set Q_TAILSIT_VFGAIN to %.1f (fixed wing flight)", target))
         end
     end
 
-    return update, 1000  -- repeat every 1 second
+    return update, LOOP_ARMED_MS
 end
 
 gcs:send_text(6, "Airbound Lua: VF gain script loaded.")
