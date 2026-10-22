@@ -152,6 +152,11 @@ private:
     // restored back to the fixed-wing forward-throttle value; for QTHR debug log
     float dual_axis_mixout_throttle = 0;
 
+    // last run_fw_mixer() tick, and the first tick of the current run of
+    // them, for the differential thrust ramp after entering Stage::FW
+    uint32_t last_fw_mixer_ms = 0;
+    uint32_t fw_entry_ms = 0;
+
     // true if the forward transition has progressed far enough that the
     // tilt should go all the way forward rather than being limited to
     // Q_TILT_MAX

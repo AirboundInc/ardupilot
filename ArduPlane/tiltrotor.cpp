@@ -1281,6 +1281,15 @@ void Tiltrotor::run_vtol_mixer(void){
 void Tiltrotor::run_fw_mixer(void){
     dual_axis_transition->note_fw_output();
 
+    // first FW mixer tick after VTOL/transition: restart the DT ramp and
+    // drop any yaw I built up while differential thrust wasn't applied
+    const uint32_t now = AP_HAL::millis();
+    if (now - last_fw_mixer_ms > 100) {
+        fw_entry_ms = now;
+        plane.yawController.reset_I();
+    }
+    last_fw_mixer_ms = now;
+
     // never command motor throttle while disarmed: this branch runs
     // unconditionally in FW modes (even disarmed on the ground, since
     // assisted_flight is false here), and would otherwise write raw
@@ -1291,11 +1300,20 @@ void Tiltrotor::run_fw_mixer(void){
         ? SRV_Channels::get_output_scaled(SRV_Channel::k_throttle)
         : plane.get_throttle_input(true);
 
+    // ramp differential thrust in over DT_RAMP_MS after entering FW so any
+    // rudder demand present at handover isn't applied as a step
+    constexpr float DT_RAMP_MS = 500.0f;
+    const float dt_ramp   = constrain_float((now - fw_entry_ms) / DT_RAMP_MS, 0.0f, 1.0f);
     const float rud_gain  = float(plane.g2.rudd_dt_gain) * 0.01f;
-    const float rudder_dt = rud_gain * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
+    const float rudder_dt = dt_ramp * rud_gain * SRV_Channels::get_output_scaled(SRV_Channel::k_rudder) * (1.0f / SERVO_MAX);
 
-    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(throttle + 50.0f * rudder_dt, 0, 100));
-    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(throttle - 50.0f * rudder_dt, 0, 100));
+    // DT is the only yaw actuator: near full throttle give up collective
+    // rather than clipping one side of the differential
+    const float half_split = fabsf(50.0f * rudder_dt);
+    const float thr = MIN(throttle, 100.0f - half_split);
+
+    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft,  constrain_float(thr + 50.0f * rudder_dt, 0, 100));
+    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, constrain_float(thr - 50.0f * rudder_dt, 0, 100));
 
 
     // forward flight: Axis 1 is at 90deg (motors fully forward)
