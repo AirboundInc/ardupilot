@@ -29,8 +29,8 @@ assert(param:add_param(KEY, 18, "SINK_TOUT", 1000), 'could not add AUTOB_SINK_TO
 assert(param:add_param(KEY, 19, "PARA_SPD", 13), 'could not add AUTOB_PARA_SPD') -- Critical lateral speed in m/s
 assert(param:add_param(KEY, 20, "SPD_TOUT", 1000), 'could not add AUTOB_SPD_TOUT') -- Critical sink rate in m/s
 assert(param:add_param(KEY, 21, "PARA_MASK", 3), 'could not add AUTOB_PARA_MASK') --Para trigger 
-assert(param:add_param(KEY, 22, "PARA_FEN", 0), 'could not add AUTOB_PARA_FEN')        -- 1 = para deploy on polygon fence breach
-assert(param:add_param(KEY, 23, "PARA_FTOUT", 3000), 'could not add AUTOB_PARA_FTOUT') -- Time outside polygon before parachute (ms)
+assert(param:add_param(KEY, 22, "PARA_FEN", 1), 'could not add AUTOB_PARA_FEN')       -- 1 = para deploy on polygon fence breach
+assert(param:add_param(KEY, 23, "PARA_FTOUT", 100), 'could not add AUTOB_PARA_FTOUT') -- Time outside polygon before parachute (ms)
 assert(param:add_param(KEY, 24, "FENCOUNT", 1), 'could not add AUTOB_FENCOUNT') -- Fence count limit
 
 
