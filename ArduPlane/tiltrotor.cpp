@@ -1110,10 +1110,10 @@ void Tiltrotor_Transition_DualAxis::update_controllers(void)
         break;
 
     case Stage::FWD:
-        // the multicopter attitude/rate controller runs through the forward
-        // transition on the live throttle, and its own throttle output is
-        // discarded by dual_axis_output(). The ESCs get the FBWA/commanded
-        // throttle
+        // To hold level VTOL attitude control need to active in Foward transition.
+        quadplane.attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(
+        plane.nav_roll_cd, plane.nav_pitch_cd, 0);
+        // VTOL z controller.
         quadplane.run_z_controller();
         quadplane.motors_output(true);
         break;
