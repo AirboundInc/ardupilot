@@ -26,10 +26,10 @@ assert(param:add_param(KEY, 15, "PRED_ANG", 105), 'could not add AUTOB_PRED_ANG'
 assert(param:add_param(KEY, 16, "COUNT", 5), 'could not add AUTOB_COUNT') -- VTOL frame absolute rate based predicted angle threshold for autobailout
 assert(param:add_param(KEY, 17, "PARA_SINK", 5), 'could not add AUTOB_PARA_SINK') -- Critical sink rate in m/s
 assert(param:add_param(KEY, 18, "SINK_TOUT", 1000), 'could not add AUTOB_SINK_TOUT') -- Critical sink rate in m/s
-assert(param:add_param(KEY, 19, "PARA_SPD", 5), 'could not add AUTOB_PARA_SPD') -- Critical lateral speed in m/s
+assert(param:add_param(KEY, 19, "PARA_SPD", 13), 'could not add AUTOB_PARA_SPD') -- Critical lateral speed in m/s
 assert(param:add_param(KEY, 20, "SPD_TOUT", 1000), 'could not add AUTOB_SPD_TOUT') -- Critical sink rate in m/s
 assert(param:add_param(KEY, 21, "PARA_MASK", 3), 'could not add AUTOB_PARA_MASK') --Para trigger 
-assert(param:add_param(KEY, 22, "PARA_FEN", 1), 'could not add AUTOB_PARA_FEN')        -- 1 = para deploy on polygon fence breach
+assert(param:add_param(KEY, 22, "PARA_FEN", 0), 'could not add AUTOB_PARA_FEN')        -- 1 = para deploy on polygon fence breach
 assert(param:add_param(KEY, 23, "PARA_FTOUT", 3000), 'could not add AUTOB_PARA_FTOUT') -- Time outside polygon before parachute (ms)
 assert(param:add_param(KEY, 24, "FENCOUNT", 1), 'could not add AUTOB_FENCOUNT') -- Fence count limit
 
@@ -232,7 +232,7 @@ function reset_para_timers(vtol_flight_active)
     local enable_lateral_speed_trigger = (((para_trigger_mask >> 1) & 1) == 1)
     local enable_pitch_angle_trigger = (((para_trigger_mask >> 2) & 1) == 1)
 
-    local para_enabled = p_para_enable:get()
+    local para_enabled = p_para_enable:get() == 1
     
     local vehicle_not_ready = not vtol_flight_active or not arming:is_armed()
 
@@ -306,7 +306,7 @@ function is_lateral_speed_above_threshold(vtol_flight_active)
         return false
     end
 
-    local para_critical_lateral_speed = p_para_critical_lateral_speed:get() or 5
+    local para_critical_lateral_speed = p_para_critical_lateral_speed:get() or 15
     local lateral_velocity  = math.sqrt((spd:x()^2) + (spd:y()^2)) 
     local exceeded_critical_lateral_speed = lateral_velocity > para_critical_lateral_speed
     local critical_lateral_speed_timeout_ms = p_para_critical_lateral_speed_timeout:get() or 1000
