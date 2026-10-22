@@ -31,7 +31,7 @@ assert(param:add_param(KEY, 20, "SPD_TOUT", 1000), 'could not add AUTOB_SPD_TOUT
 assert(param:add_param(KEY, 21, "PARA_MASK", 3), 'could not add AUTOB_PARA_MASK') --Para trigger 
 assert(param:add_param(KEY, 22, "PARA_FEN", 1), 'could not add AUTOB_PARA_FEN')       -- 1 = para deploy on polygon fence breach
 assert(param:add_param(KEY, 23, "PARA_FTOUT", 100), 'could not add AUTOB_PARA_FTOUT') -- Time outside polygon before parachute (ms)
-assert(param:add_param(KEY, 24, "FENCOUNT", 1), 'could not add AUTOB_FENCOUNT') -- Fence count limit
+assert(param:add_param(KEY, 24, "FENCOUNT", 0), 'could not add AUTOB_FENCOUNT')       -- Fence count limit
 
 
 -- 3. BIND PARAMETERS
