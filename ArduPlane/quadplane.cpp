@@ -581,7 +581,6 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
     // @Increment: 100
     // @User: Standard
     AP_GROUPINFO("LND_DET_TIM", 42, QuadPlane, landing_detect.timeout_ms, 200),
-
     // @Param: YAW_TOL
     // @DisplayName: Takeoff yaw tolerance
     // @Description: Yaw error tolerance in degrees before fixed-wing transition after VTOL takeoff
