@@ -9,10 +9,10 @@ local VFGAIN_FW         = 0
 local LOOP_ARMED_MS     = 200  -- fast enough to follow transitions
 local LOOP_DISARMED_MS  = 1000
 
--- True only when flying as a multicopter: in a VTOL mode (or VTOL leg of AUTO), past the
--- fixed wing approach, and not in the fixed wing pull-up phase of the back transition
+-- True in a VTOL mode (or VTOL leg of AUTO) once past the fixed wing approach. This includes
+-- the back transition pull-up, where vectoring helps the elevons rotate the aircraft to vertical
 local function in_vertical_flight()
-    return quadplane:in_vtol_mode() and not quadplane:tailsitter_in_vtol_transition()
+    return quadplane:in_vtol_mode()
 end
 
 function update()
