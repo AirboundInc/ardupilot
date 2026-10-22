@@ -5,7 +5,7 @@ local para_ahrs_pitch_threshold_min = -50
 
 -- 1. SETUP PARAMETER TABLE
 local KEY = 110
-assert(param:add_table(KEY, "AUTOB_",24), "AUTOB table failed")
+assert(param:add_table(KEY, "AUTOB_",25), "AUTOB table failed")
 
 -- 2. ADD PARAMETERS
 assert(param:add_param(KEY, 1, "PIT_LIM",  50),  'could not add AUTOB_PIT_LIM')   -- ATT pitch(VTOL frame) threshold to enter bailout (deg)
@@ -32,6 +32,7 @@ assert(param:add_param(KEY, 21, "PARA_MASK", 3), 'could not add AUTOB_PARA_MASK'
 assert(param:add_param(KEY, 22, "PARA_FEN", 0), 'could not add AUTOB_PARA_FEN')        -- 1 = para deploy on polygon fence breach
 assert(param:add_param(KEY, 23, "PARA_FTOUT", 3000), 'could not add AUTOB_PARA_FTOUT') -- Time outside polygon before parachute (ms)
 assert(param:add_param(KEY, 24, "FENCOUNT", 1), 'could not add AUTOB_FENCOUNT') -- Fence count limit
+assert(param:add_param(KEY, 25, "PFEN_DEP", 5), 'could not add AUTOB_PFEN_DEP') -- Para deploy when predicted fence breach is this many s away, 0 = off
 
 
 -- 3. BIND PARAMETERS
@@ -67,6 +68,7 @@ local p_para_trigger_mask = bind_param("AUTOB_PARA_MASK")
 local p_para_fen             = bind_param("AUTOB_PARA_FEN")
 local p_para_ftout           = bind_param("AUTOB_PARA_FTOUT")
 local p_fence_autobailout_limit = bind_param("AUTOB_FENCOUNT")
+local p_pfen_dep             = bind_param("AUTOB_PFEN_DEP")
 
 -- Read Parachute trigger channel number from FCU parameter list 
 
@@ -134,6 +136,23 @@ local fence_params_ok                 = p_fence_enable:init("FENCE_ENABLE") and 
     and p_fence_action:init("FENCE_ACTION") and p_fence_autoen:init("FENCE_AUTOENABLE")
     and p_fence_options:init("FENCE_OPTIONS")
 local FENCE_OPT_UNION                 = 2
+local FENCE_TYPES_3D                  = 13    -- Max Alt(1) | Polygon(4) | Min Alt(8)
+local FENCE_TYPE_NAMES                = { [1] = "Max Alt", [4] = "Polygon", [8] = "Min Alt" }
+
+-- Predictive fence state (firmware FENCE_PRED_TIME + fence:get_time_to_breach())
+local PFEN_WARN_S                     = 5     -- countdown before predictive para deploy (s)
+local PFEN_CONFIRM_LOOPS              = 2     -- consecutive loops at deploy time before deploying
+local PFEN_CANCEL_HYST_MS             = 1000  -- prediction must stay outside the countdown this long before cancelling
+local PFEN_DEP_MAX_S                  = 30
+local p_fence_pred_time               = Parameter()
+local pfen_supported                  = p_fence_pred_time:init("FENCE_PRED_TIME")
+    and fence ~= nil and fence.get_time_to_breach ~= nil
+local pfen_confirm                    = 0
+local pfen_announced                  = false
+local pfen_last_msg_t                 = 0
+local pfen_clear_t                    = nil   -- time the prediction left the countdown window
+local pfen_cfg_warn_t                 = 0
+local fencount_warn_t                 = 0
 --- Arming Check
 local arm_state = {was_armed = false}
 
@@ -425,9 +444,135 @@ local function update_fence_enable()
     end
 end
 
+local function reset_pfen()
+    pfen_confirm = 0
+    pfen_announced = false
+    pfen_clear_t = nil
+end
+
+-- prediction left the countdown window; cancel once that has lasted PFEN_CANCEL_HYST_MS
+-- so a prediction flickering at the FENCE_PRED_TIME horizon doesn't restart the countdown
+local function pfen_cancel(now)
+    pfen_confirm = 0
+    if not pfen_announced then
+        pfen_clear_t = nil
+        return
+    end
+    if pfen_clear_t == nil then
+        pfen_clear_t = now
+    end
+    if (now - pfen_clear_t) >= PFEN_CANCEL_HYST_MS then
+        gcs:send_text(2, "AUTOB: Para deploy cancelled")
+        reset_pfen()
+    end
+end
+
+-- returns nil if the predictive deploy config is usable, else a GCS message
+local function pfen_config_problem()
+    local dep_s = p_pfen_dep:get() or 0
+    if not pfen_supported then
+        return "AUTOB: Predictive fence not supported in firmware"
+    end
+    if dep_s > PFEN_DEP_MAX_S then
+        return string.format("AUTOB: AUTOB_PFEN_DEP max %ds", PFEN_DEP_MAX_S)
+    end
+    if p_fence_pred_time:get() < dep_s + PFEN_WARN_S then
+        return "AUTOB: FENCE_PRED_TIME < PFEN_DEP+5"
+    end
+    return nil
+end
+
+-- Predictive fence para deploy: deploy when the firmware predicts a fence breach in AUTOB_PFEN_DEP seconds,
+-- after a PFEN_WARN_S countdown. Returns true to deploy. Caller has already applied the para fence gates.
+local function predicted_fence_deploy(now)
+    local dep_s = p_pfen_dep:get() or 0
+    if dep_s <= 0 then
+        reset_pfen()
+        return false
+    end
+
+    local problem = pfen_config_problem()
+    if problem then
+        if (now - pfen_cfg_warn_t) > 5000 then
+            gcs:send_text(2, problem)
+            pfen_cfg_warn_t = now
+        end
+        reset_pfen()
+        return false
+    end
+
+    -- vehicle still carries forward speed just after back-transition
+    local delay_ms = p_btrn_dly:get() or 1000
+    if backtransition_complete_time_ms == nil or (now - backtransition_complete_time_ms) < delay_ms then
+        reset_pfen()
+        return false
+    end
+
+    local ttb, ftype = fence:get_time_to_breach()
+    if ttb == nil then
+        reset_pfen()
+        return false
+    end
+    if ttb < 0 then
+        pfen_cancel(now) -- path clear again
+        return false
+    end
+    local type_mask = math.floor(p_fence_type:get()) & FENCE_TYPES_3D
+    if ttb == 0 or ftype == nil or (ftype & type_mask) == 0 then
+        -- already outside: the breach timeout path below owns it
+        reset_pfen()
+        return false
+    end
+
+    local deploy_in = ttb - dep_s
+    if deploy_in > PFEN_WARN_S then
+        pfen_cancel(now)
+        return false
+    end
+    pfen_clear_t = nil
+
+    if deploy_in <= 0 then
+        pfen_confirm = pfen_confirm + 1
+        if pfen_confirm >= PFEN_CONFIRM_LOOPS then
+            gcs:send_text(2, string.format("AUTOB: %s fence in %.0fs. Para deployed", FENCE_TYPE_NAMES[ftype] or "Fence", ttb))
+            reset_pfen()
+            return true
+        end
+        return false
+    end
+    pfen_confirm = 0
+
+    if deploy_in <= PFEN_WARN_S and (not pfen_announced or (now - pfen_last_msg_t) >= 1000) then
+        gcs:send_text(2, string.format("AUTOB: Para deploy in %ds", math.ceil(deploy_in)))
+        pfen_last_msg_t = now
+        pfen_announced = true
+    end
+    return false
+end
+
+-- on the ground, warn every 5s about fence para settings that can never work
+local function check_fence_para_config(now)
+    if arming:is_armed() then
+        return
+    end
+    if (p_pfen_dep:get() or 0) > 0 and (now - pfen_cfg_warn_t) > 5000 then
+        local problem = pfen_config_problem()
+        if problem then
+            gcs:send_text(2, problem)
+            pfen_cfg_warn_t = now
+        end
+    end
+    if p_fence_autobailout_limit:get() > 0 and (now - fencount_warn_t) > 5000 and
+       (p_enable:get() ~= 1 or p_autobailout_count:get() == 0) then
+        gcs:send_text(4, "AUTOB: FENCOUNT gate cannot open")
+        fencount_warn_t = now
+    end
+end
+
 function is_para_fence_triggered()
     if p_para_fen:get() ~= 1 then
         first_fence_breach_t = nil
+        reset_pfen()
         return false
     end
 
@@ -446,16 +591,21 @@ function is_para_fence_triggered()
             fence_cfg_warned_armed = armed
         end
         first_fence_breach_t = nil
+        reset_pfen()
         return false
     end
 
+    check_fence_para_config(now)
+
     if not (armed and quadplane:in_vtol_mode() and PARA_FENCE_MODES[vehicle:get_mode()]) then
         first_fence_breach_t = nil
+        reset_pfen()
         return false
     end
 
     local fence_autobailout_limit = p_fence_autobailout_limit:get()
     if fence_autobailout_limit > 0 and autob_count < fence_autobailout_limit then
+        reset_pfen()
         return false
     end
 
@@ -464,7 +614,14 @@ function is_para_fence_triggered()
         return false
     end
 
-    local breached = (fence:get_breaches() & FENCE_TYPE_POLYGON) ~= 0
+    if predicted_fence_deploy(now) then
+        first_fence_breach_t = nil
+        return true
+    end
+
+    -- polygon, plus Max Alt / Min Alt when enabled in FENCE_TYPE
+    local breach_mask = math.floor(p_fence_type:get()) & FENCE_TYPES_3D
+    local breached = (fence:get_breaches() & breach_mask) ~= 0
 
     if breached then
         if first_fence_breach_t == nil then

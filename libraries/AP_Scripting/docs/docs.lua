@@ -3959,6 +3959,12 @@ function fence:get_breach_time() end
 ---| 8 # Minimum altitude
 function fence:get_breaches() end
 
+-- Returns nil, or the predicted time until a polygon or altitude fence breach based on the current velocity
+-- Requires FENCE_PRED_TIME > 0, vehicle armed and the fence enabled
+---@return number|nil -- time to breach in seconds: 0 = breached, >0 = predicted breach, -1 = none within FENCE_PRED_TIME
+---@return integer|nil -- fence type predicted to be breached first: 1 = Maximum altitude, 4 = Polygon, 8 = Minimum altitude, 0 = none
+function fence:get_time_to_breach() end
+
 -- Rally library
 rally = {}
 -- Returns a specfic rally by index as a Location 

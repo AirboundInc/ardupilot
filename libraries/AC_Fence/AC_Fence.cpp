@@ -146,6 +146,17 @@ const AP_Param::GroupInfo AC_Fence::var_info[] = {
     // @User: Standard
     AP_GROUPINFO_FRAME("OPTIONS", 11, AC_Fence, _options, static_cast<uint16_t>(AC_FENCE_OPTIONS_DEFAULT), AP_PARAM_FRAME_PLANE | AP_PARAM_FRAME_COPTER | AP_PARAM_FRAME_TRICOPTER | AP_PARAM_FRAME_HELI),
 
+    // index 20 used to leave room for upstream parameters
+
+    // @Param: PRED_TIME
+    // @DisplayName: Fence predictive breach time
+    // @Description: Look-ahead time used to predict a polygon, maximum altitude or minimum altitude fence breach from the current ground velocity. When a breach is predicted within this time a warning with the predicted time to breach is sent to the GCS, and the time is available to scripts. 0 disables prediction.
+    // @Units: s
+    // @Range: 0 60
+    // @Increment: 0.5
+    // @User: Advanced
+    AP_GROUPINFO("PRED_TIME", 20, AC_Fence, _pred_time, 10.0f),
+
     AP_GROUPEND
 };
 
@@ -227,6 +238,9 @@ void AC_Fence::update()
             _enabled_fences = 0;
         }
     }
+
+    update_prediction();
+
 #ifdef AC_FENCE_DEBUG
     static uint32_t last_msg_count = 0;
     if (get_enabled_fences() && last_msg_count++ % 10 == 0) {
@@ -915,6 +929,199 @@ void AC_Fence::manual_recovery_start()
     GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Manual recovery started");
 }
 
+// predict the time until a polygon or altitude fence breach from the current velocity
+// called at 10Hz from update()
+void AC_Fence::update_prediction()
+{
+    _pred_valid = false;
+    _pred_ttb_s = -1.0f;
+    _pred_type = 0;
+
+    const uint8_t pred_fences = get_enabled_fences() & (AC_FENCE_TYPE_POLYGON | AC_FENCE_TYPE_ALT_MAX | AC_FENCE_TYPE_ALT_MIN);
+    const float horizon_s = _pred_time.get();
+    const AP_AHRS &ahrs = AP::ahrs();
+    Location loc;
+    Vector3f vel_ned;
+    if (!is_positive(horizon_s) ||
+        !hal.util->get_soft_armed() ||
+        pred_fences == 0 ||
+        !ahrs.get_location(loc) ||
+        !ahrs.get_velocity_NED(vel_ned)) {
+        reset_prediction_message();
+        return;
+    }
+    _pred_valid = true;
+
+    float pos_d;
+    ahrs.get_relative_position_D_home(pos_d);
+    const float alt_m = -pos_d;
+    const Vector2f vel_ne = vel_ned.xy();
+    _pred_speed = vel_ne.length();
+    _pred_climb_rate = -vel_ned.z;
+
+    if (((pred_fences & AC_FENCE_TYPE_POLYGON) && _poly_loader.breached(loc)) ||
+        ((pred_fences & AC_FENCE_TYPE_ALT_MAX) && alt_m >= _alt_max) ||
+        ((pred_fences & AC_FENCE_TYPE_ALT_MIN) && alt_m <= _alt_min)) {
+        // already outside, normal breach handling owns this
+        _pred_ttb_s = 0.0f;
+    } else {
+        // polygon walls
+        if ((pred_fences & AC_FENCE_TYPE_POLYGON) && _pred_speed >= AC_FENCE_PRED_MIN_SPEED) {
+            const float t = predict_time_to_breach(loc, vel_ne, horizon_s);
+            if (is_positive(t)) {
+                _pred_ttb_s = t;
+                _pred_type = AC_FENCE_TYPE_POLYGON;
+            }
+        }
+
+        // ceiling and floor, use whichever surface is reached first
+        uint8_t alt_type = 0;
+        const float t_alt = predict_time_to_alt_breach(alt_m, _pred_climb_rate, alt_type);
+        if (is_positive(t_alt) && t_alt <= horizon_s &&
+            (!is_positive(_pred_ttb_s) || t_alt < _pred_ttb_s)) {
+            _pred_ttb_s = t_alt;
+            _pred_type = alt_type;
+        }
+    }
+
+#if HAL_LOGGING_ENABLED
+// @LoggerMessage: FNCP
+// @Description: Predictive fence breach
+// @Field: TimeUS: Time since system startup
+// @Field: TTB: predicted time to breach, 0 if breached, -1 if none within FENCE_PRED_TIME
+// @Field: Spd: horizontal ground speed used for prediction
+// @Field: VSpd: climb rate used for prediction
+// @Field: Type: fence type predicted to be breached first
+    AP::logger().WriteStreaming("FNCP", "TimeUS,TTB,Spd,VSpd,Type", "ssnn-", "F000-", "QfffB",
+                                AP_HAL::micros64(),
+                                _pred_ttb_s,
+                                _pred_speed,
+                                _pred_climb_rate,
+                                _pred_type);
+#endif
+
+    send_prediction_message(AP_HAL::millis());
+}
+
+// returns time in seconds until the straight-line path at vel_ne first leaves the polygon fence,
+// or -1 if it stays inside for horizon_s. Uses breached() so inclusion and exclusion polygons,
+// circles and the union option behave exactly as for a real breach
+float AC_Fence::predict_time_to_breach(const Location &loc, const Vector2f &vel_ne, float horizon_s) const
+{
+    const float path_m = vel_ne.length() * horizon_s;
+    const uint8_t n = constrain_int16(ceilf(path_m / AC_FENCE_PRED_STEP_M), 1, AC_FENCE_PRED_MAX_SAMPLES);
+
+    float t_inside = 0.0f;
+    for (uint8_t k = 1; k <= n; k++) {
+        const float t = horizon_s * k / n;
+        Location p = loc;
+        p.offset(vel_ne.x * t, vel_ne.y * t);
+        if (!_poly_loader.breached(p)) {
+            t_inside = t;
+            continue;
+        }
+        // bisect between the last inside and first outside sample
+        float t_outside = t;
+        for (uint8_t i = 0; i < 4; i++) {
+            const float t_mid = 0.5f * (t_inside + t_outside);
+            Location pm = loc;
+            pm.offset(vel_ne.x * t_mid, vel_ne.y * t_mid);
+            if (_poly_loader.breached(pm)) {
+                t_outside = t_mid;
+            } else {
+                t_inside = t_mid;
+            }
+        }
+        return t_outside;
+    }
+    return -1.0f;
+}
+
+// returns time in seconds until the ceiling or floor is reached at a constant climb rate,
+// or -1 if not approaching an enabled altitude fence
+float AC_Fence::predict_time_to_alt_breach(float alt_m, float climb_rate, uint8_t &fence_type) const
+{
+    const uint8_t enabled = get_enabled_fences();
+    if ((enabled & AC_FENCE_TYPE_ALT_MAX) && climb_rate >= AC_FENCE_PRED_MIN_VSPEED) {
+        fence_type = AC_FENCE_TYPE_ALT_MAX;
+        return (_alt_max - alt_m) / climb_rate;
+    }
+    if ((enabled & AC_FENCE_TYPE_ALT_MIN) && climb_rate <= -AC_FENCE_PRED_MIN_VSPEED) {
+        fence_type = AC_FENCE_TYPE_ALT_MIN;
+        return (alt_m - _alt_min) / -climb_rate;
+    }
+    return -1.0f;
+}
+
+// warn the GCS of a predicted breach, independent of scripting
+void AC_Fence::send_prediction_message(uint32_t now_ms)
+{
+    if (!is_positive(_pred_ttb_s)) {
+        if (_pred_announced && is_negative(_pred_ttb_s)) {
+            // path clear again; wait so a prediction flickering at the horizon doesn't spam the GCS
+            if (_pred_clear_count < AC_FENCE_PRED_CLEAR) {
+                _pred_clear_count++;
+                return;
+            }
+            GCS_SEND_TEXT(MAV_SEVERITY_NOTICE, "Fence breach no longer predicted");
+        }
+        // when we actually breached the normal breach message takes over
+        reset_prediction_message();
+        return;
+    }
+    _pred_clear_count = 0;
+
+    if (_pred_confirm_count < AC_FENCE_PRED_CONFIRM) {
+        _pred_confirm_count++;
+    }
+    if (_pred_confirm_count < AC_FENCE_PRED_CONFIRM) {
+        return;
+    }
+
+    // repeat less often while the breach is far away
+    uint32_t interval_ms = 1000;
+    if (_pred_ttb_s > 10.0f) {
+        interval_ms = 5000;
+    } else if (_pred_ttb_s > 5.0f) {
+        interval_ms = 2000;
+    }
+
+    if (_pred_announced &&
+        _pred_type == _pred_type_announced &&
+        (now_ms - _pred_last_msg_ms) < interval_ms) {
+        return;
+    }
+
+    char names[MAVLINK_MSG_STATUSTEXT_FIELD_TEXT_LEN+1];
+    ExpandingString e(names, sizeof(names));
+    get_fence_names(_pred_type, e);
+    const float spd = (_pred_type == AC_FENCE_TYPE_POLYGON) ? _pred_speed : fabsf(_pred_climb_rate);
+    const MAV_SEVERITY sev = (_pred_ttb_s <= AC_FENCE_PRED_CRIT_S) ? MAV_SEVERITY_CRITICAL : MAV_SEVERITY_WARNING;
+    GCS_SEND_TEXT(sev, "%s breach in %.1fs (%.1fm/s)", e.get_writeable_string(), _pred_ttb_s, spd);
+
+    _pred_last_msg_ms = now_ms;
+    _pred_announced = true;
+    _pred_type_announced = _pred_type;
+}
+
+void AC_Fence::reset_prediction_message()
+{
+    _pred_confirm_count = 0;
+    _pred_clear_count = 0;
+    _pred_announced = false;
+    _pred_type_announced = 0;
+}
+
+bool AC_Fence::get_time_to_breach(float &ttb_s, uint8_t &fence_type) const
+{
+    if (!_pred_valid) {
+        return false;
+    }
+    ttb_s = _pred_ttb_s;
+    fence_type = _pred_type;
+    return true;
+}
+
 // methods for mavlink SYS_STATUS message (send_sys_status)
 bool AC_Fence::sys_status_present() const
 {
@@ -977,6 +1184,7 @@ uint8_t AC_Fence::get_enabled_fences() const { return 0; }
 bool AC_Fence::pre_arm_check(char *failure_msg, const uint8_t failure_msg_len) const  { return true; }
 
 uint8_t AC_Fence::check(bool disable_auto_fences) { return 0; }
+bool AC_Fence::get_time_to_breach(float &ttb_s, uint8_t &fence_type) const { return false; }
 bool AC_Fence::check_destination_within_fence(const Location& loc) { return true; }
 float AC_Fence::get_breach_distance(uint8_t fence_type) const { return 0.0; }
 void AC_Fence::get_fence_names(uint8_t fences, ExpandingString& msg) { }

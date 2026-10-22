@@ -32,6 +32,15 @@
 // give up distance
 #define AC_FENCE_GIVE_UP_DISTANCE                   100.0f  // distance outside the fence at which we should give up and just land.  Note: this is not used by library directly but is intended to be used by the main code
 
+// predictive breach
+#define AC_FENCE_PRED_MIN_SPEED                     0.5f    // m/s, horizontal speed below this gives no polygon prediction
+#define AC_FENCE_PRED_MIN_VSPEED                    0.3f    // m/s, vertical speed below this gives no altitude prediction
+#define AC_FENCE_PRED_STEP_M                        1.0f    // spacing of samples along the predicted path
+#define AC_FENCE_PRED_MAX_SAMPLES                   60      // maximum samples along the predicted path per update
+#define AC_FENCE_PRED_CONFIRM                       2       // consecutive updates (10Hz) with a predicted breach before warning
+#define AC_FENCE_PRED_CLEAR                         10      // consecutive updates (10Hz) with no predicted breach before reporting it cleared
+#define AC_FENCE_PRED_CRIT_S                        1.5f    // predicted time to breach at or below which the warning is critical
+
 class AC_Fence
 {
 public:
@@ -130,6 +139,12 @@ public:
     /// get_breach_count - returns number of times we have breached the fence
     uint16_t get_breach_count() const { return _breach_count; }
 
+    /// get_time_to_breach - predicted time until a polygon or altitude fence breach
+    /// returns false if no prediction is available (disabled, disarmed, fence off or no position)
+    /// ttb_s: 0 = already breached, >0 = predicted breach, -1 = none within FENCE_PRED_TIME
+    /// fence_type: AC_FENCE_TYPE_* of the fence predicted to be breached first, 0 if none
+    bool get_time_to_breach(float &ttb_s, uint8_t &fence_type) const;
+
     /// get_breach_distance - returns maximum distance in meters outside
     /// of the given fences.  fence_type is a bitmask here.
     float get_breach_distance(uint8_t fence_type) const;
@@ -214,6 +229,13 @@ private:
     /// clear_breach - update breach bitmask, time and count
     void clear_breach(uint8_t fence_type);
 
+    // predictive breach
+    void update_prediction();
+    float predict_time_to_breach(const class Location &loc, const Vector2f &vel_ne, float horizon_s) const;
+    float predict_time_to_alt_breach(float alt_m, float climb_rate, uint8_t &fence_type) const;
+    void send_prediction_message(uint32_t now_ms);
+    void reset_prediction_message();
+
     // additional checks for the different fence types:
     bool pre_arm_check_polygon(char *failure_msg, const uint8_t failure_msg_len) const;
     bool pre_arm_check_circle(char *failure_msg, const uint8_t failure_msg_len) const;
@@ -237,6 +259,7 @@ private:
     AP_Int8         _ret_rally;             // return to fence return point or rally point/home
     AP_Int16        _ret_altitude;          // return to this altitude
     AP_Int16        _options;               // options bitmask, see OPTIONS enum
+    AP_Float        _pred_time;             // predictive breach look-ahead time in seconds, 0 = disabled
 
     // backup fences
     float           _alt_max_backup;        // backup altitude upper limit in meters used to refire the breach if the vehicle continues to move further away
@@ -258,6 +281,18 @@ private:
     uint32_t _last_breach_notify_sent_ms;  // last time we sent a message about newly-breaching the fences
 
     uint32_t        _manual_recovery_start_ms;  // system time in milliseconds that pilot re-took manual control
+
+    // predictive breach state
+    bool            _pred_valid;            // prediction was computed on the last update
+    float           _pred_ttb_s = -1.0f;    // predicted time to breach, see get_time_to_breach()
+    uint8_t         _pred_type;             // AC_FENCE_TYPE_* predicted to be breached first
+    float           _pred_speed;            // horizontal ground speed used for the prediction (m/s)
+    float           _pred_climb_rate;       // climb rate used for the prediction (m/s, up positive)
+    uint8_t         _pred_confirm_count;    // consecutive updates with a predicted breach
+    uint8_t         _pred_clear_count;      // consecutive updates with no predicted breach after a warning
+    bool            _pred_announced;        // warning has been sent for the current prediction
+    uint8_t         _pred_type_announced;   // fence type in the last warning
+    uint32_t        _pred_last_msg_ms;      // time of the last warning
 
     enum class MinAltState
     {

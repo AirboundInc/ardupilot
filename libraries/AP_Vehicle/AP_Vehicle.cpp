@@ -653,7 +653,7 @@ const AP_Scheduler::Task AP_Vehicle::scheduler_tasks[] = {
     SCHED_TASK(accel_cal_update,                                                      10, 100, 245),
 #endif
 #if AP_FENCE_ENABLED
-    SCHED_TASK_CLASS(AC_Fence,     &vehicle.fence,          update,                   10, 100, 248),
+    SCHED_TASK_CLASS(AC_Fence,     &vehicle.fence,          update,                   10, 200, 248),
 #endif
 #if AP_AIS_ENABLED
     SCHED_TASK_CLASS(AP_AIS,       &vehicle.ais,            update,                    5, 100, 249),
