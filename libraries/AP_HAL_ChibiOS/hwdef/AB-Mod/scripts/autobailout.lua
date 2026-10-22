@@ -105,9 +105,8 @@ local function rad2deg(r) return r * 57.2958 end
 
 local function tiltrotor_in_transition()
     --Ensure this function is called at script loop rate
-    local tilt_backtransition_delay = param:get("Q_TILT_BTDLY_MS")
-    local tilt_fw_throttle_hold_ms = param:get("Q_TILT_FWHLD_MS")
-    local total_backtransition_time = tilt_backtransition_delay+tilt_fw_throttle_hold_ms
+    local rate_of_servo_movement = param:get("Q_TILT_RATE_UP")
+    local total_backtransition_time = (90/rate_of_servo_movement) * 1000 --in ms
     --Flight not in qmode
     if not quadplane:in_vtol_mode() then
         vtol_mode_enter_time_ms = nil    
