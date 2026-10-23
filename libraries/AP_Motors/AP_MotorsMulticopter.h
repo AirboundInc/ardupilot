@@ -179,6 +179,8 @@ protected:
     // scaling for booster motor throttle
     AP_Float            _boost_scale;
 
+    AP_Float            _throttle_thrust_min_ts;   // the minimum allowed throttle thrust 0.0 to 1.0 in the range throttle_min to throttle_max for tailsitters
+
     // motor output variables
     bool                motor_enabled[AP_MOTORS_MAX_NUM_MOTORS];    // true if motor is enabled
 
