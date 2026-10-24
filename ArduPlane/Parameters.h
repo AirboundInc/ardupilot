@@ -362,6 +362,14 @@ public:
 
         k_param_pullup = 270,
         k_param_quicktune,
+
+        // 406 is not a gap in the numbering, it is the storage key the LTE_*
+        // parameters already live at. The Lua applet declared them with
+        // param:add_table(106, "LTE_", ...), and a dynamic table is stored at
+        // 106 + AP_PARAM_DYNAMIC_KEY_BASE. Reusing the key, with the original
+        // group indices, lets an already-provisioned vehicle keep its settings
+        // across the flash that replaces the applet with AP_LTE.
+        k_param_lte = 406,
     };
 
     AP_Int16 format_version;

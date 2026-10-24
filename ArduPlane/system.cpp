@@ -54,8 +54,19 @@ void Plane::init_ardupilot()
     rpm_sensor.init();
 #endif
 
+#if AP_LTE_ENABLED
+    // Has to precede setup_uarts(): it registers the virtual port that the
+    // modem link is presented on, and setup_uarts() is what attaches a MAVLink
+    // backend to it.
+    lte.pre_init();
+#endif
+
     // setup telem slots with serial ports
     gcs().setup_uarts();
+
+#if AP_LTE_ENABLED
+    lte.init();
+#endif
 
 
 #if OSD_ENABLED

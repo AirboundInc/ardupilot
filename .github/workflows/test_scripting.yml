@@ -104,81 +104,85 @@ jobs:
           ./waf configure --board sitl
           ./waf plane
 
-      - name: Configure Parameters & Load Script
+      - name: Configure Parameters
         shell: bash
         run: |
-          mkdir -p scripts
-          cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua scripts/
-          mkdir -p ArduPlane/scripts
-          cp libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/scripts/LTE_modem.lua ArduPlane/scripts/
-
-          # Bypass CMUX transitions for the Python mock
-          sed -i 's/step = "CMUX"/step = "CPIN"/g' scripts/LTE_modem.lua
-          sed -i "s/step = 'CMUX'/step = 'CPIN'/g" scripts/LTE_modem.lua
-          sed -i 's/step = "CMUX"/step = "CPIN"/g' ArduPlane/scripts/LTE_modem.lua
-          sed -i "s/step = 'CMUX'/step = 'CPIN'/g" ArduPlane/scripts/LTE_modem.lua
-
-          # The sed above only skips the CMUX negotiation step; cmux_enabled()
-          # is still true via "modem.cmux and not NOMUX", so the script keeps
-          # CMUX-framing every write while the mock speaks plain AT. LTE_OPTIONS
-          # in lte_test.parm cannot fix that: script-declared params do not exist
-          # when the defaults file is parsed, so the value is silently dropped.
-          # Force NOMUX in the script's own default. STEPS brings back the
-          # "LTE_modem: step X" GCS lines the step check below reads (off by
-          # default in flight). 70 = SIGNALS(2) | NOMUX(4) | STEPS(64).
-          for f in scripts/LTE_modem.lua ArduPlane/scripts/LTE_modem.lua; do
-            sed -i "s/bind_add_param('OPTIONS', 12, 2)/bind_add_param('OPTIONS', 12, 70)/" "$f"
-            grep -q "bind_add_param('OPTIONS', 12, 70)" "$f" || { echo "OPTIONS sed did not apply to $f"; exit 1; }
-          done
-
-          # SCR_HEAP_SIZE is read from Pixhawk6C-bdshot defaults.parm so SITL runs
-          # the flight value (the 200KB SITL default can't compile LTE_modem.lua).
-          HEAP=$(awk '$1=="SCR_HEAP_SIZE"{print $2}' libraries/AP_HAL_ChibiOS/hwdef/Pixhawk6C-bdshot/defaults.parm)
-          [ -n "$HEAP" ] || { echo "SCR_HEAP_SIZE missing from Pixhawk6C-bdshot defaults.parm"; exit 1; }
-          # NOTE: only the SCR_* / SERIAL* lines below actually take effect. The
-          # LTE_* ones are declared by the Lua script at runtime, so they do not
-          # exist when this file is parsed and their values are discarded -- they
-          # happen to match the script's own defaults. To really change an LTE_*
-          # param, sed the script default (as above) or PARAM_SET it after boot
-          # (as Lte_modem_test.py does for LTE_SERVER_*).
-          cat <<'EOF' > lte_test.parm
-          SCR_ENABLE 1
+          # AP_LTE is compiled into the firmware, so none of the Lua staging
+          # this job used to do applies: no script copy, no CMUX/NOMUX seds, no
+          # SCR_* heap or simulated-device setup. LTE_* are ordinary parameters
+          # now, so a defaults file actually sets them.
+          #
+          # LTE_HTTPAUTH is 0 here. The HTTPS login reads the craft ID and
+          # password out of AP_CustomStorage, which is only compiled in behind
+          # --enable-custom-storage and has to be provisioned over the custom
+          # AIRBOUND_PARAMETER_GETSET message. Neither is set up in CI, so with
+          # HTTPAUTH on the driver halts before it opens a socket -- exactly as
+          # the Lua applet did. Until provisioning is wired up here this job
+          # verifies the static-address path all the way to CONNECTED.
+          # Two configurations, differing only in LTE_OPTIONS: bit 2 is NoMux.
+          # 70 = Steps|Signals|NoMux runs the plain transparent path; 66 =
+          # Steps|Signals leaves CMUX on, so the whole AT exchange is GSM 07.10
+          # framed and the socket rides DLC 2. The mock speaks both. Steps
+          # (64) puts the step changes the test checks on the GCS.
+          cat <<'EOF' > lte_common.parm
           LTE_ENABLE 1
           LTE_SERPORT 0
           SERIAL1_PROTOCOL 28
-          SCR_SDEV_EN 1
-          SCR_SDEV1_PROTO 2
           LTE_PROTOCOL 2
-          LTE_SCRPORT 0
-          LTE_OPTIONS 4
+          LTE_HTTPAUTH 0
+          LTE_SERVER_IP0 8
+          LTE_SERVER_IP1 8
+          LTE_SERVER_IP2 8
+          LTE_SERVER_IP3 8
+          LTE_SERVER_PORT 8080
           EOF
-          echo "SCR_HEAP_SIZE $HEAP" >> lte_test.parm
+          cp lte_common.parm lte_nomux.parm
+          echo "LTE_OPTIONS 70" >> lte_nomux.parm
+          cp lte_common.parm lte_cmux.parm
+          echo "LTE_OPTIONS 66" >> lte_cmux.parm
 
       - name: "LTE Happy Path: Boot SITL and Verify"
         shell: bash
         run: |
           export PATH="/github/home/.local/bin:$PATH:$GITHUB_WORKSPACE/Tools/autotest"
 
-          # 14551 = STATUSTEXT monitoring, 14552 = param injection
-          python3 Tools/autotest/Lte_modem_test.py \
-            --port /tmp/ttyMock \
-            --mavlink-port 14551 \
-            --inject-port 14552 \
-            --timeout 120 &
-          TEST_PID=$!
-          sleep 2
+          OVERALL=0
+          for cfg in nomux cmux; do
+            echo "=================== $cfg ==================="
 
-          sim_vehicle.py -v ArduPlane --no-rebuild \
-            --add-param-file lte_test.parm \
-            -A "--serial1=uart:/tmp/ttySITL" \
-            --out 127.0.0.1:14551 \
-            --out 127.0.0.1:14552 \
-            --mavproxy-args="--daemon" &
-          SITL_PID=$!
+            # 14551 = STATUSTEXT monitoring, 14552 = param injection
+            python3 Tools/autotest/Lte_modem_test.py \
+              --port /tmp/ttyMock \
+              --mavlink-port 14551 \
+              --inject-port 14552 \
+              --no-httpauth \
+              --timeout 120 &
+            TEST_PID=$!
+            sleep 2
 
-          wait $TEST_PID
-          RESULT=$?
+            sim_vehicle.py -v ArduPlane --no-rebuild \
+              --add-param-file "lte_$cfg.parm" \
+              -A "--serial1=uart:/tmp/ttySITL" \
+              --out 127.0.0.1:14551 \
+              --out 127.0.0.1:14552 \
+              --mavproxy-args="--daemon" &
+            SITL_PID=$!
 
-          kill -9 $SITL_PID || true
-          killall -9 arduplane || true
-          exit $RESULT
+            # "|| RESULT" keeps a failure from tripping bash -e, so cleanup
+            # and the next configuration still run.
+            RESULT=0
+            wait $TEST_PID || RESULT=$?
+
+            kill -9 $SITL_PID || true
+            killall -9 arduplane || true
+            sleep 3
+
+            if [ $RESULT -ne 0 ]; then
+              echo "::error::LTE happy path failed for $cfg"
+              OVERALL=$RESULT
+            fi
+            # A saved eeprom.bin would carry LTE_OPTIONS into the next
+            # configuration and silently run it twice.
+            rm -f eeprom.bin
+          done
+          exit $OVERALL

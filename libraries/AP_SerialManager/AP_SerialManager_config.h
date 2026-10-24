@@ -22,6 +22,7 @@
 #include <AP_HAL/AP_HAL_Boards.h>
 #include <AP_Networking/AP_Networking_Config.h>
 #include <AP_InertialSensor/AP_InertialSensor_config.h>
+#include <AP_LTE/AP_LTE_config.h>
 
 #ifdef HAL_UART_NUM_SERIAL_PORTS
 #if HAL_UART_NUM_SERIAL_PORTS >= 4
@@ -57,7 +58,10 @@
 
 
 #ifndef AP_SERIALMANAGER_REGISTER_ENABLED
-#define AP_SERIALMANAGER_REGISTER_ENABLED BOARD_FLASH_SIZE > 1024 && (AP_NETWORKING_ENABLED || HAL_ENABLE_DRONECAN_DRIVERS)
+// AP_LTE is an independent term rather than being folded into the flash-size
+// test: its registered port is the entire transport, so the driver cannot be
+// built at all without port registration on a board it is enabled for.
+#define AP_SERIALMANAGER_REGISTER_ENABLED ((BOARD_FLASH_SIZE > 1024 && (AP_NETWORKING_ENABLED || HAL_ENABLE_DRONECAN_DRIVERS)) || AP_LTE_ENABLED)
 #endif
 
 #ifndef AP_SERIALMANAGER_IMUOUT_ENABLED
@@ -73,6 +77,9 @@
 
 // serial device simulation ports registered by AP_Scripting will use IDs starting at 61 for the first port
 #define AP_SERIALMANAGER_SCR_PORT_1         61 // SCR_SDEV1_*
+
+// the virtual port AP_LTE registers to carry the modem link
+#define AP_SERIALMANAGER_LTE_PORT           71
 
  // console default baud rates and buffer sizes
 #ifdef DEFAULT_SERIAL0_BAUD
