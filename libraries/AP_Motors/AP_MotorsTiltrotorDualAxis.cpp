@@ -96,10 +96,18 @@ void AP_MotorsTiltrotorDualAxis::output_armed_stabilizing()
     }
     // Global mixer for the dual-axis tiltrotor with roll yaw swaping based on the elbow tilt angle.
     float differential_thrust,differential_TV,inverse_term = 1.0f;
-    float K_DT = 1.0f, K_DTV = 1.0f;
-    const float c = cosf(_elbow_tilt_angle), s = sinf(_elbow_tilt_angle);
-    differential_thrust = ( roll_thrust * c + yaw_thrust * s) / K_DT;    // sign of s*yaw flipped
-    differential_TV     = (-roll_thrust * s + yaw_thrust * c) / K_DTV;
+    // New params: DTV_DEFL_MAX (rad, wrist travel at ±4500), THR_HOVER (normalized thrust)
+    const float DTV_DEFL_MAX = radians(45.0f);
+    const float c     = cosf(_elbow_tilt_angle);
+    const float s     = sinf(_elbow_tilt_angle);
+    const float cphi  = cosf(pitch_thrust * DTV_DEFL_MAX);
+    const float T_avg = MAX(throttle_thrust, 0.1f);              // floor avoids blow-up at low thrust
+    const float r     = 2.0f * T_avg     * DTV_DEFL_MAX * cphi;  // K_DTV / K_DT, current
+    const float r_h   = 2.0f * _throttle_hover * DTV_DEFL_MAX;         // K_DTV / K_DT, hover
+
+    // roll/yaw -> differential thrust / differential TV (rotation inverse = transpose)
+    differential_thrust = c * roll_thrust + r_h * s * yaw_thrust;
+    differential_TV     = (-s * roll_thrust + r_h * c * yaw_thrust) / r;
 
     // calculate left and right throttle outputs
     _thrust_left  = throttle_thrust + differential_thrust * 0.5f;
