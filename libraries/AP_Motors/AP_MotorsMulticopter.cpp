@@ -231,6 +231,13 @@ const AP_Param::GroupInfo AP_MotorsMulticopter::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("SPOOL_TIM_DN", 44, AP_MotorsMulticopter, _spool_down_time, 0),
 
+    // @Param: THR_MIN_TS
+    // @DisplayName: Minimum allowed throttle thrust for tailsitters.
+    // @Description: The minimum allowed throttle thrust 0.0 to 1.0
+    // @Range: 0 1
+    // @User: Advanced
+    AP_GROUPINFO("THR_MIN_TS", 45, AP_MotorsMulticopter, _throttle_thrust_min_ts, 0.0f),
+
     AP_GROUPEND
 };
 
